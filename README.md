@@ -62,8 +62,6 @@
 </tr>
 </table>
 
-> **Note**: Add your screenshots to the `docs/images/` folder
-
 ---
 
 ## Business Use Cases
