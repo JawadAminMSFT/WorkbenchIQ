@@ -7,6 +7,7 @@ Configures default model deployments required by prebuilt analyzers.
 import os
 import sys
 from pathlib import Path
+import json
 
 # Add app directory to path
 sys.path.insert(0, str(Path(__file__).parent / "app"))
@@ -94,7 +95,7 @@ def configure_defaults():
         print(f"   URL: {url}")
         print(f"   Body: {json.dumps(body, indent=2)}")
         
-        import json
+        
         response = requests.patch(url, headers=headers, json=body, timeout=30)
         
         if response.ok:
