@@ -21,6 +21,7 @@ from .storage import (
     ApplicationMetadata,
     save_application_metadata,
     save_cu_raw_result,
+    load_file_content,
 )
 from .personas import get_persona_config
 from .utils import setup_logging
@@ -74,13 +75,23 @@ def run_content_understanding_for_files(
     for stored in app_md.files:
         logger.info("Analyzing file with Content Understanding: %s", stored.path)
         
+        # Load file content from storage (supports both local and cloud storage)
+        file_content = load_file_content(stored)
+        if file_content is None:
+            logger.error("Failed to load file content for: %s", stored.path)
+            continue
+        
         # Use confidence-enabled analyzer if enabled
         if use_confidence_scoring and settings.content_understanding.enable_confidence_scores:
             # Temporarily override the custom_analyzer_id in settings for this call
             original_analyzer = settings.content_understanding.custom_analyzer_id
             settings.content_understanding.custom_analyzer_id = persona_analyzer_id
             try:
-                payload = analyze_document_with_confidence(settings.content_understanding, stored.path)
+                payload = analyze_document_with_confidence(
+                    settings.content_understanding, 
+                    stored.path,
+                    file_bytes=file_content
+                )
                 analyzer_used = persona_analyzer_id
             finally:
                 settings.content_understanding.custom_analyzer_id = original_analyzer
@@ -99,7 +110,7 @@ def run_content_understanding_for_files(
                     "source_file": stored.filename,
                 }
         else:
-            payload = analyze_document(settings.content_understanding, stored.path)
+            payload = analyze_document(settings.content_understanding, stored.path, file_bytes=file_content)
             analyzer_used = settings.content_understanding.analyzer_id
         
         cu_payloads.append((stored.path, payload))

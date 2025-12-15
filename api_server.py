@@ -61,6 +61,21 @@ app.add_middleware(
 )
 
 
+# Initialize storage provider on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application components on startup."""
+    from app.storage_providers import init_storage_provider, StorageSettings
+    
+    try:
+        storage_settings = StorageSettings.from_env()
+        init_storage_provider(storage_settings)
+        logger.info("Storage provider initialized: %s", storage_settings.backend.value)
+    except Exception as e:
+        logger.error("Failed to initialize storage provider: %s", e)
+        raise
+
+
 # Pydantic models for API responses
 class ApplicationListItem(BaseModel):
     id: str

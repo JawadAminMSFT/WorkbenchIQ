@@ -4,3 +4,4 @@ azure-identity>=1.19.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
+azure-storage-blob>=12.19.0

@@ -178,6 +178,7 @@ def poll_result(
 def analyze_document(
     settings: ContentUnderstandingSettings,
     file_path: str,
+    file_bytes: Optional[bytes] = None,
     output_markdown: bool = True,
     max_retries: int = 3,
     retry_backoff: float = 1.5,
@@ -197,6 +198,14 @@ def analyze_document(
     Authentication:
         - If use_azure_ad=True: Uses DefaultAzureCredential (recommended for direct Cognitive Services)
         - If use_azure_ad=False: Uses subscription key (for APIM-based endpoints)
+    
+    Args:
+        settings: Content Understanding settings
+        file_path: Path to the document file (used if file_bytes not provided)
+        file_bytes: Raw file content bytes (preferred for cloud storage)
+        output_markdown: Whether to include markdown output
+        max_retries: Number of retry attempts
+        retry_backoff: Backoff multiplier between retries
     """
     if not settings.endpoint:
         raise ContentUnderstandingError(
@@ -236,7 +245,9 @@ def analyze_document(
     if output_markdown:
         params["outputFormat"] = "markdown"
 
-    file_bytes = Path(file_path).read_bytes()
+    # Use provided bytes or read from file path
+    if file_bytes is None:
+        file_bytes = Path(file_path).read_bytes()
 
     last_err: Exception | None = None
     for attempt in range(1, max_retries + 1):
@@ -588,6 +599,7 @@ def ensure_custom_analyzer_exists(
 def analyze_document_with_confidence(
     settings: ContentUnderstandingSettings,
     file_path: str,
+    file_bytes: Optional[bytes] = None,
     output_markdown: bool = True,
     max_retries: int = 3,
     retry_backoff: float = 1.5,
@@ -601,7 +613,8 @@ def analyze_document_with_confidence(
     
     Args:
         settings: Content Understanding settings
-        file_path: Path to the document file
+        file_path: Path to the document file (used if file_bytes not provided)
+        file_bytes: Raw file content bytes (preferred for cloud storage)
         output_markdown: Whether to include markdown output
         max_retries: Number of retry attempts
         retry_backoff: Backoff multiplier between retries
@@ -629,7 +642,9 @@ def analyze_document_with_confidence(
     if output_markdown:
         params["outputFormat"] = "markdown"
 
-    file_bytes = Path(file_path).read_bytes()
+    # Use provided bytes or read from file path
+    if file_bytes is None:
+        file_bytes = Path(file_path).read_bytes()
 
     last_err: Exception | None = None
     for attempt in range(1, max_retries + 1):

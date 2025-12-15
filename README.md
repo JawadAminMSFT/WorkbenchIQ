@@ -385,6 +385,44 @@ Full API documentation available at http://localhost:8000/docs
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | Yes | - | GPT-4.1 deployment name |
 | `AZURE_OPENAI_API_VERSION` | No | `2024-10-21` | Azure OpenAI API version |
 | `UW_APP_STORAGE_ROOT` | No | `data` | Local storage path |
+| `STORAGE_BACKEND` | No | `local` | Storage backend (`local` or `azure_blob`) |
+| `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | - | Azure storage account name (if using azure_blob) |
+| `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if using azure_blob) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Conditional | - | Azure storage connection string (alternative to account name/key) |
+| `AZURE_STORAGE_CONTAINER_NAME` | No | `workbenchiq-data` | Azure blob container name |
+
+### Storage Configuration
+
+WorkbenchIQ supports two storage backends:
+
+**Local Storage (Default)**
+
+No additional configuration needed. Files are stored in the local `data/` directory.
+
+```env
+STORAGE_BACKEND=local
+UW_APP_STORAGE_ROOT=data
+```
+
+**Azure Blob Storage**
+
+For production deployments, you can use Azure Blob Storage:
+
+```env
+STORAGE_BACKEND=azure_blob
+
+# Option 1: Account name and key
+AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+AZURE_STORAGE_ACCOUNT_KEY=your-storage-account-key
+
+# Option 2: Connection string (alternative)
+# AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
+
+# Container name (optional, defaults to workbenchiq-data)
+AZURE_STORAGE_CONTAINER_NAME=workbenchiq-data
+```
+
+The container will be automatically created if it doesn't exist. See [quickstart.md](specs/003-azure-blob-storage-integration/quickstart.md) for detailed setup instructions.
 
 ### Adding a New Persona
 
