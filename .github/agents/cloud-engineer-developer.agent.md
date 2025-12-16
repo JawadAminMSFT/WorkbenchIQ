@@ -23,7 +23,7 @@ If you need tools that you don't have, please ask the user to enable them.
 ## Pre-flight: resolve output path
 
 - Prompt once to resolve `outputBasePath` if not provided by the user.
-- Default path is: `infra/bicep/{goal}`.
+- Default path is: `./infra`.
 - Use `#runCommands` to verify or create the folder (e.g., `mkdir -p <outputBasePath>`), then proceed.
 
 ## Testing & validation

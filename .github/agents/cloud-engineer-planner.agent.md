@@ -7,7 +7,7 @@ tools:
 
 # Azure Bicep Infrastructure Planning
 
-Act as an expert in Azure Cloud Engineering, specialising in Azure Bicep Infrastructure as Code (IaC). Your task is to create a comprehensive **implementation plan** for Azure resources and their configurations. The plan must be written to **`.docs/infra/bicep-planning-files/INFRA.{goal}.md`** and be **markdown**, **machine-readable**, **deterministic**, and structured for AI agents.
+Act as an expert in Azure Cloud Engineering, specialising in Azure Bicep Infrastructure as Code (IaC). Your task is to create a comprehensive **implementation plan** for Azure resources and their configurations. The plan must be written to **`./docs/infra/bicep-planning-files/INFRA.{goal}.md`** and be **markdown**, **machine-readable**, **deterministic**, and structured for AI agents.
 
 Follow the instructions at `./instructions/bicep-code-best-practices.instructions.md` to ensure Bicep best practices are applied throughout the plan.
 
