@@ -1,17 +1,20 @@
 'use client';
 
 import { User } from 'lucide-react';
-import type { ApplicationMetadata } from '@/lib/types';
+import type { ApplicationMetadata, PolicyCitation } from '@/lib/types';
+import RiskRatingPopover from './RiskRatingPopover';
 
 interface PatientSummaryProps {
   application: ApplicationMetadata;
+  onPolicyClick?: (policyId: string) => void;
 }
 
-export default function PatientSummary({ application }: PatientSummaryProps) {
+export default function PatientSummary({ application, onPolicyClick }: PatientSummaryProps) {
   // Get summary from LLM outputs
-  const customerProfile = application.llm_outputs?.application_summary?.customer_profile?.parsed;
-  const summary = customerProfile?.summary || null;
+  const customerProfile = application.llm_outputs?.application_summary?.customer_profile?.parsed as any;
+  const summary = customerProfile?.summary || customerProfile?.medical_summary || null;
   const riskAssessment = customerProfile?.risk_assessment || null;
+  const policyCitations: PolicyCitation[] = customerProfile?.policy_citations || [];
   const underwritingAction = customerProfile?.underwriting_action || null;
 
   return (
@@ -25,17 +28,14 @@ export default function PatientSummary({ application }: PatientSummaryProps) {
           <h2 className="text-lg font-semibold text-slate-900">Patient Summary</h2>
         </div>
 
-        {/* Risk Badge */}
+        {/* Risk Badge with Popover */}
         {riskAssessment && (
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-            riskAssessment.toLowerCase().includes('high') 
-              ? 'bg-rose-100 text-rose-700'
-              : riskAssessment.toLowerCase().includes('moderate')
-              ? 'bg-amber-100 text-amber-700'
-              : 'bg-emerald-100 text-emerald-700'
-          }`}>
-            {riskAssessment}
-          </span>
+          <RiskRatingPopover
+            rating={riskAssessment}
+            rationale={summary}
+            citations={policyCitations}
+            onPolicyClick={onPolicyClick}
+          />
         )}
       </div>
 

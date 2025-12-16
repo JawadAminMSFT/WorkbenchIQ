@@ -13,6 +13,9 @@ import ChronologicalOverview from '@/components/ChronologicalOverview';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import SourcePagesPanel from '@/components/SourcePagesPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import PolicySummaryPanel from '@/components/PolicySummaryPanel';
+import PolicyReportModal from '@/components/PolicyReportModal';
+import ChatDrawer from '@/components/ChatDrawer';
 import { ClaimsSummary, MedicalRecordsPanel, EligibilityPanel } from '@/components/claims';
 import LifeHealthClaimsOverview from '@/components/claims/LifeHealthClaimsOverview';
 import PropertyCasualtyClaimsOverview from '@/components/claims/PropertyCasualtyClaimsOverview';
@@ -27,6 +30,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ViewType>('overview');
+  const [isPolicyReportOpen, setIsPolicyReportOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const { currentPersona, personaConfig } = usePersona();
 
   // Load applications list - reload when persona changes
@@ -173,6 +178,22 @@ export default function Home() {
   const renderUnderwritingOverview = () => {
     if (!selectedApp) return null;
     
+    const handleRerunAnalysis = async () => {
+      if (!selectedApp) return;
+      try {
+        // Re-run risk analysis (separate from extraction)
+        const response = await fetch(`/api/applications/${selectedApp.id}/risk-analysis`, {
+          method: 'POST',
+        });
+        if (response.ok) {
+          // Reload application to get updated analysis
+          loadApplication(selectedApp.id);
+        }
+      } catch (err) {
+        console.error('Failed to re-run risk analysis:', err);
+      }
+    };
+    
     return (
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-7xl mx-auto">
@@ -180,7 +201,19 @@ export default function Home() {
             {/* Left Column - Main Content */}
             <div className="flex-1 space-y-6">
               {/* Patient Summary */}
-              <PatientSummary application={selectedApp} />
+              <PatientSummary 
+                application={selectedApp} 
+                onPolicyClick={(policyId) => {
+                  setIsPolicyReportOpen(true);
+                }}
+              />
+              
+              {/* Policy Summary Panel (risk analysis) */}
+              <PolicySummaryPanel
+                application={selectedApp}
+                onViewFullReport={() => setIsPolicyReportOpen(true)}
+                onRiskAnalysisComplete={() => loadApplication(selectedApp.id)}
+              />
 
               {/* Lab Results and Substance Use */}
               <div className="grid grid-cols-2 gap-6">
@@ -202,6 +235,22 @@ export default function Home() {
             </div>
           </div>
         </div>
+        
+        {/* Policy Report Modal */}
+        <PolicyReportModal
+          isOpen={isPolicyReportOpen}
+          onClose={() => setIsPolicyReportOpen(false)}
+          application={selectedApp}
+          onRerunAnalysis={handleRerunAnalysis}
+        />
+        
+        {/* Chat Drawer - Floating button + slide-out panel */}
+        <ChatDrawer
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          onOpen={() => setIsChatOpen(true)}
+          applicationId={selectedApp.id}
+        />
       </div>
     );
   };

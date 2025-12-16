@@ -25,6 +25,7 @@ from .storage import (
 )
 from .personas import get_persona_config
 from .utils import setup_logging
+from .underwriting_policies import format_all_policies_for_prompt
 
 logger = setup_logging()
 
@@ -39,6 +40,19 @@ def load_policies(storage_root: str) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"Failed to load policies: {e}")
     return {}
+
+
+def load_underwriting_policies(storage_root: str) -> str:
+    """Load and format underwriting policies for prompt injection.
+    
+    Returns a formatted string of all underwriting policies suitable
+    for injection into LLM prompts.
+    """
+    try:
+        return format_all_policies_for_prompt(storage_root)
+    except Exception as e:
+        logger.warning(f"Failed to load underwriting policies: {e}")
+        return ""
 
 
 def run_content_understanding_for_files(
@@ -178,9 +192,20 @@ def _run_single_prompt(
     prompt_template: str,
     document_markdown: str,
     additional_context: str = "",
+    underwriting_policies: str = "",
 ) -> Dict[str, Any]:
     system_prompt = "You are an expert life insurance underwriter. Always return STRICT JSON."
-    user_prompt = prompt_template.strip() + "\n\n---\n\nApplication Markdown:\n\n" + document_markdown
+    
+    # Inject underwriting policies into the prompt template
+    if "{underwriting_policies}" in prompt_template:
+        prompt_with_policies = prompt_template.replace(
+            "{underwriting_policies}",
+            underwriting_policies if underwriting_policies else ""
+        )
+    else:
+        prompt_with_policies = prompt_template
+    
+    user_prompt = prompt_with_policies.strip() + "\n\n---\n\nApplication Markdown:\n\n" + document_markdown
     
     if additional_context:
         user_prompt += additional_context
@@ -216,6 +241,7 @@ def _run_section_prompts(
     subsections_to_run: List[Tuple[str, str]] | None = None,
     max_workers: int = 4,
     additional_context: str = "",
+    underwriting_policies: str = "",
 ) -> Dict[str, Any]:
     """Run all prompts for a single section in parallel.
     
@@ -227,6 +253,7 @@ def _run_section_prompts(
         subsections_to_run: Optional filter for specific subsections
         max_workers: Maximum parallel workers for this section
         additional_context: Optional context to append to prompts
+        underwriting_policies: Formatted underwriting policies for prompt injection
     
     Returns:
         Dict mapping subsection names to their results
@@ -236,7 +263,16 @@ def _run_section_prompts(
     for subsection, template in subsections.items():
         if subsections_to_run and (section, subsection) not in subsections_to_run:
             continue
-        work_items.append((subsection, template))
+        # Template should now be a string after normalization
+        # But handle dict format for backward compatibility
+        if isinstance(template, dict):
+            if "prompt" in template:
+                prompt_text = template["prompt"]
+            else:
+                continue
+        else:
+            prompt_text = str(template)
+        work_items.append((subsection, prompt_text))
     
     if not work_items:
         return {}
@@ -254,6 +290,7 @@ def _run_section_prompts(
                 template,
                 document_markdown,
                 additional_context,
+                underwriting_policies,
             ): subsection
             for subsection, template in work_items
         }
@@ -312,9 +349,30 @@ def run_underwriting_prompts(
     persona = app_md.persona or "underwriting"
     prompts = prompts_override or load_prompts(settings.app.storage_root, persona)
 
+    # Normalize prompts structure - convert single prompts to subsection format
+    # Structure can be either:
+    # 1. {"section": {"prompt": "...", "json_schema": {...}}} - single prompt section
+    # 2. {"section": {"subsection": {"prompt": "...", "json_schema": {...}}}} - nested subsections
+    normalized_prompts: Dict[str, Dict[str, str]] = {}
+    for section, content in prompts.items():
+        if isinstance(content, dict):
+            if "prompt" in content:
+                # Single prompt section - use section name as subsection too
+                normalized_prompts[section] = {section: content["prompt"]}
+            else:
+                # Nested subsections
+                subsections = {}
+                for subsection, sub_content in content.items():
+                    if isinstance(sub_content, dict) and "prompt" in sub_content:
+                        subsections[subsection] = sub_content["prompt"]
+                    elif isinstance(sub_content, str):
+                        subsections[subsection] = sub_content
+                if subsections:
+                    normalized_prompts[section] = subsections
+
     # Determine which sections to run
     sections_to_process = []
-    for section, subs in prompts.items():
+    for section, subs in normalized_prompts.items():
         if sections_to_run and section not in sections_to_run:
             continue
         # Check if any subsections in this section should be run
@@ -373,6 +431,12 @@ def run_underwriting_prompts(
             # If no plan name found, provide all as reference
             policy_context = f"\n\n---\n\nAVAILABLE PLANS REFERENCE (Use if plan name matches):\n{json.dumps(policies, indent=2)}\n"
 
+    # NOTE: Underwriting policies are NOT injected during standard extraction/analysis.
+    # Risk analysis with policy citations is a separate operation triggered by the user.
+    # This keeps extraction prompts focused and avoids context bloat.
+    underwriting_policies = ""
+    logger.info("Standard analysis - skipping underwriting policy injection")
+
     results: Dict[str, Dict[str, Any]] = {}
 
     # Run each section sequentially to avoid overwhelming the service
@@ -387,6 +451,7 @@ def run_underwriting_prompts(
             subsections_to_run=subsections_to_run,
             max_workers=max_workers_per_section,
             additional_context=policy_context,
+            underwriting_policies=underwriting_policies,
         )
         
         results[section] = section_results
@@ -404,3 +469,121 @@ def run_underwriting_prompts(
     save_application_metadata(settings.app.storage_root, app_md)
     logger.info("Underwriting prompts completed for application %s", app_md.id)
     return app_md
+
+
+def run_risk_analysis(
+    settings: Settings,
+    app_md: ApplicationMetadata,
+) -> Dict[str, Any]:
+    """Run policy-based risk analysis on an already-analyzed application.
+    
+    This is a SEPARATE operation from extraction/summarization.
+    It applies underwriting policies to the extracted data and generates
+    a comprehensive risk assessment with policy citations.
+    
+    Args:
+        settings: Application settings
+        app_md: Application metadata with completed LLM outputs
+        
+    Returns:
+        Risk analysis results with policy citations
+    """
+    if not app_md.llm_outputs:
+        raise ValueError("Application has no LLM outputs. Run analysis first.")
+    
+    # Load risk analysis prompts
+    risk_prompts_path = os.path.join(settings.app.storage_root, "risk-analysis-prompts.json")
+    if not os.path.exists(risk_prompts_path):
+        raise ValueError("Risk analysis prompts file not found")
+    
+    with open(risk_prompts_path, "r") as f:
+        risk_prompts_config = json.load(f)
+    
+    risk_prompts = risk_prompts_config.get("prompts", {})
+    
+    # Load underwriting policies
+    underwriting_policies = load_underwriting_policies(settings.app.storage_root)
+    if not underwriting_policies:
+        raise ValueError("No underwriting policies found")
+    
+    logger.info("Running risk analysis for application %s with %d chars of policies", 
+                app_md.id, len(underwriting_policies))
+    
+    # Build application data summary from LLM outputs
+    application_data_parts = []
+    
+    for section, subsections in app_md.llm_outputs.items():
+        if not subsections:
+            continue
+        for subsection, output in subsections.items():
+            if output and output.get("parsed"):
+                parsed = output["parsed"]
+                if isinstance(parsed, dict):
+                    # Format the extracted data
+                    application_data_parts.append(f"### {section} - {subsection}\n```json\n{json.dumps(parsed, indent=2)}\n```")
+    
+    application_data = "\n\n".join(application_data_parts)
+    
+    # Also include document markdown excerpt for context
+    doc_context = ""
+    if app_md.document_markdown:
+        doc_preview = app_md.document_markdown[:6000]
+        if len(app_md.document_markdown) > 6000:
+            doc_preview += "\n\n[Document truncated...]"
+        doc_context = f"\n\n### Original Document Excerpt\n{doc_preview}"
+    
+    full_application_data = application_data + doc_context
+    
+    # Run the overall risk assessment prompt
+    overall_prompt_config = risk_prompts.get("overall_risk_assessment", {})
+    if not overall_prompt_config:
+        raise ValueError("No overall_risk_assessment prompt found")
+    
+    prompt_template = overall_prompt_config.get("prompt", "")
+    
+    # Inject policies and application data
+    filled_prompt = prompt_template.replace("{underwriting_policies}", underwriting_policies)
+    filled_prompt = filled_prompt.replace("{application_data}", full_application_data)
+    
+    system_message = "You are an expert life insurance underwriter. Always return STRICT JSON."
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": filled_prompt},
+    ]
+    
+    logger.info("Sending risk analysis prompt to LLM")
+    result = chat_completion(settings.openai, messages, max_tokens=3000)
+    raw_content = result["content"]
+    
+    # Strip markdown code fences if present (e.g., ```json ... ```)
+    content_to_parse = raw_content.strip()
+    if content_to_parse.startswith("```"):
+        # Find the end of the first line (e.g., "```json\n")
+        first_newline = content_to_parse.find("\n")
+        if first_newline != -1:
+            content_to_parse = content_to_parse[first_newline + 1:]
+        # Remove trailing ``` if present
+        if content_to_parse.endswith("```"):
+            content_to_parse = content_to_parse[:-3].strip()
+    
+    try:
+        parsed = json.loads(content_to_parse)
+    except Exception:
+        parsed = {"_raw": raw_content, "_error": "Failed to parse JSON response."}
+    
+    risk_analysis_result = {
+        "timestamp": app_md.created_at,
+        "raw": raw_content,
+        "parsed": parsed,
+        "usage": result.get("usage", {}),
+    }
+    
+    # Store risk analysis separately in the application metadata
+    if not hasattr(app_md, 'risk_analysis') or app_md.risk_analysis is None:
+        app_md.risk_analysis = {}
+    app_md.risk_analysis = risk_analysis_result
+    
+    save_application_metadata(settings.app.storage_root, app_md)
+    logger.info("Risk analysis completed for application %s", app_md.id)
+    
+    return risk_analysis_result

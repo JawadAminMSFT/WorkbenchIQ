@@ -90,6 +90,17 @@ class AnalyzeRequest(BaseModel):
     sections: Optional[List[str]] = None
 
 
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[ChatMessage]] = None
+    application_id: Optional[str] = None
+
+
 def application_to_dict(app_md: ApplicationMetadata) -> dict:
     """Convert ApplicationMetadata to JSON-serializable dict."""
     return {
@@ -109,6 +120,7 @@ def application_to_dict(app_md: ApplicationMetadata) -> dict:
         "extracted_fields": app_md.extracted_fields,
         "confidence_summary": app_md.confidence_summary,
         "analyzer_id_used": app_md.analyzer_id_used,
+        "risk_analysis": app_md.risk_analysis,
     }
 
 
@@ -292,6 +304,82 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None):
         raise
     except Exception as e:
         logger.error("Analysis failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/applications/{app_id}/risk-analysis")
+async def run_application_risk_analysis(app_id: str):
+    """Run policy-based risk analysis on an already-analyzed application.
+    
+    This is a separate operation from extraction/summarization.
+    It applies underwriting policies to the extracted data and generates
+    a comprehensive risk assessment with policy citations.
+    
+    Prerequisites:
+    - Application must have completed extraction and analysis
+    - LLM outputs must be present
+    """
+    from app.processing import run_risk_analysis
+    
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        if not app_md.llm_outputs:
+            raise HTTPException(
+                status_code=400,
+                detail="No analysis outputs found. Run standard analysis first."
+            )
+        
+        if app_md.persona != "underwriting":
+            raise HTTPException(
+                status_code=400,
+                detail="Risk analysis is only available for underwriting applications."
+            )
+
+        # Run risk analysis
+        risk_result = run_risk_analysis(settings, app_md)
+        
+        logger.info("Risk analysis completed for application %s", app_id)
+        return {
+            "application_id": app_id,
+            "risk_analysis": risk_result,
+            "message": "Risk analysis completed successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Risk analysis failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/applications/{app_id}/risk-analysis")
+async def get_application_risk_analysis(app_id: str):
+    """Get the risk analysis results for an application."""
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        if not app_md.risk_analysis:
+            raise HTTPException(
+                status_code=404,
+                detail="No risk analysis found. Run risk analysis first."
+            )
+
+        return {
+            "application_id": app_id,
+            "risk_analysis": app_md.risk_analysis,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get risk analysis for %s: %s", app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -658,6 +746,176 @@ async def list_analyzers():
         return {"analyzers": analyzers}
     except Exception as e:
         logger.error("Failed to list analyzers: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Underwriting Policy Endpoints
+# =============================================================================
+
+@app.get("/api/policies")
+async def get_underwriting_policies():
+    """Get all underwriting policies."""
+    from app.underwriting_policies import load_policies
+    
+    try:
+        settings = load_settings()
+        policies_data = load_policies(settings.app.storage_root)
+        policies = policies_data.get("policies", [])
+        
+        return {
+            "policies": policies,
+            "total": len(policies),
+        }
+    except Exception as e:
+        logger.error("Failed to get policies: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/policies/{policy_id}")
+async def get_policy_by_id(policy_id: str):
+    """Get a specific underwriting policy by ID."""
+    from app.underwriting_policies import get_policy_by_id as get_policy
+    
+    try:
+        settings = load_settings()
+        policy = get_policy(settings.app.storage_root, policy_id)
+        
+        if not policy:
+            raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
+        
+        return policy
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get policy %s: %s", policy_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/policies/category/{category}")
+async def get_policies_by_category(category: str):
+    """Get all policies in a specific category."""
+    from app.underwriting_policies import get_policies_by_category as get_by_category
+    
+    try:
+        settings = load_settings()
+        policies = get_by_category(settings.app.storage_root, category)
+        
+        return {
+            "category": category,
+            "policies": policies,
+            "total": len(policies),
+        }
+    except Exception as e:
+        logger.error("Failed to get policies for category %s: %s", category, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Chat API Endpoints
+# =============================================================================
+
+@app.post("/api/applications/{app_id}/chat")
+async def chat_with_application(app_id: str, request: ChatRequest):
+    """Chat about an application with policy context."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from app.openai_client import chat_completion
+    from app.underwriting_policies import format_all_policies_for_prompt
+    
+    try:
+        settings = load_settings()
+        
+        # Load application data
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
+        
+        # Load underwriting policies
+        policies_context = format_all_policies_for_prompt(settings.app.storage_root)
+        logger.info("Chat: Loaded %d chars of policy context", len(policies_context))
+        
+        # Build context from application data
+        app_context_parts = []
+        
+        # Add document markdown if available
+        if app_md.document_markdown:
+            # Truncate to avoid token limits
+            doc_preview = app_md.document_markdown[:8000]
+            if len(app_md.document_markdown) > 8000:
+                doc_preview += "\n\n[Document truncated for chat context...]"
+            app_context_parts.append(f"## Application Documents\n\n{doc_preview}")
+        
+        # Add LLM analysis outputs
+        if app_md.llm_outputs:
+            analysis_summary = []
+            for section, subsections in app_md.llm_outputs.items():
+                if not subsections:
+                    continue
+                for subsection, output in subsections.items():
+                    if output and output.get("parsed"):
+                        parsed = output["parsed"]
+                        if isinstance(parsed, dict):
+                            # Extract key information
+                            risk = parsed.get("risk_assessment", "")
+                            summary = parsed.get("summary", parsed.get("family_history_summary", ""))
+                            if risk or summary:
+                                analysis_summary.append(f"- {section}.{subsection}: {risk or summary}")
+            
+            if analysis_summary:
+                app_context_parts.append("## Analysis Summary\n\n" + "\n".join(analysis_summary))
+        
+        # Build system message
+        system_message = f"""You are an expert life insurance underwriter assistant. You have access to the following context:
+
+{policies_context}
+
+## Application Information (ID: {app_id})
+
+{chr(10).join(app_context_parts) if app_context_parts else "No application details available yet."}
+
+---
+
+Instructions:
+1. Answer questions about this specific application and the underwriting policies.
+2. When citing policies, always reference the policy ID (e.g., CVD-BP-001).
+3. Provide clear, actionable guidance for underwriting decisions.
+4. If you need more information to answer a question, ask for it.
+5. Be concise but thorough in your responses.
+"""
+
+        # Build messages array
+        messages = [{"role": "system", "content": system_message}]
+        
+        # Add chat history
+        if request.history:
+            for msg in request.history:
+                messages.append({"role": msg.role, "content": msg.content})
+        
+        # Add current message
+        messages.append({"role": "user", "content": request.message})
+        
+        logger.info("Chat: Sending %d messages to OpenAI", len(messages))
+        
+        # Call OpenAI in a thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(
+                executor,
+                lambda: chat_completion(settings.openai, messages, max_tokens=2000)
+            )
+        
+        logger.info("Chat: Received response from OpenAI")
+        
+        return {
+            "response": result["content"],
+            "usage": result.get("usage", {}),
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Chat failed for application %s: %s", app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

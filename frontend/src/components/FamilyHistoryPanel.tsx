@@ -127,14 +127,14 @@ export default function FamilyHistoryPanel({ application }: FamilyHistoryPanelPr
           )}
           {/* Risk badge */}
           {riskAssessment && (
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-              riskAssessment.toLowerCase() === 'high' 
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap max-w-[120px] truncate ${
+              riskAssessment.toLowerCase().includes('high') 
                 ? 'bg-rose-100 text-rose-700'
-                : riskAssessment.toLowerCase() === 'moderate'
+                : riskAssessment.toLowerCase().includes('moderate')
                 ? 'bg-amber-100 text-amber-700'
                 : 'bg-emerald-100 text-emerald-700'
-            }`}>
-              {riskAssessment} Risk
+            }`} title={`${riskAssessment} Risk`}>
+              {riskAssessment.length > 10 ? riskAssessment.split('-')[0] : riskAssessment} Risk
             </span>
           )}
         </div>
