@@ -45,11 +45,17 @@ class OpenAISettings:
     deployment_name: str
     api_version: str = "2024-10-21"
     model_name: str = "gpt-4.1"
+    # Chat-specific settings (for Ask IQ feature)
+    # If not set, falls back to main deployment
+    chat_deployment_name: Optional[str] = None
+    chat_model_name: Optional[str] = None
+    chat_api_version: Optional[str] = None
 
 
 @dataclass
 class AppSettings:
     storage_root: str = "data"
+    prompts_root: str = "prompts"  # Git-tracked folder for prompts and policies
     public_files_base_url: Optional[str] = None
 
 
@@ -82,10 +88,15 @@ def load_settings() -> Settings:
         deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", ""),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         model_name=os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-4.1"),
+        # Chat-specific settings for Ask IQ (defaults to main model if not set)
+        chat_deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME") or None,
+        chat_model_name=os.getenv("AZURE_OPENAI_CHAT_MODEL_NAME") or None,
+        chat_api_version=os.getenv("AZURE_OPENAI_CHAT_API_VERSION") or None,
     )
 
     app = AppSettings(
         storage_root=os.getenv("UW_APP_STORAGE_ROOT", "data"),
+        prompts_root=os.getenv("UW_APP_PROMPTS_ROOT", "prompts"),
         public_files_base_url=os.getenv("PUBLIC_FILES_BASE_URL") or None,
     )
 

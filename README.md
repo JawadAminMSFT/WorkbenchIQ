@@ -52,11 +52,42 @@
 </td>
 <td width="50%">
 
+**Policy Risk Analysis**
+
+![Policy Risk Analysis](docs/images/policy-risk-analysis.png)
+
+*Policy report modal with risk evaluations and PDF export*
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
 **Admin Panel**
 
 ![Admin Panel](docs/images/admin-panel.png)
 
 *Prompt management and analyzer configuration*
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Ask IQ Chat Interface**
+
+![Ask IQ Chat](docs/images/ask-iq-chat.png)
+
+*Context-aware chat with policy and application knowledge*
+
+</td>
+<td width="50%">
+
+**Rich Chat Cards**
+
+![Rich Chat Cards](docs/images/chat-cards.png)
+
+*Structured responses with risk factors and recommendations*
 
 </td>
 </tr>
@@ -98,6 +129,21 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 - **Confidence Scoring** - Field-level confidence indicators for extracted data
 - **Custom Prompt Engineering** - Editable prompt catalog tailored to underwriting and claims workflows
 - **Progress Tracking** - Real-time status updates for long-running operations
+
+### Underwriting Policy Integration
+
+- **Policy-Driven Risk Ratings** - Automated risk assessment based on documented underwriting policies with auditable citations
+- **Risk Rating Popovers** - Hover over any risk rating to see the rationale and policy reference
+- **Policy Report Modal** - Full policy evaluation summary with all risk factors and PDF export
+- **Policy Summary Panel** - At-a-glance recommended action with policy alignment
+
+### AI Chat Experience
+
+- **Ask IQ Chat Interface** - Context-aware chat drawer for asking questions about applications
+- **Policy & Application Context** - AI responses grounded in both application data and underwriting policies
+- **Rich Response Cards** - Structured responses with visual cards for risk factors, policy lists, recommendations, and comparisons
+- **Chat History** - Persistent chat sessions per application with slide-out history panel
+- **Smart Recommendations** - Decision cards showing approve/defer/decline with confidence levels and conditions
 
 ### Technical Features
 
@@ -304,7 +350,20 @@ npm run dev
      - **Risk Assessment** - Hypertension, cholesterol, lifestyle factors
      - **Requirements** - Pending items and next steps
 
-4. **Review & Export**
+4. **Policy-Driven Risk Assessment**
+   - Hover over any risk rating to see the rationale and policy citation
+   - Click "Run Policy Check" to generate a full policy evaluation report
+   - View all risk factors at once with the Policy Report modal
+   - Export policy reports as PDF for auditing or case files
+
+5. **Ask IQ Chat**
+   - Click the floating "Ask IQ" button to open the chat drawer
+   - Ask questions about the application with full context awareness
+   - AI responses include policy citations and structured risk analysis
+   - View chat history in the slide-out panel; switch between conversations
+   - Rich response cards display risk factors, recommendations, and comparisons
+
+6. **Review & Export**
    - Review extracted fields with source citations
    - View confidence indicators
    - Export results as needed
@@ -330,12 +389,22 @@ workbenchiq/
 │   ├── openai_client.py          # Azure OpenAI integration
 │   ├── content_understanding_client.py  # Azure CU integration
 │   ├── processing.py             # Orchestration logic
+│   ├── underwriting_policies.py  # Policy loader and injector
 │   └── utils.py                  # Helper utilities
+├── prompts/                      # Git-tracked prompts & policies
+│   ├── prompts.json              # LLM prompts for document analysis
+│   ├── risk-analysis-prompts.json # Risk analysis prompt templates
+│   ├── life-health-underwriting-policies.json # Underwriting policy manual
+│   └── policies.json             # Claims/health plan policies
 ├── frontend/                     # Next.js 14 frontend
 │   ├── src/
 │   │   ├── app/                  # Next.js pages (App Router)
 │   │   ├── components/           # React components
 │   │   │   ├── claims/           # Claims-specific components
+│   │   │   ├── chat/             # Chat components
+│   │   │   │   ├── ChatCards.tsx     # Rich response cards (risk factors, recommendations)
+│   │   │   │   └── ChatHistoryPanel.tsx
+│   │   │   ├── ChatDrawer.tsx    # Slide-out chat interface
 │   │   │   ├── PatientHeader.tsx
 │   │   │   ├── LabResultsPanel.tsx
 │   │   │   └── ...
@@ -363,11 +432,21 @@ workbenchiq/
 | `POST` | `/api/applications/{id}/analyze` | Run GPT analysis |
 | `GET` | `/api/prompts` | Get prompt catalog |
 | `PUT` | `/api/prompts/{section}/{subsection}` | Update a prompt |
+| `POST` | `/api/prompts/{section}/{subsection}` | Create a new prompt |
+| `DELETE` | `/api/prompts/{section}/{subsection}` | Delete/reset a prompt |
+| `GET` | `/api/policies` | Get all underwriting policies |
+| `GET` | `/api/policies/{id}` | Get specific policy by ID |
+| `POST` | `/api/policies` | Create a new underwriting policy |
+| `PUT` | `/api/policies/{id}` | Update an underwriting policy |
+| `DELETE` | `/api/policies/{id}` | Delete an underwriting policy |
 | `GET` | `/api/analyzer/status` | Get custom analyzer status |
 | `POST` | `/api/analyzer/create` | Create custom analyzer |
 | `GET` | `/api/analyzer/schema?persona={id}` | Get field extraction schema |
-
-Full API documentation available at http://localhost:8000/docs
+| `POST` | `/api/applications/{id}/risk-analysis` | Run full policy evaluation |
+| `POST` | `/api/applications/{id}/chat` | Send chat message with context |
+| `GET` | `/api/applications/{id}/conversations` | List chat sessions for an application |
+| `GET` | `/api/applications/{id}/conversations/{chat_id}` | Get specific chat session |
+| `DELETE` | `/api/applications/{id}/conversations/{chat_id}` | Delete a chat session |
 
 ---
 
@@ -384,7 +463,8 @@ Full API documentation available at http://localhost:8000/docs
 | `AZURE_OPENAI_API_KEY` | Yes | - | Azure OpenAI API key |
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | Yes | - | GPT-4.1 deployment name |
 | `AZURE_OPENAI_API_VERSION` | No | `2024-10-21` | Azure OpenAI API version |
-| `UW_APP_STORAGE_ROOT` | No | `data` | Local storage path |
+| `UW_APP_STORAGE_ROOT` | No | `data` | Local storage path for application data |
+| `UW_APP_PROMPTS_ROOT` | No | `prompts` | Path to prompts and policies directory |
 | `STORAGE_BACKEND` | No | `local` | Storage backend (`local` or `azure_blob`) |
 | `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | - | Azure storage account name (if using azure_blob) |
 | `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if using azure_blob) |

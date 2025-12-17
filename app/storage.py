@@ -58,6 +58,8 @@ class ApplicationMetadata:
     extracted_fields: Optional[Dict[str, Any]] = None  # Raw extracted fields with confidence
     confidence_summary: Optional[Dict[str, Any]] = None  # Aggregated confidence statistics
     analyzer_id_used: Optional[str] = None  # Which analyzer was used for extraction
+    # Risk analysis results (separate from main LLM outputs)
+    risk_analysis: Optional[Dict[str, Any]] = None  # Policy-based risk assessment
 
 
 # =============================================================================
@@ -209,6 +211,7 @@ def _dict_to_metadata(data: Dict[str, Any]) -> ApplicationMetadata:
         extracted_fields=data.get("extracted_fields"),
         confidence_summary=data.get("confidence_summary"),
         analyzer_id_used=data.get("analyzer_id_used"),
+        risk_analysis=data.get("risk_analysis"),
     )
 
 

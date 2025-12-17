@@ -18,6 +18,11 @@ import type {
   AnalyzerInfo,
   FieldSchema,
   Persona,
+  UnderwritingPolicy,
+  PolicyCreateRequest,
+  PolicyUpdateRequest,
+  PoliciesResponse,
+  PolicyResponse,
 } from './types';
 
 // Backend API base URL - can be configured via environment variable
@@ -672,6 +677,62 @@ export async function deleteAnalyzer(
   analyzerId: string
 ): Promise<{ message: string }> {
   return apiFetch(`/api/analyzer/${analyzerId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ============================================================================
+// Underwriting Policy APIs
+// ============================================================================
+
+/**
+ * Get all policies for a persona (underwriting or claims)
+ */
+export async function getPolicies(persona?: string): Promise<PoliciesResponse> {
+  const params = persona ? `?persona=${encodeURIComponent(persona)}` : '';
+  return apiFetch<PoliciesResponse>(`/api/policies${params}`);
+}
+
+/**
+ * Get a specific policy by ID
+ */
+export async function getPolicy(policyId: string, persona?: string): Promise<UnderwritingPolicy> {
+  const params = persona ? `?persona=${encodeURIComponent(persona)}` : '';
+  return apiFetch<UnderwritingPolicy>(`/api/policies/${policyId}${params}`);
+}
+
+/**
+ * Get policies by category
+ */
+export async function getPoliciesByCategory(category: string): Promise<PoliciesResponse & { category: string }> {
+  return apiFetch<PoliciesResponse & { category: string }>(`/api/policies/category/${category}`);
+}
+
+/**
+ * Create a new policy
+ */
+export async function createPolicy(policy: PolicyCreateRequest): Promise<PolicyResponse> {
+  return apiFetch<PolicyResponse>('/api/policies', {
+    method: 'POST',
+    body: JSON.stringify(policy),
+  });
+}
+
+/**
+ * Update an existing policy
+ */
+export async function updatePolicy(policyId: string, update: PolicyUpdateRequest): Promise<PolicyResponse> {
+  return apiFetch<PolicyResponse>(`/api/policies/${policyId}`, {
+    method: 'PUT',
+    body: JSON.stringify(update),
+  });
+}
+
+/**
+ * Delete a policy
+ */
+export async function deletePolicy(policyId: string): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(`/api/policies/${policyId}`, {
     method: 'DELETE',
   });
 }

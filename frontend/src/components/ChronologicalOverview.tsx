@@ -60,6 +60,15 @@ function formatDateDisplay(date: Date | null): { date: string; year: string } {
   };
 }
 
+function getStringValue(field: any): string {
+  if (!field) return '';
+  if (typeof field === 'string') return field;
+  if (field.valueString) return field.valueString;
+  if (field.content) return field.content;
+  if (field.text) return field.text;
+  return '';
+}
+
 function buildTimelineFromData(application: ApplicationMetadata): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
   const fields = application.extracted_fields || {};
@@ -121,11 +130,14 @@ function buildTimelineFromData(application: ApplicationMetadata): TimelineEntry[
     const surgeryConfidence = surgeryField.confidence;
     // Handle new format: array of objects
     if (Array.isArray(surgeryField.value)) {
-      surgeryField.value.forEach((surgery: any) => {
-        const procedure = surgery.procedure || 'Unknown procedure';
-        const date = surgery.date || '';
-        const reason = surgery.reason || '';
-        const outcome = surgery.outcome || '';
+      surgeryField.value.forEach((item: any) => {
+        // Handle nested valueObject structure from Azure Content Understanding
+        const surgery = item.valueObject || item;
+        
+        const procedure = getStringValue(surgery.procedure) || 'Unknown procedure';
+        const date = getStringValue(surgery.date) || '';
+        const reason = getStringValue(surgery.reason) || '';
+        const outcome = getStringValue(surgery.outcome) || '';
         
         const title = `${procedure}${reason ? ' - ' + reason : ''}`;
         const details = `${procedure}\nDate: ${date}\nReason: ${reason}\nOutcome: ${outcome}`;
@@ -170,11 +182,14 @@ function buildTimelineFromData(application: ApplicationMetadata): TimelineEntry[
     const diagConfidence = diagField.confidence;
     // Handle new format: array of objects
     if (Array.isArray(diagField.value)) {
-      diagField.value.forEach((test: any) => {
-        const testType = test.testType || 'Unknown test';
-        const date = test.date || '';
-        const reason = test.reason || '';
-        const result = test.result || '';
+      diagField.value.forEach((item: any) => {
+        // Handle nested valueObject structure from Azure Content Understanding
+        const test = item.valueObject || item;
+        
+        const testType = getStringValue(test.testType) || 'Unknown test';
+        const date = getStringValue(test.date) || '';
+        const reason = getStringValue(test.reason) || '';
+        const result = getStringValue(test.result) || '';
         
         const title = `${testType}${result ? ' - ' + result : ''}`;
         const details = `${testType}\nDate: ${date}\nReason: ${reason}\nResult: ${result}`;

@@ -16,13 +16,17 @@ import {
   listAnalyzers,
   createAnalyzer,
   deleteAnalyzer,
+  getPolicies,
+  createPolicy as createPolicyApi,
+  updatePolicy as updatePolicyApi,
+  deletePolicy as deletePolicyApi,
 } from '@/lib/api';
-import type { ApplicationListItem, PromptsData, AnalyzerStatus, AnalyzerInfo, FieldSchema } from '@/lib/types';
+import type { ApplicationListItem, PromptsData, AnalyzerStatus, AnalyzerInfo, FieldSchema, UnderwritingPolicy, PolicyCriteriaItem } from '@/lib/types';
 import PersonaSelector from '@/components/PersonaSelector';
 import { usePersona } from '@/lib/PersonaContext';
 
 type ProcessingStep = 'idle' | 'uploading' | 'extracting' | 'analyzing' | 'complete' | 'error';
-type AdminTab = 'documents' | 'prompts' | 'analyzer';
+type AdminTab = 'documents' | 'prompts' | 'policies' | 'analyzer';
 
 interface ProcessingState {
   step: ProcessingStep;
@@ -70,6 +74,31 @@ export default function AdminPage() {
   const [analyzerProcessing, setAnalyzerProcessing] = useState(false);
   const [analyzerError, setAnalyzerError] = useState<string | null>(null);
   const [analyzerSuccess, setAnalyzerSuccess] = useState<string | null>(null);
+
+  // Policies state
+  const [policies, setPolicies] = useState<UnderwritingPolicy[]>([]);
+  const [policiesLoading, setPoliciesLoading] = useState(false);
+  const [policiesSaving, setPoliciesSaving] = useState(false);
+  const [policiesError, setPoliciesError] = useState<string | null>(null);
+  const [policiesSuccess, setPoliciesSuccess] = useState<string | null>(null);
+  const [selectedPolicy, setSelectedPolicy] = useState<UnderwritingPolicy | null>(null);
+  const [showNewPolicyForm, setShowNewPolicyForm] = useState(false);
+  const [policyFormData, setPolicyFormData] = useState({
+    id: '',
+    category: '',
+    subcategory: '',
+    name: '',
+    description: '',
+    criteria: [] as PolicyCriteriaItem[],
+    references: [] as string[],
+  });
+  
+  // Claims policy form state (different structure)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [claimsPolicyFormData, setClaimsPolicyFormData] = useState<Record<string, any>>({});
+  
+  // Helper to check if current persona is claims-related
+  const isClaimsPersona = currentPersona.includes('claims');
 
   // Load applications
   const loadApplications = useCallback(async () => {
@@ -136,6 +165,20 @@ export default function AdminPage() {
     }
   }, [currentPersona]);
 
+  // Load policies for the current persona
+  const loadPolicies = useCallback(async () => {
+    setPoliciesLoading(true);
+    setPoliciesError(null);
+    try {
+      const data = await getPolicies(currentPersona);
+      setPolicies(data.policies);
+    } catch (err) {
+      setPoliciesError(err instanceof Error ? err.message : 'Failed to load policies');
+    } finally {
+      setPoliciesLoading(false);
+    }
+  }, [currentPersona]);
+
   useEffect(() => {
     loadApplications();
   }, [loadApplications]);
@@ -147,10 +190,24 @@ export default function AdminPage() {
     }
   }, [activeTab, promptsData, promptsLoading, loadPrompts]);
 
+  // Load policies when tab becomes active
+  useEffect(() => {
+    if (activeTab === 'policies' && policies.length === 0 && !policiesLoading) {
+      loadPolicies();
+    }
+  }, [activeTab, policies.length, policiesLoading, loadPolicies]);
+
   // Reload prompts when persona changes
   useEffect(() => {
     if (activeTab === 'prompts') {
       setPromptsData(null); // Clear data to trigger reload
+    }
+  }, [currentPersona]);
+
+  // Reload policies when persona changes
+  useEffect(() => {
+    if (activeTab === 'policies') {
+      setPolicies([]); // Clear policies to trigger reload
     }
   }, [currentPersona]);
 
@@ -411,6 +468,126 @@ export default function AdminPage() {
     } finally {
       setAnalyzerProcessing(false);
     }
+  };
+
+  // Policy handlers
+  const handleSelectPolicy = (policy: UnderwritingPolicy) => {
+    setSelectedPolicy(policy);
+    if (isClaimsPersona) {
+      // Claims policies have different structure - store the raw policy data
+      setClaimsPolicyFormData({ ...policy });
+    } else {
+      // Underwriting policies
+      setPolicyFormData({
+        id: policy.id,
+        category: policy.category,
+        subcategory: policy.subcategory,
+        name: policy.name,
+        description: policy.description,
+        criteria: policy.criteria || [],
+        references: policy.references || [],
+      });
+    }
+    setShowNewPolicyForm(false);
+  };
+
+  const handleNewPolicyClick = () => {
+    setSelectedPolicy(null);
+    if (isClaimsPersona) {
+      setClaimsPolicyFormData({
+        id: '',
+        plan_name: '',
+        plan_type: 'HMO',
+        network: '',
+        deductible: { individual: '', family: '' },
+        oop_max: { individual: '', family: '' },
+        copays: { pcp_visit: '', specialist_visit: '', urgent_care: '', er_visit: '' },
+        coinsurance: '',
+        preventive_care: 'Covered 100%',
+        exclusions: [],
+      });
+    } else {
+      setPolicyFormData({
+        id: '',
+        category: '',
+        subcategory: '',
+        name: '',
+        description: '',
+        criteria: [],
+        references: [],
+      });
+    }
+    setShowNewPolicyForm(true);
+  };
+
+  const handleSavePolicy = async () => {
+    setPoliciesSaving(true);
+    setPoliciesError(null);
+    setPoliciesSuccess(null);
+
+    try {
+      if (showNewPolicyForm) {
+        // Create new policy
+        await createPolicyApi(policyFormData);
+        setPoliciesSuccess('Policy created successfully!');
+        setShowNewPolicyForm(false);
+      } else if (selectedPolicy) {
+        // Update existing policy
+        const { id, ...updateData } = policyFormData;
+        await updatePolicyApi(selectedPolicy.id, updateData);
+        setPoliciesSuccess('Policy updated successfully!');
+      }
+      await loadPolicies();
+      setTimeout(() => setPoliciesSuccess(null), 3000);
+    } catch (err) {
+      setPoliciesError(err instanceof Error ? err.message : 'Failed to save policy');
+    } finally {
+      setPoliciesSaving(false);
+    }
+  };
+
+  const handleDeletePolicy = async () => {
+    if (!selectedPolicy) return;
+    if (!confirm(`Are you sure you want to delete the policy "${selectedPolicy.name}"?`)) return;
+
+    setPoliciesSaving(true);
+    setPoliciesError(null);
+
+    try {
+      await deletePolicyApi(selectedPolicy.id);
+      setPoliciesSuccess('Policy deleted successfully');
+      setSelectedPolicy(null);
+      await loadPolicies();
+      setTimeout(() => setPoliciesSuccess(null), 3000);
+    } catch (err) {
+      setPoliciesError(err instanceof Error ? err.message : 'Failed to delete policy');
+    } finally {
+      setPoliciesSaving(false);
+    }
+  };
+
+  const handleAddCriteria = () => {
+    setPolicyFormData(prev => ({
+      ...prev,
+      criteria: [
+        ...prev.criteria,
+        { id: `${prev.id}-${prev.criteria.length + 1}`, condition: '', risk_level: 'Low', action: '', rationale: '' }
+      ]
+    }));
+  };
+
+  const handleRemoveCriteria = (index: number) => {
+    setPolicyFormData(prev => ({
+      ...prev,
+      criteria: prev.criteria.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleCriteriaChange = (index: number, field: keyof PolicyCriteriaItem, value: string) => {
+    setPolicyFormData(prev => ({
+      ...prev,
+      criteria: prev.criteria.map((c, i) => i === index ? { ...c, [field]: value } : c)
+    }));
   };
 
   const getStatusBadge = (status: string) => {
@@ -1179,6 +1356,439 @@ export default function AdminPage() {
     </div>
   );
 
+  // Render Policies Tab content
+  const renderPoliciesTab = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Policy List */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">
+            {isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
+          </h2>
+          <button
+            onClick={handleNewPolicyClick}
+            className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+          >
+            + New Policy
+          </button>
+        </div>
+
+        {policiesLoading ? (
+          <div className="text-center py-8 text-slate-500">Loading policies...</div>
+        ) : policies.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">No policies found</div>
+        ) : (
+          <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            {policies.map((policy) => (
+              <button
+                key={policy.id}
+                onClick={() => handleSelectPolicy(policy)}
+                className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                  selectedPolicy?.id === policy.id
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="font-medium text-slate-900 text-sm">{policy.name || policy.id}</div>
+                {isClaimsPersona ? (
+                  <div className="text-xs text-slate-500">
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {(policy as any).plan_type} • {(policy as any).network?.split(' ')[0] || 'N/A'}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">{policy.category} / {policy.subcategory}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Policy Editor */}
+      <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        {policiesError && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+            {policiesError}
+          </div>
+        )}
+        {policiesSuccess && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm">
+            {policiesSuccess}
+          </div>
+        )}
+
+        {(selectedPolicy || showNewPolicyForm) ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {showNewPolicyForm ? 'Create New Policy' : `Edit Policy: ${selectedPolicy?.name || selectedPolicy?.id}`}
+              </h2>
+              {selectedPolicy && !showNewPolicyForm && (
+                <button
+                  onClick={handleDeletePolicy}
+                  className="px-3 py-1.5 text-sm text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+
+            {isClaimsPersona ? (
+              /* Claims Policy Editor */
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Plan Name</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.plan_name || claimsPolicyFormData.name || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, plan_name: e.target.value, name: e.target.value }))}
+                      disabled={!showNewPolicyForm}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100"
+                      placeholder="e.g., HealthPlus Gold HMO"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Plan Type</label>
+                    <select
+                      value={claimsPolicyFormData.plan_type || 'HMO'}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, plan_type: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    >
+                      <option value="HMO">HMO</option>
+                      <option value="PPO">PPO</option>
+                      <option value="EPO">EPO</option>
+                      <option value="POS">POS</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Network</label>
+                  <input
+                    type="text"
+                    value={claimsPolicyFormData.network || ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, network: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    placeholder="e.g., In-Network Only (except emergencies)"
+                  />
+                </div>
+
+                {/* Deductible */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Deductible</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Individual</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.deductible?.individual || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          deductible: { ...prev.deductible, individual: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Family</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.deductible?.family || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          deductible: { ...prev.deductible, family: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$1,000"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Out-of-Pocket Max */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Out-of-Pocket Maximum</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Individual</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.oop_max?.individual || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          oop_max: { ...prev.oop_max, individual: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$3,000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Family</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.oop_max?.family || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          oop_max: { ...prev.oop_max, family: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$6,000"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Copays */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Copays</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">PCP Visit</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.copays?.pcp_visit || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          copays: { ...prev.copays, pcp_visit: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Specialist Visit</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.copays?.specialist_visit || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          copays: { ...prev.copays, specialist_visit: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$40"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Urgent Care</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.copays?.urgent_care || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          copays: { ...prev.copays, urgent_care: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">ER Visit</label>
+                      <input
+                        type="text"
+                        value={claimsPolicyFormData.copays?.er_visit || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          copays: { ...prev.copays, er_visit: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="$250"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Coinsurance</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.coinsurance || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, coinsurance: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="10% after deductible"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Preventive Care</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.preventive_care || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, preventive_care: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="Covered 100%"
+                    />
+                  </div>
+                </div>
+
+                {/* Exclusions */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Exclusions</label>
+                  <textarea
+                    value={Array.isArray(claimsPolicyFormData.exclusions) ? claimsPolicyFormData.exclusions.join('\n') : ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                      ...prev, 
+                      exclusions: e.target.value.split('\n').filter(Boolean)
+                    }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="One exclusion per line"
+                  />
+                </div>
+              </div>
+            ) : (
+              /* Underwriting Policy Editor */
+              <>
+                {/* Basic Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy ID</label>
+                    <input
+                      type="text"
+                      value={policyFormData.id}
+                      onChange={(e) => setPolicyFormData(prev => ({ ...prev, id: e.target.value }))}
+                      disabled={!showNewPolicyForm}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100"
+                      placeholder="e.g., CVD-BP-001"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={policyFormData.name}
+                      onChange={(e) => setPolicyFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="Policy name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <input
+                      type="text"
+                      value={policyFormData.category}
+                      onChange={(e) => setPolicyFormData(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., cardiovascular"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Subcategory</label>
+                    <input
+                      type="text"
+                      value={policyFormData.subcategory}
+                      onChange={(e) => setPolicyFormData(prev => ({ ...prev, subcategory: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., hypertension"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <textarea
+                    value={policyFormData.description}
+                    onChange={(e) => setPolicyFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="Policy description"
+                  />
+                </div>
+
+                {/* Criteria Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700">Criteria</label>
+                    <button
+                      type="button"
+                      onClick={handleAddCriteria}
+                      className="text-sm text-indigo-600 hover:text-indigo-700"
+                    >
+                      + Add Criteria
+                    </button>
+                  </div>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                    {policyFormData.criteria.map((criteria, index) => (
+                      <div key={index} className="p-3 border border-slate-200 rounded-lg bg-slate-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-mono text-slate-500">{criteria.id}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCriteria(index)}
+                            className="text-rose-500 hover:text-rose-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={criteria.condition}
+                            onChange={(e) => handleCriteriaChange(index, 'condition', e.target.value)}
+                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            placeholder="Condition"
+                          />
+                          <select
+                            value={criteria.risk_level}
+                            onChange={(e) => handleCriteriaChange(index, 'risk_level', e.target.value)}
+                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Low-Moderate">Low-Moderate</option>
+                            <option value="Moderate">Moderate</option>
+                            <option value="Moderate-High">Moderate-High</option>
+                            <option value="High">High</option>
+                          </select>
+                        </div>
+                        <input
+                          type="text"
+                          value={criteria.action}
+                          onChange={(e) => handleCriteriaChange(index, 'action', e.target.value)}
+                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs mb-2"
+                          placeholder="Action"
+                        />
+                        <textarea
+                          value={criteria.rationale}
+                          onChange={(e) => handleCriteriaChange(index, 'rationale', e.target.value)}
+                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs h-12"
+                          placeholder="Rationale"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Save Button */}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setSelectedPolicy(null);
+                  setShowNewPolicyForm(false);
+                }}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePolicy}
+                disabled={policiesSaving}
+                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {policiesSaving ? 'Saving...' : showNewPolicyForm ? 'Create Policy' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-16 text-slate-500">
+            <p className="text-lg mb-2">Select a policy to edit</p>
+            <p className="text-sm">Or click &quot;New Policy&quot; to create one</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Header */}
@@ -1251,6 +1861,16 @@ export default function AdminPage() {
               Prompt Catalog
             </button>
             <button
+              onClick={() => setActiveTab('policies')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'policies'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              {currentPersona.includes('claims') ? 'Claims Policies' : 'Underwriting Policies'}
+            </button>
+            <button
               onClick={() => setActiveTab('analyzer')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'analyzer'
@@ -1267,6 +1887,7 @@ export default function AdminPage() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {activeTab === 'documents' && renderDocumentsTab()}
         {activeTab === 'prompts' && renderPromptsTab()}
+        {activeTab === 'policies' && renderPoliciesTab()}
         {activeTab === 'analyzer' && renderAnalyzerTab()}
       </main>
     </div>

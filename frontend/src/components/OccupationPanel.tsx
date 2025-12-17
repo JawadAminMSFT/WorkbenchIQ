@@ -54,26 +54,79 @@ function safeStringify(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Parse hazardous activities from the complex nested structure
+ */
+function parseHazardousActivities(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const activities: string[] = [];
+    for (const item of value) {
+      const obj = item?.valueObject || item;
+      const activity = obj?.activity?.valueString || obj?.activity;
+      const details = obj?.details?.valueString || obj?.details;
+      if (activity) {
+        let text = activity;
+        if (details && details !== activity) {
+          text += ` (${details})`;
+        }
+        activities.push(text);
+      }
+    }
+    return activities.length > 0 ? activities.join('; ') : null;
+  }
+  return safeStringify(value);
+}
+
+/**
+ * Parse foreign travel, handling French responses
+ */
+function parseForeignTravel(value: unknown): string | null {
+  if (!value) return null;
+  const strVal = safeStringify(value);
+  if (!strVal) return null;
+  // Handle French "Non" or "Oui"
+  if (strVal.toLowerCase() === 'non') return 'None planned';
+  if (strVal.toLowerCase() === 'oui') return 'Yes - see details';
+  return strVal;
+}
+
 function parseOccupationData(application: ApplicationMetadata): OccupationData {
   const fields = application.extracted_fields || {};
   
+  // Try to get occupation from LLM outputs first
+  let occupationValue: string | null = null;
+  const customerProfile = (application.llm_outputs as any)?.application_summary?.customer_profile?.parsed;
+  if (customerProfile?.key_fields) {
+    const occField = customerProfile.key_fields.find((f: any) => f.label === 'Occupation');
+    if (occField?.value && occField.value !== 'Not specified') {
+      occupationValue = occField.value;
+    }
+  }
+  
+  // Fall back to extracted fields
   const occupationField = Object.values(fields).find(f => f.field_name === 'Occupation');
+  if (!occupationValue && occupationField?.value) {
+    occupationValue = safeStringify(occupationField.value);
+  }
+  
   const hazardousField = Object.values(fields).find(f => f.field_name === 'HazardousActivities');
   const travelField = Object.values(fields).find(f => f.field_name === 'ForeignTravelPlans');
 
   return {
     occupation: { 
-      value: occupationField?.value ? safeStringify(occupationField.value) : null,
+      value: occupationValue,
       confidence: occupationField?.confidence,
       citation: occupationField,
     },
     hazardousActivities: { 
-      value: hazardousField?.value ? safeStringify(hazardousField.value) : null,
+      value: parseHazardousActivities(hazardousField?.value),
       confidence: hazardousField?.confidence,
       citation: hazardousField,
     },
     foreignTravel: { 
-      value: travelField?.value ? safeStringify(travelField.value) : null,
+      value: parseForeignTravel(travelField?.value),
       confidence: travelField?.confidence,
       citation: travelField,
     },
