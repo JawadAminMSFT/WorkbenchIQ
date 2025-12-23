@@ -9,8 +9,10 @@ This directory contains Bicep Infrastructure as Code templates to deploy Azure A
    - User Access Administrator role (for RBAC assignments)
 
 2. **Required Tools:**
-   - Azure CLI (version 2.50.0 or later) - [Install](https://learn.microsoft.com/cli/azure/install-azure-cli)
+   - Azure CLI (version 2.56.0 or later) - [Install](https://learn.microsoft.com/cli/azure/install-azure-cli)
    - Bicep CLI (included with Azure CLI)
+   - jq (version 1.6+) - For JSON processing in bash scripts
+   - curl - For REST API calls (standard with most Linux distributions)
 
 3. **Quotas:**
    - Cognitive Services (S0 SKU)
@@ -36,14 +38,77 @@ The deployment creates:
 
 ```
 infra/
-├── main.bicep          # Main template (subscription scope)
-├── main.bicepparam     # Parameters (location only)
-└── README.md           # This file
+├── main.bicep                          # Main template (subscription scope)
+├── main.bicepparam                     # Parameters (location only)
+├── deploy.sh                           # Bash deployment orchestration script
+├── deploy.ps1                          # PowerShell deployment orchestration script (legacy)
+├── configure-content-understanding.sh  # Bash Content Understanding configuration
+├── configure-content-understanding.ps1 # PowerShell Content Understanding configuration (legacy)
+├── validate-deployment.sh              # Bash deployment validation script
+├── validate-deployment.ps1             # PowerShell deployment validation script (legacy)
+├── lib/
+│   └── common.sh                       # Common bash functions library
+└── README.md                           # This file
 ```
 
 ## 🚀 Quick Start
 
-### Option 1: PowerShell Deployment Script (Recommended)
+### Option 1: Bash Deployment Script (Recommended for Linux/macOS)
+
+The `deploy.sh` script provides an automated subscription-level deployment with validation and configuration.
+
+#### 1. Login to Azure
+
+```bash
+# Login to Azure
+az login
+
+# Set subscription (if you have multiple)
+az account set --subscription "your-subscription-id"
+
+# Verify context
+az account show
+```
+
+#### 2. Run Deployment
+
+```bash
+# Simple deployment (uses defaults: location=westus, resource group=rg-wbiq-dev)
+./deploy.sh
+
+# Specify location
+./deploy.sh --location "westus"
+
+# Skip validation
+./deploy.sh --location "eastus" --skip-validation
+
+# Skip confirmation prompt
+./deploy.sh --yes
+```
+
+The script will:
+- ✓ Display a deployment banner with planned resources
+- ✓ Ask for confirmation before proceeding (unless --yes flag is used)
+- ✓ Validate your Azure authentication
+- ✓ Check Bicep template syntax
+- ✓ Create the resource group (automatically based on template variables)
+- ✓ Deploy all infrastructure (10-15 minutes)
+- ✓ Configure Content Understanding defaults
+- ✓ Validate the deployment
+- ✓ Display deployment summary with endpoints and configuration
+
+**Note**: The resource group name (`rg-wbiq-dev`) is defined in the Bicep template variables. To customize it, edit the `baseName` and `environmentName` variables in [main.bicep](main.bicep).
+
+#### 3. Review Outputs
+
+The script will display:
+- Resource group name
+- AI Foundry endpoint
+- Managed Identity Client ID
+- Model deployment names
+- Environment variables for your `.env` file
+
+### Option 2: PowerShell Deployment Script (Windows)
 
 The `deploy.ps1` script provides an automated subscription-level deployment with validation and configuration.
 
@@ -95,7 +160,47 @@ The script will display:
 - Model deployment names
 - Environment variables for your `.env` file
 
-### Option 2: Azure CLI (Manual)
+## 🔧 Manual Configuration Scripts
+
+If you need to run configuration or validation independently:
+
+### Configure Content Understanding
+
+```bash
+# Bash
+./configure-content-understanding.sh \
+  --ai-foundry-endpoint "https://your-account.openai.azure.com/" \
+  --gpt4-deployment "gpt-4.1" \
+  --gpt4-mini-deployment "gpt-4.1-mini" \
+  --embedding-deployment "text-embedding-3-large"
+
+# PowerShell (Windows)
+.\configure-content-understanding.ps1 `
+  -AiFoundryEndpoint "https://your-account.openai.azure.com/" `
+  -ModelDeployments @{'gpt-4.1'='gpt-4.1'; 'gpt-4.1-mini'='gpt-4.1-mini'; 'text-embedding-3-large'='text-embedding-3-large'}
+```
+
+### Validate Deployment
+
+```bash
+# Bash
+./validate-deployment.sh \
+  --resource-group "rg-aifoundry-dev" \
+  --ai-foundry-account "wbiq-dev-aifoundry"
+
+# Bash with JSON output
+./validate-deployment.sh \
+  --resource-group "rg-aifoundry-dev" \
+  --ai-foundry-account "wbiq-dev-aifoundry" \
+  --json-output validation-report.json
+
+# PowerShell (Windows)
+.\validate-deployment.ps1 `
+  -ResourceGroupName "rg-aifoundry-dev" `
+  -AiFoundryAccountName "wbiq-dev-aifoundry"
+```
+
+### Option 3: Azure CLI (Manual)
 
 #### 1. Configure Location (Optional)
 
@@ -187,6 +292,35 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 ## 🔧 Troubleshooting
+
+### Prerequisites Issues
+
+**Missing jq:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install jq
+
+# macOS
+brew install jq
+
+# RHEL/CentOS
+sudo yum install jq
+```
+
+**Missing Azure CLI:**
+```bash
+# Install Azure CLI on Linux
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# macOS
+brew install azure-cli
+```
+
+**Azure CLI not logged in:**
+```bash
+az login
+az account show
+```
 
 ### Common Issues
 
