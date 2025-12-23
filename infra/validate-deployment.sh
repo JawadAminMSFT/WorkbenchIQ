@@ -10,9 +10,11 @@
 #     This script performs comprehensive validation of the deployment:
 #     - Resource existence and configuration
 #     - Model deployments and availability
-#     - Content Understanding configuration
 #     - RBAC role assignments
 #     - Network connectivity and endpoint health
+#
+#     Note: Content Understanding configuration is validated separately
+#     after running configure-content-understanding.sh
 #
 # PARAMETERS
 #     --resource-group <name>      Name of the resource group (required)
@@ -353,39 +355,8 @@ else
     add_test_result "Key Vault" "Warning" "Could not retrieve key vaults"
 fi
 
-# Test 8: Content Understanding Configuration
-write_test_header "Test 8: Content Understanding Configuration"
-if ACCESS_TOKEN=$(get_access_token "https://cognitiveservices.azure.com" 2>&1); then
-    VERIFY_URL="${ENDPOINT}contentunderstanding/defaults?api-version=2025-11-01"
-    
-    CONFIG_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$VERIFY_URL" \
-        -H "Authorization: Bearer $ACCESS_TOKEN")
-    
-    CONFIG_HTTP_CODE=$(echo "$CONFIG_RESPONSE" | tail -n1)
-    CONFIG_BODY=$(echo "$CONFIG_RESPONSE" | head -n-1)
-    
-    if [ "$CONFIG_HTTP_CODE" -ge 200 ] && [ "$CONFIG_HTTP_CODE" -lt 300 ]; then
-        DOC_PROCESSING=$(echo "$CONFIG_BODY" | jq -r '.modelDeployments.documentProcessing')
-        OCR=$(echo "$CONFIG_BODY" | jq -r '.modelDeployments.ocr')
-        EMBEDDING=$(echo "$CONFIG_BODY" | jq -r '.modelDeployments.embedding')
-        
-        write_test_success "Content Understanding is configured"
-        write_test_success "Document Processing: $DOC_PROCESSING"
-        write_test_success "OCR: $OCR"
-        write_test_success "Embedding: $EMBEDDING"
-        
-        add_test_result "Content Understanding Config" "Passed" "Configuration retrieved successfully"
-    else
-        write_test_warning "Failed to retrieve Content Understanding configuration (HTTP $CONFIG_HTTP_CODE)"
-        add_test_result "Content Understanding Config" "Warning" "Could not verify configuration"
-    fi
-else
-    write_test_warning "Could not obtain access token for verification"
-    add_test_result "Content Understanding Config" "Warning" "Could not verify configuration"
-fi
-
-# Test 9: Network Connectivity
-write_test_header "Test 9: Network Connectivity"
+# Test 8: Network Connectivity
+write_test_header "Test 8: Network Connectivity"
 if ACCESS_TOKEN=$(get_access_token "https://cognitiveservices.azure.com" 2>&1); then
     TEST_URL="${ENDPOINT}openai/deployments?api-version=2024-06-01"
     

@@ -220,7 +220,7 @@ write_info "This may take 10-15 minutes..."
 # Get current user's object ID for role assignment
 DEPLOYER_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "")
 if [ -n "$DEPLOYER_OBJECT_ID" ]; then
-    write_info "Detected deployer object ID: $DEPLOYER_OBJECT_ID"
+    write_info "Deployer has been identified."
 fi
 
 # Suppress Bicep CLI installation messages by setting environment variable
