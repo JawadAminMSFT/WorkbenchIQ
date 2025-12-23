@@ -4,7 +4,7 @@
 # deploy.sh
 # ======================================================================================
 # SYNOPSIS
-#     Deploys Azure AI Foundry v2 with Content Understanding infrastructure.
+#     Deploys Workbench IQ infrastructure.
 #
 # DESCRIPTION
 #     This script orchestrates the complete deployment process:
@@ -49,10 +49,10 @@ VALIDATE_SCRIPT="$SCRIPT_DIR/validate-deployment.sh"
 
 # Default parameters
 LOCATION="westus"
+SHORT_NAME="wbiq"
 TEMPLATE_FILE="$SCRIPT_DIR/main.bicep"
 PARAMETER_FILE="$SCRIPT_DIR/main.bicepparam"
 SKIP_VALIDATION=false
-SKIP_CONFIGURATION=false
 YES=false
 
 # ======================================================================================
@@ -63,20 +63,20 @@ show_usage() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Deploys Azure AI Foundry v2 with Content Understanding infrastructure.
+Deploys Workbench IQ infrastructure.
 
 Options:
     --location <region>              Azure region for deployment (default: westus)
+    --short-name <name>              Short name for resource prefix, 2-5 characters (default: wbiq)
     --template-file <path>           Path to main Bicep template (default: ./main.bicep)
     --parameter-file <path>          Path to Bicep parameters (default: ./main.bicepparam)
     --skip-validation                Skip post-deployment validation
-    --skip-configuration             Skip Content Understanding configuration
     --yes                            Skip confirmation prompt
     --help                           Show this help message
 
 Example:
     $(basename "$0")
-    $(basename "$0") --location "westus"
+    $(basename "$0") --location "westus" --short-name "myapp"
     $(basename "$0") --location "eastus" --skip-validation
 EOF
 }
@@ -86,6 +86,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --location)
             LOCATION="$2"
+            shift 2
+            ;;
+        --short-name)
+            SHORT_NAME="$2"
             shift 2
             ;;
         --template-file)
@@ -98,10 +102,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-validation)
             SKIP_VALIDATION=true
-            shift
-            ;;
-        --skip-configuration)
-            SKIP_CONFIGURATION=true
             shift
             ;;
         --yes)
@@ -127,7 +127,7 @@ done
 clear
 echo ""
 echo -e "${CYAN}========================================================================${NC}"
-echo -e "${CYAN}   Azure AI Foundry v2 with Content Understanding - Deployment Script   ${NC}"
+echo -e "${CYAN}   Workbench IQ - Deployment Script   ${NC}"
 echo -e "${CYAN}========================================================================${NC}"
 echo ""
 echo -e "${NC}This script will deploy:${NC}"
@@ -144,12 +144,12 @@ echo ""
 # ======================================================================================
 
 echo -e "${CYAN}Deployment Configuration:${NC}"
+echo -e "  Short Name: ${NC}$SHORT_NAME${NC}"
 echo -e "  Location: ${NC}$LOCATION${NC}"
 echo -e "  Template: ${NC}$TEMPLATE_FILE${NC}"
 echo -e "  Parameters: ${NC}$PARAMETER_FILE${NC}"
 echo ""
-echo -e "  ${NC}Note: Resource group name will be determined by the Bicep template${NC}"
-echo -e "        ${NC}(default: rg-wbiq-dev)${NC}"
+echo -e "  ${NC}Note: Resource group name will be: rg-$SHORT_NAME-dev${NC}"
 echo ""
 
 if [ "$YES" = false ]; then
@@ -217,15 +217,35 @@ DEPLOYMENT_NAME="aifoundry-cu-$(date +%Y%m%d%H%M%S)"
 write_info "Starting subscription-level deployment: $DEPLOYMENT_NAME"
 write_info "This may take 10-15 minutes..."
 
-if ! DEPLOYMENT_OUTPUT=$(az deployment sub create \
+# Get current user's object ID for role assignment
+DEPLOYER_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "")
+if [ -n "$DEPLOYER_OBJECT_ID" ]; then
+    write_info "Detected deployer object ID: $DEPLOYER_OBJECT_ID"
+fi
+
+# Suppress Bicep CLI installation messages by setting environment variable
+export AZURE_BICEP_USE_BINARY_FROM_PATH=true
+
+# Run deployment and capture output, filtering out non-JSON lines
+DEPLOYMENT_RAW_OUTPUT=$(az deployment sub create \
     --name "$DEPLOYMENT_NAME" \
     --location "$LOCATION" \
     --template-file "$TEMPLATE_FILE" \
     --parameters "$PARAMETER_FILE" \
+    --parameters baseName="$SHORT_NAME" \
+    --parameters deployerObjectId="$DEPLOYER_OBJECT_ID" \
     --query '{provisioningState: properties.provisioningState, outputs: properties.outputs}' \
-    -o json 2>&1); then
+    --only-show-errors \
+    -o json 2>&1)
+
+DEPLOYMENT_EXIT_CODE=$?
+
+# Extract only the JSON part (starts with '{' or '[')
+DEPLOYMENT_OUTPUT=$(echo "$DEPLOYMENT_RAW_OUTPUT" | sed -n '/^[{[]/,$p')
+
+if [ $DEPLOYMENT_EXIT_CODE -ne 0 ]; then
     write_error "Deployment failed"
-    echo "$DEPLOYMENT_OUTPUT"
+    echo "$DEPLOYMENT_RAW_OUTPUT"
     exit 1
 fi
 
@@ -252,42 +272,13 @@ else
 fi
 
 # ======================================================================================
-# PHASE 4: CONTENT UNDERSTANDING CONFIGURATION
+# PHASE 4: CONTENT UNDERSTANDING CONFIGURATION (SKIPPED)
 # ======================================================================================
 
-if [ "$SKIP_CONFIGURATION" = false ]; then
-    write_header "Phase 4: Configuring Content Understanding Defaults"
-    
-    if [ ! -f "$CONFIG_SCRIPT" ]; then
-        write_warning "Configuration script not found: $CONFIG_SCRIPT"
-        write_warning "Skipping Content Understanding configuration"
-    else
-        write_info "Running Content Understanding configuration..."
-        
-        # Extract model deployment names
-        GPT4_DEPLOYMENT=$(echo "$MODEL_DEPLOYMENTS" | jq -r '.["gpt-4.1"]')
-        GPT4_MINI_DEPLOYMENT=$(echo "$MODEL_DEPLOYMENTS" | jq -r '.["gpt-4.1-mini"]')
-        EMBEDDING_DEPLOYMENT=$(echo "$MODEL_DEPLOYMENTS" | jq -r '.["text-embedding-3-large"]')
-        
-        if bash "$CONFIG_SCRIPT" \
-            --ai-foundry-endpoint "$AI_FOUNDRY_ENDPOINT" \
-            --gpt4-deployment "$GPT4_DEPLOYMENT" \
-            --gpt4-mini-deployment "$GPT4_MINI_DEPLOYMENT" \
-            --embedding-deployment "$EMBEDDING_DEPLOYMENT"; then
-            write_success "Content Understanding configured successfully"
-        else
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 0 ]; then
-                write_success "Content Understanding configured successfully"
-            else
-                write_warning "Content Understanding configuration completed with warnings"
-                write_warning "You can run configure-content-understanding.sh manually later"
-            fi
-        fi
-    fi
-else
-    write_info "Skipping Content Understanding configuration (--skip-configuration flag set)"
-fi
+# Content Understanding configuration is now a separate manual step
+# This allows role assignments time to propagate before configuration
+write_info "Skipping Content Understanding configuration (run separately)"
+write_info "Role assignments may need a few minutes to propagate"
 
 # ======================================================================================
 # PHASE 5: VALIDATION
@@ -342,8 +333,14 @@ echo ""
 write_success "Deployment completed successfully!"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "${NC}1. Update your .env file with the environment configuration above${NC}"
-echo -e "${NC}2. Test the Content Understanding endpoint using the API${NC}"
-echo -e "${NC}3. Review the deployment validation results${NC}"
+echo -e "${NC}1. Wait 2-3 minutes for role assignments to propagate${NC}"
+echo -e "${NC}2. Configure Content Understanding by running:${NC}"
+echo -e "${CYAN}   ./configure-content-understanding.sh \\${NC}"
+echo -e "${CYAN}     --ai-foundry-endpoint \"$AI_FOUNDRY_ENDPOINT\" \\${NC}"
+echo -e "${CYAN}     --gpt4-deployment \"gpt-4.1\" \\${NC}"
+echo -e "${CYAN}     --gpt4-mini-deployment \"gpt-4.1-mini\" \\${NC}"
+echo -e "${CYAN}     --embedding-deployment \"text-embedding-3-large\"${NC}"
+echo -e "${NC}3. Update your .env file with the environment configuration above${NC}"
+echo -e "${NC}4. Review the deployment validation results${NC}"
 
 exit 0

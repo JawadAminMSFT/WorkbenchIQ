@@ -159,16 +159,17 @@ write_success "Configuration parameters validated"
 
 write_info "Building Content Understanding configuration payload..."
 
-# Build the configuration object matching setup_content_understanding.py
+# Build the configuration object matching the API format:
+# Map model names to deployment names
 CONFIG_JSON=$(jq -n \
-    --arg doc_processing "$GPT4_DEPLOYMENT" \
-    --arg ocr "$GPT4_MINI_DEPLOYMENT" \
+    --arg gpt41 "$GPT4_DEPLOYMENT" \
+    --arg gpt41mini "$GPT4_MINI_DEPLOYMENT" \
     --arg embedding "$EMBEDDING_DEPLOYMENT" \
     '{
         modelDeployments: {
-            documentProcessing: $doc_processing,
-            ocr: $ocr,
-            embedding: $embedding
+            "gpt-4.1": $gpt41,
+            "gpt-4.1-mini": $gpt41mini,
+            "text-embedding-3-large": $embedding
         }
     }')
 
@@ -236,32 +237,32 @@ VERIFY_BODY=$(echo "$VERIFY_RESPONSE" | head -n-1)
 if [ "$VERIFY_HTTP_CODE" -ge 200 ] && [ "$VERIFY_HTTP_CODE" -lt 300 ]; then
     write_success "Configuration verified successfully"
     
-    # Extract configured values
-    DOC_PROCESSING=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments.documentProcessing')
-    OCR=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments.ocr')
-    EMBEDDING=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments.embedding')
+    # Extract configured values (using model names as keys per API spec)
+    GPT41_CONFIGURED=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments["gpt-4.1"]')
+    GPT41_MINI_CONFIGURED=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments["gpt-4.1-mini"]')
+    EMBEDDING_CONFIGURED=$(echo "$VERIFY_BODY" | jq -r '.modelDeployments["text-embedding-3-large"]')
     
     echo ""
     echo -e "${CYAN}Current Configuration:${NC}"
-    echo -e "  Document Processing: ${NC}$DOC_PROCESSING${NC}"
-    echo -e "  OCR: ${NC}$OCR${NC}"
-    echo -e "  Embedding: ${NC}$EMBEDDING${NC}"
+    echo -e "  gpt-4.1 → ${NC}$GPT41_CONFIGURED${NC}"
+    echo -e "  gpt-4.1-mini → ${NC}$GPT41_MINI_CONFIGURED${NC}"
+    echo -e "  text-embedding-3-large → ${NC}$EMBEDDING_CONFIGURED${NC}"
     
     # Validate configuration matches
     IS_VALID=true
     
-    if [ "$DOC_PROCESSING" != "$GPT4_DEPLOYMENT" ]; then
-        write_warning "Document Processing model mismatch"
+    if [ "$GPT41_CONFIGURED" != "$GPT4_DEPLOYMENT" ]; then
+        write_warning "GPT-4.1 model deployment mismatch"
         IS_VALID=false
     fi
     
-    if [ "$OCR" != "$GPT4_MINI_DEPLOYMENT" ]; then
-        write_warning "OCR model mismatch"
+    if [ "$GPT41_MINI_CONFIGURED" != "$GPT4_MINI_DEPLOYMENT" ]; then
+        write_warning "GPT-4.1-mini model deployment mismatch"
         IS_VALID=false
     fi
     
-    if [ "$EMBEDDING" != "$EMBEDDING_DEPLOYMENT" ]; then
-        write_warning "Embedding model mismatch"
+    if [ "$EMBEDDING_CONFIGURED" != "$EMBEDDING_DEPLOYMENT" ]; then
+        write_warning "Embedding model deployment mismatch"
         IS_VALID=false
     fi
     

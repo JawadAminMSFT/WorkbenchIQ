@@ -52,7 +52,7 @@ infra/
 
 ### Deployment Script
 
-The `deploy.sh` script provides an automated subscription-level deployment with validation and configuration.
+The `deploy.sh` script provides an automated subscription-level deployment with validation. **Content Understanding configuration is a separate manual step** (see step 4 below).
 
 #### 1. Login to Azure
 
@@ -70,14 +70,17 @@ az account show
 #### 2. Run Deployment
 
 ```bash
-# Simple deployment (uses defaults: location=westus, resource group=rg-wbiq-dev)
+# Simple deployment (uses defaults: short-name=wbiq, location=westus)
 ./deploy.sh
 
-# Specify location
-./deploy.sh --location "westus"
+# Specify custom short name (2-5 characters)
+./deploy.sh --short-name "myapp"
+
+# Specify location and short name
+./deploy.sh --short-name "myapp" --location "eastus"
 
 # Skip validation
-./deploy.sh --location "eastus" --skip-validation
+./deploy.sh --skip-validation
 
 # Skip confirmation prompt
 ./deploy.sh --yes
@@ -88,13 +91,13 @@ The script will:
 - ✓ Ask for confirmation before proceeding (unless --yes flag is used)
 - ✓ Validate your Azure authentication
 - ✓ Check Bicep template syntax
-- ✓ Create the resource group (automatically based on template variables)
+- ✓ Create the resource group (based on short-name parameter)
 - ✓ Deploy all infrastructure (10-15 minutes)
-- ✓ Configure Content Understanding defaults
+- ✓ Assign necessary RBAC roles for Content Understanding
 - ✓ Validate the deployment
-- ✓ Display deployment summary with endpoints and configuration
+- ✓ Display deployment summary with next steps
 
-**Note**: The resource group name (`rg-wbiq-dev`) is defined in the Bicep template variables. To customize it, edit the `baseName` and `environmentName` variables in [main.bicep](main.bicep).
+**Note**: Resource naming uses the pattern `rg-{shortName}-dev`. The default short name is `wbiq` but can be customized with the `--short-name` parameter (2-5 characters).
 
 #### 3. Review Outputs
 
@@ -104,26 +107,42 @@ The script will display:
 - Managed Identity Client ID
 - Model deployment names
 - Environment variables for your `.env` file
+- **Command to run for Content Understanding configuration**
 
-## 🔧 Manual Configuration Scripts
+#### 4. Configure Content Understanding (Separate Step)
 
-If you need to run configuration or validation independently:
+**Wait 2-3 minutes** after deployment completes for RBAC role assignments to propagate, then run:
 
-### Configure Content Understanding
+```bash
+./configure-content-understanding.sh \
+  --ai-foundry-endpoint "https://your-account-name.openai.azure.com" \
+  --gpt4-deployment "gpt-4.1" \
+  --gpt4-mini-deployment "gpt-4.1-mini" \
+  --embedding-deployment "text-embedding-3-large"
+```
+
+**Note**: The exact command with your endpoint will be displayed at the end of the deployment script output.
+
+**Why separate?** Role assignments need time to propagate through Azure AD. Running this configuration immediately after deployment may result in permission errors.
+
+## 🔧 Configuration & Validation Scripts
+
+### Configure Content Understanding (Required)
+
+**This must be run after the main deployment** (see Quick Start step 4 above).
 
 ```bash
 # Bash
 ./configure-content-understanding.sh \
-  --ai-foundry-endpoint "https://your-account.openai.azure.com/" \
+  --ai-foundry-endpoint "https://your-account.openai.azure.com" \
   --gpt4-deployment "gpt-4.1" \
   --gpt4-mini-deployment "gpt-4.1-mini" \
   --embedding-deployment "text-embedding-3-large"
-
-# PowerShell (Windows)
-.\configure-content-understanding.ps1 `
-  -AiFoundryEndpoint "https://your-account.openai.azure.com/" `
-  -ModelDeployments @{'gpt-4.1'='gpt-4.1'; 'gpt-4.1-mini'='gpt-4.1-mini'; 'text-embedding-3-large'='text-embedding-3-large'}
 ```
+
+**Troubleshooting**: If you get a `PermissionDenied` error:
+- Wait 2-3 more minutes for role assignments to propagate
+- Verify your user has the "Cognitive Services OpenAI Contributor" role on the AI Foundry account
 
 ### Validate Deployment
 
@@ -149,27 +168,31 @@ Edit [main.bicepparam](main.bicepparam):
 param location = 'eastus'  // Change to your preferred region
 ```
 
-**Default values** (edit [main.bicep](main.bicep) to customize):
-- `baseName`: `wbiq`
-- `environmentName`: `dev`
-- `resourceGroupName`: `rg-wbiq-dev` (auto-created)
+**Default values** (can be passed as parameters to deployment):
+- `baseName`: `wbiq` (pass with `--parameters baseName="yourname"`)
+- `environmentName`: `dev` (hardcoded in template)
+- `resourceGroupName`: `rg-{baseName}-dev` (auto-created)
 
 #### 2. Login to Azure
 
 ```bash
 # Login to Azure
-./configure-content-understanding.sh \
-  --ai-foundry-endpoint "https://your-account.openai.azure.com/" \
-  --gpt4-deployment "gpt-4.1" \
-  --gpt4-mini-deployment "gpt-4.1-mini" \
-  --embedding-deployment "text-embedding-3-large"
+az login
+
+# Set subscription (if you have multiple)
+az account set --subscription "your-subscription-id"
+```
+
+#### 3. Deploy Infrastructure
+
 ```bash
 # Deploy at subscription level (creates resource group automatically)
 az deployment sub create \
   --name "wbiq-deployment" \
   --location eastus \
   --template-file main.bicep \
-  --parameters main.bicepparam
+  --parameters main.bicepparam \
+  --parameters baseName="wbiq"
 ```
 
 #### 4. Get Deployment Outputs
@@ -188,7 +211,19 @@ az deployment sub show \
 
 Update your `.env` file with the output values.
 
-## � Validation
+#### 5. Configure Content Understanding
+
+**Wait 2-3 minutes** for role assignments to propagate, then run:
+
+```bash
+./configure-content-understanding.sh \
+  --ai-foundry-endpoint "https://your-account.openai.azure.com" \
+  --gpt4-deployment "gpt-4.1" \
+  --gpt4-mini-deployment "gpt-4.1-mini" \
+  --embedding-deployment "text-embedding-3-large"
+```
+
+## 🔍 Validation
 
 ```bash
 # Restore and validate Bicep template

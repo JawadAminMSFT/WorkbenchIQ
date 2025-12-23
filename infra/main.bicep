@@ -18,11 +18,17 @@ targetScope = 'subscription'
 @description('Azure region for resource deployment')
 param location string = 'westus'
 
+@description('Short name used as prefix for all resources (2-5 characters)')
+@minLength(2)
+@maxLength(5)
+param baseName string = 'wbiq'
+
+@description('Object ID of the user running the deployment (optional, for Content Understanding permissions)')
+param deployerObjectId string = ''
+
 // ======================================================================================
 // VARIABLES
 // ======================================================================================
-
-var baseName = 'wbiq'
 var environmentName = 'dev'
 var resourceGroupName = 'rg-${baseName}-${environmentName}'
 var resourcePrefix = '${baseName}-${environmentName}'
@@ -47,10 +53,10 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 
 // Resource names
 var managedIdentityName = '${resourcePrefix}-identity'
-var storageAccountName = toLower('${take(baseName, 4)}${take(uniqueSuffix, 8)}st')
-var keyVaultName = '${take(baseName, 4)}-${take(uniqueSuffix, 6)}-kv'
-var aiFoundryAccountName = '${take(baseName, 4)}-${environmentName}-ai'
-var aiFoundryProjectName = '${take(baseName, 3)}-${take(environmentName, 1)}-prj'
+var storageAccountName = toLower('${take(baseName, 5)}${take(uniqueSuffix, 5)}st')
+var keyVaultName = '${take(baseName, 5)}-${take(uniqueSuffix, 5)}-kv'
+var aiFoundryAccountName = '${take(baseName, 5)}-${environmentName}-ai'
+var aiFoundryProjectName = '${take(baseName, 5)}-${take(environmentName, 1)}-prj'
 
 // Model deployment names
 var gpt41DeploymentName = 'gpt-4.1'
@@ -135,13 +141,17 @@ module aiFoundry 'br/public:avm/ptn/ai-ml/ai-foundry:0.6.0' = {
         displayName: 'Content Understanding Project'
         desc: 'AI Foundry project for Content Understanding workloads'
       }
-      roleAssignments: [
+      roleAssignments: concat([
         {
           principalId: managedIdentity.outputs.principalId
           roleDefinitionIdOrName: 'Cognitive Services User'
           principalType: 'ServicePrincipal'
         }
-      ]
+      ], !empty(deployerObjectId) ? [{
+        principalId: deployerObjectId
+        roleDefinitionIdOrName: 'Cognitive Services OpenAI Contributor'
+        principalType: 'User'
+      }] : [])
     }
     aiModelDeployments: [
       {
