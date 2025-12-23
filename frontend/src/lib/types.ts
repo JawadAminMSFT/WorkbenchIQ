@@ -95,6 +95,56 @@ export interface LLMOutputs {
   [key: string]: Record<string, SubsectionOutput | undefined> | undefined;
 }
 
+// Risk Analysis types (separate from standard LLM outputs)
+export interface PolicyCitation {
+  policy_id: string;
+  criteria_id?: string;
+  policy_name: string;
+  matched_condition: string;
+  applied_action?: string;
+  rationale?: string;
+}
+
+export interface RiskFinding {
+  category: string;
+  finding: string;
+  policy_id: string;
+  criteria_id?: string;
+  policy_name: string;
+  matched_condition?: string;
+  risk_level: string;
+  action: string;
+  rationale?: string;
+}
+
+export interface PremiumRecommendation {
+  base_decision: string;
+  loading_percentage: string;
+  exclusions?: string[];
+  conditions?: string[];
+}
+
+export interface RiskAnalysisResult {
+  overall_risk_level: string;
+  overall_rationale: string;
+  findings: RiskFinding[];
+  premium_recommendation: PremiumRecommendation;
+  underwriting_action: string;
+  confidence?: string;
+  data_gaps?: string[];
+}
+
+export interface RiskAnalysis {
+  timestamp?: string;
+  raw?: string;
+  parsed?: RiskAnalysisResult;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
 export interface ApplicationMetadata {
   id: string;
   created_at: string;
@@ -109,6 +159,7 @@ export interface ApplicationMetadata {
   extracted_fields?: Record<string, ExtractedField>;
   confidence_summary?: ConfidenceSummary;
   analyzer_id_used?: string;
+  risk_analysis?: RiskAnalysis;
 }
 
 export interface ApplicationListItem {
@@ -281,4 +332,99 @@ export interface FieldSchema {
     fields: Record<string, FieldDefinition>;
   };
   field_count: number;
+}
+
+// ============================================================================
+// Underwriting Policy Types
+// ============================================================================
+
+/**
+ * Criteria within an underwriting policy
+ */
+export interface PolicyCriteriaItem {
+  id: string;
+  condition: string;
+  risk_level: string;
+  action: string;
+  rationale: string;
+}
+
+/**
+ * Modifying factor for a policy
+ */
+export interface ModifyingFactor {
+  factor: string;
+  impact: string;
+}
+
+/**
+ * Underwriting policy definition
+ */
+export interface UnderwritingPolicy {
+  id: string;
+  category: string;
+  subcategory: string;
+  name: string;
+  description: string;
+  criteria: PolicyCriteriaItem[];
+  modifying_factors?: ModifyingFactor[];
+  references?: string[];
+}
+
+/**
+ * Request to create a new policy
+ */
+export interface PolicyCreateRequest {
+  id: string;
+  category: string;
+  subcategory: string;
+  name: string;
+  description: string;
+  criteria?: PolicyCriteriaItem[];
+  modifying_factors?: ModifyingFactor[];
+  references?: string[];
+}
+
+/**
+ * Request to update an existing policy
+ */
+export interface PolicyUpdateRequest {
+  category?: string;
+  subcategory?: string;
+  name?: string;
+  description?: string;
+  criteria?: PolicyCriteriaItem[];
+  modifying_factors?: ModifyingFactor[];
+  references?: string[];
+}
+
+/**
+ * Policy citation from LLM analysis
+ */
+export interface PolicyCitation {
+  policy_id: string;
+  policy_name: string;
+  criteria_applied: string;
+  finding: string;
+  rating_impact: string;
+}
+
+/**
+ * Extended parsed output with policy citations
+ */
+export interface ParsedOutputWithCitations extends ParsedOutput {
+  policy_citations?: PolicyCitation[];
+}
+
+/**
+ * Response from policy API endpoints
+ */
+export interface PoliciesResponse {
+  policies: UnderwritingPolicy[];
+  total: number;
+}
+
+export interface PolicyResponse {
+  policy: UnderwritingPolicy;
+  message?: string;
 }

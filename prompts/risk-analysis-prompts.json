@@ -1,0 +1,80 @@
+{
+  "version": "1.0",
+  "description": "Risk analysis prompts that apply underwriting policies to extracted application data",
+  "prompts": {
+    "overall_risk_assessment": {
+      "prompt": "You are an expert life insurance underwriter conducting a policy-based risk assessment.\n\nYou have been provided with:\n1. The extracted application data (customer profile, medical history, family history)\n2. The official underwriting policy manual with specific criteria\n\nYour task is to evaluate the applicant against ALL relevant policies and provide a comprehensive risk assessment.\n\n## UNDERWRITING POLICIES\n\n{underwriting_policies}\n\n## EXTRACTED APPLICATION DATA\n\n{application_data}\n\n## INSTRUCTIONS\n\n1. Review each piece of extracted data against the relevant policy criteria\n2. For EACH finding, cite the specific policy ID and criteria that applies\n3. Determine the overall risk level based on the cumulative findings\n4. Provide a clear recommendation with premium loading if applicable\n\nReturn STRICT JSON:\n\n{\n  \"overall_risk_level\": \"Low | Low-Moderate | Moderate | Moderate-High | High\",\n  \"overall_rationale\": \"2-3 sentence summary of why this overall risk level was assigned.\",\n  \"findings\": [\n    {\n      \"category\": \"cardiovascular | family_history | lifestyle | metabolic | other\",\n      \"finding\": \"Description of the finding from the application\",\n      \"policy_id\": \"CVD-BP-001\",\n      \"criteria_id\": \"CVD-BP-001-C\",\n      \"policy_name\": \"Blood Pressure Risk Assessment\",\n      \"matched_condition\": \"The specific condition from the policy that was matched\",\n      \"risk_level\": \"Low | Low-Moderate | Moderate | Moderate-High | High\",\n      \"action\": \"The recommended action from the policy\",\n      \"rationale\": \"Why this policy criteria applies to this finding\"\n    }\n  ],\n  \"premium_recommendation\": {\n    \"base_decision\": \"Standard | Rated | Decline | Defer\",\n    \"loading_percentage\": \"0% | +25% | +50% | +75% | +100% | etc.\",\n    \"exclusions\": [\"List any recommended exclusions\"],\n    \"conditions\": [\"List any conditions for acceptance\"]\n  },\n  \"underwriting_action\": \"Final recommendation and next steps.\",\n  \"confidence\": \"High | Medium | Low\",\n  \"data_gaps\": [\"List any missing information that would improve the assessment\"]\n}",
+      "json_schema": {
+        "type": "object",
+        "properties": {
+          "overall_risk_level": { "type": "string" },
+          "overall_rationale": { "type": "string" },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": { "type": "string" },
+                "finding": { "type": "string" },
+                "policy_id": { "type": "string" },
+                "criteria_id": { "type": "string" },
+                "policy_name": { "type": "string" },
+                "matched_condition": { "type": "string" },
+                "risk_level": { "type": "string" },
+                "action": { "type": "string" },
+                "rationale": { "type": "string" }
+              },
+              "required": ["category", "finding", "policy_id", "policy_name", "risk_level", "action"]
+            }
+          },
+          "premium_recommendation": {
+            "type": "object",
+            "properties": {
+              "base_decision": { "type": "string" },
+              "loading_percentage": { "type": "string" },
+              "exclusions": { "type": "array", "items": { "type": "string" } },
+              "conditions": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "underwriting_action": { "type": "string" },
+          "confidence": { "type": "string" },
+          "data_gaps": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["overall_risk_level", "overall_rationale", "findings", "premium_recommendation", "underwriting_action"]
+      }
+    },
+    "cardiovascular_risk": {
+      "prompt": "You are an expert life insurance underwriter specializing in cardiovascular risk assessment.\n\nEvaluate the applicant's cardiovascular risk using the provided policies.\n\n## UNDERWRITING POLICIES\n\n{underwriting_policies}\n\n## APPLICATION DATA\n\n{application_data}\n\n## FOCUS AREAS\n- Blood pressure readings and hypertension status (CVD-BP-001)\n- Cholesterol levels and lipid profile (CVD-CHOL-001)\n- Family history of cardiovascular disease (FAM-CVD-001)\n\nReturn STRICT JSON:\n\n{\n  \"risk_level\": \"Low | Low-Moderate | Moderate | Moderate-High | High\",\n  \"summary\": \"2-3 sentence cardiovascular risk summary.\",\n  \"blood_pressure_assessment\": {\n    \"finding\": \"Description of BP findings\",\n    \"policy_applied\": \"CVD-BP-001\",\n    \"criteria_matched\": \"Specific criteria ID\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"cholesterol_assessment\": {\n    \"finding\": \"Description of lipid findings\",\n    \"policy_applied\": \"CVD-CHOL-001\",\n    \"criteria_matched\": \"Specific criteria ID\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"family_history_assessment\": {\n    \"finding\": \"Description of family CVD history\",\n    \"policy_applied\": \"FAM-CVD-001\",\n    \"criteria_matched\": \"Specific criteria ID\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"combined_loading\": \"+0% | +25% | +50% | etc.\",\n  \"recommendations\": [\"List of recommendations\"]\n}",
+      "json_schema": {
+        "type": "object",
+        "properties": {
+          "risk_level": { "type": "string" },
+          "summary": { "type": "string" },
+          "blood_pressure_assessment": { "type": "object" },
+          "cholesterol_assessment": { "type": "object" },
+          "family_history_assessment": { "type": "object" },
+          "combined_loading": { "type": "string" },
+          "recommendations": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["risk_level", "summary"]
+      }
+    },
+    "lifestyle_risk": {
+      "prompt": "You are an expert life insurance underwriter specializing in lifestyle risk assessment.\n\nEvaluate the applicant's lifestyle risk factors using the provided policies.\n\n## UNDERWRITING POLICIES\n\n{underwriting_policies}\n\n## APPLICATION DATA\n\n{application_data}\n\n## FOCUS AREAS\n- Tobacco use (LIFE-TOB-001)\n- Alcohol consumption (LIFE-ALC-001)\n- BMI and weight (META-BMI-001)\n- Occupation hazards (LIFE-OCC-001)\n\nReturn STRICT JSON:\n\n{\n  \"risk_level\": \"Low | Low-Moderate | Moderate | Moderate-High | High\",\n  \"summary\": \"2-3 sentence lifestyle risk summary.\",\n  \"tobacco_assessment\": {\n    \"status\": \"Never | Former | Current\",\n    \"finding\": \"Details\",\n    \"policy_applied\": \"LIFE-TOB-001\",\n    \"criteria_matched\": \"Specific criteria\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Smoker rates | Non-smoker rates | etc.\"\n  },\n  \"alcohol_assessment\": {\n    \"status\": \"None | Social | Moderate | Heavy\",\n    \"finding\": \"Details\",\n    \"policy_applied\": \"LIFE-ALC-001\",\n    \"criteria_matched\": \"Specific criteria\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"bmi_assessment\": {\n    \"bmi\": \"Calculated or stated BMI\",\n    \"category\": \"Underweight | Normal | Overweight | Obese\",\n    \"policy_applied\": \"META-BMI-001\",\n    \"criteria_matched\": \"Specific criteria\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"occupation_assessment\": {\n    \"occupation\": \"Stated occupation\",\n    \"hazard_class\": \"1 | 2 | 3 | 4\",\n    \"policy_applied\": \"LIFE-OCC-001\",\n    \"risk_contribution\": \"Low | Moderate | High\",\n    \"action\": \"Recommended action\"\n  },\n  \"combined_loading\": \"+0% | +25% | +50% | etc.\",\n  \"recommendations\": [\"List of recommendations\"]\n}",
+      "json_schema": {
+        "type": "object",
+        "properties": {
+          "risk_level": { "type": "string" },
+          "summary": { "type": "string" },
+          "tobacco_assessment": { "type": "object" },
+          "alcohol_assessment": { "type": "object" },
+          "bmi_assessment": { "type": "object" },
+          "occupation_assessment": { "type": "object" },
+          "combined_loading": { "type": "string" },
+          "recommendations": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["risk_level", "summary"]
+      }
+    }
+  }
+}

@@ -1,0 +1,760 @@
+{
+  "version": "1.0",
+  "effective_date": "2025-01-01",
+  "description": "Life and Health Insurance Underwriting Manual - Risk Assessment Guidelines",
+  "last_updated": "2025-01-01",
+  "policies": [
+    {
+      "id": "CVD-BP-001",
+      "category": "cardiovascular",
+      "subcategory": "hypertension",
+      "name": "Blood Pressure Risk Assessment",
+      "description": "Guidelines for evaluating blood pressure readings in life insurance applications",
+      "criteria": [
+        {
+          "id": "CVD-BP-001-A",
+          "condition": "Systolic < 120 AND Diastolic < 80",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Normal blood pressure per AHA guidelines. No additional mortality risk."
+        },
+        {
+          "id": "CVD-BP-001-B",
+          "condition": "Systolic 120-129 AND Diastolic < 80",
+          "risk_level": "Low",
+          "action": "Standard rates with monitoring note",
+          "rationale": "Elevated blood pressure. Minimal additional risk if no other factors."
+        },
+        {
+          "id": "CVD-BP-001-C",
+          "condition": "Systolic 130-139 OR Diastolic 80-89",
+          "risk_level": "Low-Moderate",
+          "action": "Standard rates if controlled on single medication; otherwise +25% loading",
+          "rationale": "Stage 1 hypertension. Acceptable if well-controlled with good compliance."
+        },
+        {
+          "id": "CVD-BP-001-D",
+          "condition": "Systolic 140-159 OR Diastolic 90-99",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading depending on control and duration",
+          "rationale": "Stage 2 hypertension. Significant cardiovascular risk requiring premium adjustment."
+        },
+        {
+          "id": "CVD-BP-001-E",
+          "condition": "Systolic 160-179 OR Diastolic 100-109",
+          "risk_level": "Moderate-High",
+          "action": "+50-75% loading; require recent specialist review",
+          "rationale": "Severe hypertension with elevated stroke and cardiac event risk."
+        },
+        {
+          "id": "CVD-BP-001-F",
+          "condition": "Systolic >= 180 OR Diastolic >= 110",
+          "risk_level": "High",
+          "action": "Defer pending control, or decline if uncontrolled",
+          "rationale": "Hypertensive crisis range. Unacceptable mortality risk without documented control."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Duration of condition",
+          "impact": "Longer duration with good control is favorable; recent diagnosis needs monitoring"
+        },
+        {
+          "factor": "Medication compliance",
+          "impact": "Poor compliance increases risk by +25%"
+        },
+        {
+          "factor": "End-organ damage (LVH, retinopathy, nephropathy)",
+          "impact": "Presence increases risk level by one category"
+        },
+        {
+          "factor": "Comorbidities (diabetes, CKD, obesity)",
+          "impact": "Each comorbidity adds +15-25% to loading"
+        },
+        {
+          "factor": "Number of medications required",
+          "impact": "3+ medications suggests resistant hypertension; increase loading by +25%"
+        }
+      ],
+      "references": [
+        "AHA/ACC Hypertension Guidelines 2024",
+        "SOA Individual Life Mortality Studies 2023",
+        "Swiss Re Underwriting Manual 2024"
+      ]
+    },
+    {
+      "id": "META-CHOL-001",
+      "category": "metabolic",
+      "subcategory": "cholesterol",
+      "name": "Cholesterol and Lipid Panel Risk Assessment",
+      "description": "Guidelines for evaluating cholesterol and lipid levels",
+      "criteria": [
+        {
+          "id": "META-CHOL-001-A",
+          "condition": "Total Cholesterol < 200 AND LDL < 100 AND HDL >= 60",
+          "risk_level": "Low",
+          "action": "Standard rates - optimal lipid profile",
+          "rationale": "Optimal cholesterol levels with cardioprotective HDL."
+        },
+        {
+          "id": "META-CHOL-001-B",
+          "condition": "Total Cholesterol 200-239 AND LDL 100-129",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Borderline levels acceptable without additional risk factors."
+        },
+        {
+          "id": "META-CHOL-001-C",
+          "condition": "Total Cholesterol 200-239 AND LDL 130-159",
+          "risk_level": "Low-Moderate",
+          "action": "Standard rates if on statin therapy with good response",
+          "rationale": "Borderline high LDL. Treatment response is key consideration."
+        },
+        {
+          "id": "META-CHOL-001-D",
+          "condition": "Total Cholesterol 240-279 OR LDL 160-189",
+          "risk_level": "Moderate",
+          "action": "+25% loading; verify treatment compliance",
+          "rationale": "High cholesterol with increased atherosclerotic risk."
+        },
+        {
+          "id": "META-CHOL-001-E",
+          "condition": "Total Cholesterol >= 280 OR LDL >= 190",
+          "risk_level": "Moderate-High",
+          "action": "+50% loading; consider familial hypercholesterolemia workup",
+          "rationale": "Very high cholesterol. Screen for genetic causes and CAD risk."
+        },
+        {
+          "id": "META-CHOL-001-F",
+          "condition": "HDL < 40 (male) OR HDL < 50 (female)",
+          "risk_level": "Moderate",
+          "action": "+25% loading for low HDL as independent risk factor",
+          "rationale": "Low HDL is independent cardiovascular risk factor."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Total/HDL ratio",
+          "impact": "Ratio > 5.0 adds +15% to loading"
+        },
+        {
+          "factor": "Triglycerides > 500",
+          "impact": "Pancreatitis risk; add +25% and require monitoring"
+        },
+        {
+          "factor": "Statin therapy response",
+          "impact": "LDL reduction > 50% on therapy is favorable"
+        },
+        {
+          "factor": "Family history of premature CAD",
+          "impact": "Add +15% if first-degree relative with CAD before age 55 (male) or 65 (female)"
+        }
+      ],
+      "references": [
+        "ATP IV Lipid Guidelines",
+        "ACC/AHA Cardiovascular Risk Guidelines 2024",
+        "Munich Re Underwriting Guidelines 2024"
+      ]
+    },
+    {
+      "id": "META-DM-001",
+      "category": "metabolic",
+      "subcategory": "diabetes",
+      "name": "Diabetes and Glucose Risk Assessment",
+      "description": "Guidelines for evaluating diabetes and glucose control",
+      "criteria": [
+        {
+          "id": "META-DM-001-A",
+          "condition": "Fasting Glucose < 100 AND HbA1c < 5.7%",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Normal glucose metabolism with no diabetes risk."
+        },
+        {
+          "id": "META-DM-001-B",
+          "condition": "Fasting Glucose 100-125 OR HbA1c 5.7-6.4%",
+          "risk_level": "Low-Moderate",
+          "action": "Standard rates with pre-diabetes notation; monitor progression",
+          "rationale": "Pre-diabetes state. Higher conversion risk but currently acceptable."
+        },
+        {
+          "id": "META-DM-001-C",
+          "condition": "Type 2 Diabetes with HbA1c < 7.0% AND no complications",
+          "risk_level": "Moderate",
+          "action": "+50-75% loading depending on duration and treatment",
+          "rationale": "Well-controlled T2DM. Loading based on duration and medication intensity."
+        },
+        {
+          "id": "META-DM-001-D",
+          "condition": "Type 2 Diabetes with HbA1c 7.0-8.0%",
+          "risk_level": "Moderate-High",
+          "action": "+75-100% loading; require recent eye and kidney exams",
+          "rationale": "Suboptimally controlled diabetes with increased complication risk."
+        },
+        {
+          "id": "META-DM-001-E",
+          "condition": "Type 2 Diabetes with HbA1c > 8.0% OR complications present",
+          "risk_level": "High",
+          "action": "+100-150% loading or defer pending improvement",
+          "rationale": "Poor control with established or high risk of microvascular complications."
+        },
+        {
+          "id": "META-DM-001-F",
+          "condition": "Type 1 Diabetes",
+          "risk_level": "Moderate-High to High",
+          "action": "Individual assessment; typically +100-200% based on control and complications",
+          "rationale": "T1DM requires specialized assessment. Control history critical."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Duration of diabetes",
+          "impact": "Each 5 years adds +10-15% to loading"
+        },
+        {
+          "factor": "Retinopathy",
+          "impact": "Adds +25-50% depending on severity"
+        },
+        {
+          "factor": "Nephropathy (microalbuminuria, reduced eGFR)",
+          "impact": "Adds +50-100% depending on stage"
+        },
+        {
+          "factor": "Neuropathy",
+          "impact": "Adds +25% for documented peripheral neuropathy"
+        },
+        {
+          "factor": "Insulin therapy",
+          "impact": "Not inherently negative if control is good; intensive regimen may be favorable"
+        }
+      ],
+      "references": [
+        "ADA Standards of Medical Care in Diabetes 2024",
+        "Reinsurance Group of America Diabetes Guidelines",
+        "SOA Diabetes Mortality Study 2023"
+      ]
+    },
+    {
+      "id": "META-BMI-001",
+      "category": "metabolic",
+      "subcategory": "obesity",
+      "name": "Body Mass Index Risk Assessment",
+      "description": "Guidelines for evaluating BMI and obesity-related risk",
+      "criteria": [
+        {
+          "id": "META-BMI-001-A",
+          "condition": "BMI 18.5-24.9",
+          "risk_level": "Low",
+          "action": "Standard rates - healthy weight",
+          "rationale": "Normal BMI range with optimal mortality outcomes."
+        },
+        {
+          "id": "META-BMI-001-B",
+          "condition": "BMI 25.0-29.9",
+          "risk_level": "Low",
+          "action": "Standard rates for overweight without comorbidities",
+          "rationale": "Overweight category. Minimal impact if metabolically healthy."
+        },
+        {
+          "id": "META-BMI-001-C",
+          "condition": "BMI 30.0-34.9",
+          "risk_level": "Low-Moderate",
+          "action": "Standard to +25% based on metabolic health and build",
+          "rationale": "Class I obesity. Assess for metabolic syndrome components."
+        },
+        {
+          "id": "META-BMI-001-D",
+          "condition": "BMI 35.0-39.9",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading",
+          "rationale": "Class II obesity with increased all-cause mortality risk."
+        },
+        {
+          "id": "META-BMI-001-E",
+          "condition": "BMI 40.0-44.9",
+          "risk_level": "Moderate-High",
+          "action": "+50-100% loading; may require exclusions",
+          "rationale": "Class III obesity. Significant impact on longevity."
+        },
+        {
+          "id": "META-BMI-001-F",
+          "condition": "BMI >= 45.0",
+          "risk_level": "High",
+          "action": "Decline or highly rated with coverage limitations",
+          "rationale": "Super obesity with severe mortality implications."
+        },
+        {
+          "id": "META-BMI-001-G",
+          "condition": "BMI < 18.5",
+          "risk_level": "Low-Moderate",
+          "action": "Standard to +25%; investigate underlying cause",
+          "rationale": "Underweight. Rule out eating disorders, malignancy, or chronic illness."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Build (muscular vs adipose)",
+          "impact": "Athletic build with high muscle mass may mitigate BMI impact"
+        },
+        {
+          "factor": "Metabolic syndrome components",
+          "impact": "Each component (HTN, dyslipidemia, glucose) adds +10-15%"
+        },
+        {
+          "factor": "Weight trajectory",
+          "impact": "Recent weight loss is favorable; recent gain requires explanation"
+        },
+        {
+          "factor": "Sleep apnea",
+          "impact": "Untreated adds +25%; treated with CPAP compliance is neutral"
+        }
+      ],
+      "references": [
+        "WHO Obesity Classification",
+        "Munich Re Build Standards 2024",
+        "SOA BMI and Mortality Report 2023"
+      ]
+    },
+    {
+      "id": "ENDO-THY-001",
+      "category": "endocrine",
+      "subcategory": "thyroid",
+      "name": "Thyroid Condition Risk Assessment",
+      "description": "Guidelines for evaluating thyroid disorders",
+      "criteria": [
+        {
+          "id": "ENDO-THY-001-A",
+          "condition": "Hypothyroidism - stable on replacement, TSH normal",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Well-controlled hypothyroidism has minimal mortality impact."
+        },
+        {
+          "id": "ENDO-THY-001-B",
+          "condition": "Hypothyroidism - TSH mildly elevated (5-10 mIU/L)",
+          "risk_level": "Low",
+          "action": "Standard rates with medication adjustment note",
+          "rationale": "Subclinical or undertreated hypothyroidism. Easily correctable."
+        },
+        {
+          "id": "ENDO-THY-001-C",
+          "condition": "Hyperthyroidism - Graves disease, controlled",
+          "risk_level": "Low-Moderate",
+          "action": "Standard to +25% depending on treatment and duration",
+          "rationale": "Controlled hyperthyroidism. Monitor for cardiac effects."
+        },
+        {
+          "id": "ENDO-THY-001-D",
+          "condition": "Hyperthyroidism - active or poorly controlled",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading; defer if thyroid storm risk",
+          "rationale": "Active hyperthyroidism with cardiac and metabolic risks."
+        },
+        {
+          "id": "ENDO-THY-001-E",
+          "condition": "Thyroid cancer - papillary, treated, no recurrence > 5 years",
+          "risk_level": "Low",
+          "action": "Standard rates after 5+ years disease-free",
+          "rationale": "Papillary thyroid cancer has excellent prognosis post-treatment."
+        },
+        {
+          "id": "ENDO-THY-001-F",
+          "condition": "Thyroid cancer - other types or recent treatment",
+          "risk_level": "Moderate to High",
+          "action": "Individual assessment based on type, stage, and treatment response",
+          "rationale": "Non-papillary thyroid cancers require careful staging review."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Atrial fibrillation history",
+          "impact": "If secondary to hyperthyroidism, adds +25% even if controlled"
+        },
+        {
+          "factor": "Thyroid eye disease",
+          "impact": "Indicates autoimmune activity; may add +10-15%"
+        },
+        {
+          "factor": "Treatment compliance",
+          "impact": "Poor compliance with thyroid medication increases risk"
+        }
+      ],
+      "references": [
+        "American Thyroid Association Guidelines 2024",
+        "Swiss Re Thyroid Underwriting Guidelines",
+        "Endocrine Society Clinical Practice Guidelines"
+      ]
+    },
+    {
+      "id": "FAM-CVD-001",
+      "category": "family_history",
+      "subcategory": "cardiovascular",
+      "name": "Family History - Cardiovascular Disease",
+      "description": "Guidelines for evaluating family history of cardiovascular disease",
+      "criteria": [
+        {
+          "id": "FAM-CVD-001-A",
+          "condition": "No family history of premature CVD",
+          "risk_level": "Low",
+          "action": "Standard rates - favorable family history",
+          "rationale": "Absence of family CVD history is protective factor."
+        },
+        {
+          "id": "FAM-CVD-001-B",
+          "condition": "One first-degree relative with CVD after age 60",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Late-onset CVD in family has minimal impact on applicant risk."
+        },
+        {
+          "id": "FAM-CVD-001-C",
+          "condition": "One first-degree relative with CVD before age 55 (male) or 65 (female)",
+          "risk_level": "Low-Moderate",
+          "action": "Standard rates with notation; enhanced screening if other risk factors",
+          "rationale": "Single premature CVD event suggests genetic predisposition."
+        },
+        {
+          "id": "FAM-CVD-001-D",
+          "condition": "Two+ first-degree relatives with premature CVD",
+          "risk_level": "Moderate",
+          "action": "+25% loading; require applicant cardiac screening",
+          "rationale": "Strong family history indicates significant hereditary risk."
+        },
+        {
+          "id": "FAM-CVD-001-E",
+          "condition": "Parent died of CVD before age 50",
+          "risk_level": "Moderate-High",
+          "action": "+25-50% loading depending on applicant's own risk factors",
+          "rationale": "Very premature parental CVD death is significant risk marker."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Applicant's own cardiovascular health",
+          "impact": "Normal lipids, BP, and glucose can offset family history"
+        },
+        {
+          "factor": "Multiple affected relatives",
+          "impact": "Each additional affected relative adds +10%"
+        },
+        {
+          "factor": "Genetic testing (if available)",
+          "impact": "Known genetic mutations may require specialized assessment"
+        }
+      ],
+      "references": [
+        "ACC/AHA Cardiovascular Risk Assessment Guidelines",
+        "Framingham Heart Study Family Risk Data",
+        "RGA Family History Underwriting Guide"
+      ]
+    },
+    {
+      "id": "FAM-CA-001",
+      "category": "family_history",
+      "subcategory": "cancer",
+      "name": "Family History - Cancer",
+      "description": "Guidelines for evaluating family history of cancer",
+      "criteria": [
+        {
+          "id": "FAM-CA-001-A",
+          "condition": "No family history of hereditary cancer syndromes",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "No family cancer history is neutral to favorable."
+        },
+        {
+          "id": "FAM-CA-001-B",
+          "condition": "One first-degree relative with cancer after age 60",
+          "risk_level": "Low",
+          "action": "Standard rates - age-appropriate cancer occurrence",
+          "rationale": "Cancer in elderly relatives is common and not highly predictive."
+        },
+        {
+          "id": "FAM-CA-001-C",
+          "condition": "One first-degree relative with breast/ovarian/colon cancer before age 50",
+          "risk_level": "Low-Moderate",
+          "action": "Standard rates; note hereditary cancer screening recommendation",
+          "rationale": "Early-onset cancer suggests possible hereditary component."
+        },
+        {
+          "id": "FAM-CA-001-D",
+          "condition": "Two+ first-degree relatives with same cancer type",
+          "risk_level": "Moderate",
+          "action": "+25% loading; recommend genetic counseling",
+          "rationale": "Clustering of same cancer type indicates hereditary syndrome."
+        },
+        {
+          "id": "FAM-CA-001-E",
+          "condition": "Known BRCA1/2 or Lynch syndrome carrier in family (applicant not tested)",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading or require genetic testing",
+          "rationale": "50% chance of carrying mutation. Testing may refine risk."
+        },
+        {
+          "id": "FAM-CA-001-F",
+          "condition": "Applicant is confirmed BRCA1/2 or Lynch syndrome carrier",
+          "risk_level": "High",
+          "action": "Individual assessment; typically +100-150% or cancer exclusion",
+          "rationale": "Confirmed genetic mutation with high lifetime cancer risk."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Prophylactic surgery completed",
+          "impact": "Mastectomy/oophorectomy significantly reduces risk for BRCA carriers"
+        },
+        {
+          "factor": "Intensive screening program",
+          "impact": "Adherence to screening may allow reduced loading"
+        },
+        {
+          "factor": "Multiple cancer types in family",
+          "impact": "Suggests Li-Fraumeni or other rare syndromes; specialist review required"
+        }
+      ],
+      "references": [
+        "NCCN Genetic/Familial High-Risk Assessment Guidelines",
+        "American Cancer Society Family History Guidelines",
+        "Gen Re Hereditary Cancer Underwriting Manual"
+      ]
+    },
+    {
+      "id": "LIFE-TOB-001",
+      "category": "lifestyle",
+      "subcategory": "tobacco",
+      "name": "Tobacco Use Risk Assessment",
+      "description": "Guidelines for evaluating tobacco and nicotine use",
+      "criteria": [
+        {
+          "id": "LIFE-TOB-001-A",
+          "condition": "Never smoker (no tobacco use ever)",
+          "risk_level": "Low",
+          "action": "Non-smoker rates (best class eligible)",
+          "rationale": "Never smokers have optimal mortality profile."
+        },
+        {
+          "id": "LIFE-TOB-001-B",
+          "condition": "Former smoker, quit > 5 years, < 20 pack-years",
+          "risk_level": "Low",
+          "action": "Non-smoker rates",
+          "rationale": "Risk normalizes after 5+ years of cessation for moderate use history."
+        },
+        {
+          "id": "LIFE-TOB-001-C",
+          "condition": "Former smoker, quit 1-5 years",
+          "risk_level": "Low-Moderate",
+          "action": "Non-smoker rates after 12-24 months; transitional rates during that period",
+          "rationale": "Risk decreasing but still elevated in first few years post-cessation."
+        },
+        {
+          "id": "LIFE-TOB-001-D",
+          "condition": "Current smoker, < 1 pack per day",
+          "risk_level": "Moderate",
+          "action": "Smoker rates (+100-150% over non-smoker)",
+          "rationale": "Active smoking significantly elevates cardiovascular and cancer risk."
+        },
+        {
+          "id": "LIFE-TOB-001-E",
+          "condition": "Current smoker, >= 1 pack per day",
+          "risk_level": "Moderate-High",
+          "action": "Smoker rates (+150-200% over non-smoker)",
+          "rationale": "Heavy smoking with dose-dependent mortality increase."
+        },
+        {
+          "id": "LIFE-TOB-001-F",
+          "condition": "Cigar or pipe only, occasional (< 1/week)",
+          "risk_level": "Low-Moderate",
+          "action": "Non-smoker or transitional rates depending on cotinine testing",
+          "rationale": "Occasional cigar/pipe use has lower but not negligible risk."
+        },
+        {
+          "id": "LIFE-TOB-001-G",
+          "condition": "Smokeless tobacco (chew, snuff) current user",
+          "risk_level": "Low-Moderate",
+          "action": "Smoker or tobacco user rates depending on product type",
+          "rationale": "Oral cancer and cardiovascular risks present but lower than cigarettes."
+        },
+        {
+          "id": "LIFE-TOB-001-H",
+          "condition": "Vaping/e-cigarettes only, no combustible tobacco",
+          "risk_level": "Low-Moderate",
+          "action": "Varies by carrier; typically transitional rates pending long-term data",
+          "rationale": "Insufficient long-term mortality data. Treat as tobacco user by most carriers."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Pack-year history",
+          "impact": "> 30 pack-years even if quit may warrant loading"
+        },
+        {
+          "factor": "COPD or lung function impairment",
+          "impact": "Adds +25-50% to loading"
+        },
+        {
+          "factor": "Cotinine test results",
+          "impact": "Positive test confirms recent use regardless of stated history"
+        }
+      ],
+      "references": [
+        "Surgeon General's Report on Smoking and Health",
+        "SOA Smoker/Non-Smoker Mortality Study",
+        "Life Insurance Medical Directors Association Guidelines"
+      ]
+    },
+    {
+      "id": "LIFE-ALC-001",
+      "category": "lifestyle",
+      "subcategory": "alcohol",
+      "name": "Alcohol Use Risk Assessment",
+      "description": "Guidelines for evaluating alcohol consumption",
+      "criteria": [
+        {
+          "id": "LIFE-ALC-001-A",
+          "condition": "Non-drinker or very light (< 3 drinks/week)",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Minimal to no alcohol use poses no additional risk."
+        },
+        {
+          "id": "LIFE-ALC-001-B",
+          "condition": "Moderate drinking (7-14 drinks/week for men, 7 for women)",
+          "risk_level": "Low",
+          "action": "Standard rates with notation",
+          "rationale": "Moderate alcohol use within guidelines. No significant impact."
+        },
+        {
+          "id": "LIFE-ALC-001-C",
+          "condition": "Heavy drinking (> 14 drinks/week men, > 7 women) without dependence",
+          "risk_level": "Low-Moderate",
+          "action": "Standard to +25% based on duration and pattern",
+          "rationale": "Heavy use increases liver and cardiovascular risks."
+        },
+        {
+          "id": "LIFE-ALC-001-D",
+          "condition": "History of alcohol use disorder, in recovery > 5 years",
+          "risk_level": "Low-Moderate",
+          "action": "+25% loading; verify ongoing sobriety and treatment engagement",
+          "rationale": "Long-term recovery with support shows reduced relapse risk."
+        },
+        {
+          "id": "LIFE-ALC-001-E",
+          "condition": "History of alcohol use disorder, in recovery 1-5 years",
+          "risk_level": "Moderate",
+          "action": "+50-75% loading; require addiction medicine evaluation",
+          "rationale": "Early recovery period with elevated relapse risk."
+        },
+        {
+          "id": "LIFE-ALC-001-F",
+          "condition": "Current alcohol use disorder or active heavy drinking with health impact",
+          "risk_level": "High",
+          "action": "Decline or defer pending treatment and documented recovery",
+          "rationale": "Active alcoholism with severe mortality implications."
+        },
+        {
+          "id": "LIFE-ALC-001-G",
+          "condition": "Elevated liver enzymes (GGT, ALT) suggesting alcohol impact",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading; require hepatology evaluation if severe",
+          "rationale": "Biochemical evidence of liver impact from alcohol."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "DUI/DWI history",
+          "impact": "Single DUI > 5 years ago: minimal. Multiple or recent: +25-50%"
+        },
+        {
+          "factor": "Alcoholic liver disease",
+          "impact": "Fatty liver: +25%. Cirrhosis: +100% or decline"
+        },
+        {
+          "factor": "Treatment program completion",
+          "impact": "Formal treatment completion is favorable"
+        }
+      ],
+      "references": [
+        "NIAAA Alcohol Use Guidelines",
+        "Swiss Re Alcohol and Drug Underwriting Manual",
+        "ASAM Criteria for Substance Use Disorders"
+      ]
+    },
+    {
+      "id": "LIFE-OCC-001",
+      "category": "lifestyle",
+      "subcategory": "occupation",
+      "name": "Occupational Risk Assessment",
+      "description": "Guidelines for evaluating occupation-related mortality risk",
+      "criteria": [
+        {
+          "id": "LIFE-OCC-001-A",
+          "condition": "Professional/office/administrative occupations",
+          "risk_level": "Low",
+          "action": "Standard rates",
+          "rationale": "Sedentary professional work has baseline mortality risk."
+        },
+        {
+          "id": "LIFE-OCC-001-B",
+          "condition": "Skilled trades with moderate physical risk",
+          "risk_level": "Low",
+          "action": "Standard rates with occupational class adjustment",
+          "rationale": "Electricians, plumbers, mechanics - moderate physical work."
+        },
+        {
+          "id": "LIFE-OCC-001-C",
+          "condition": "Construction, manufacturing with significant hazard exposure",
+          "risk_level": "Low-Moderate",
+          "action": "Standard to +25% based on specific duties and safety record",
+          "rationale": "Industrial settings with injury and exposure risks."
+        },
+        {
+          "id": "LIFE-OCC-001-D",
+          "condition": "Commercial pilots, professional drivers",
+          "risk_level": "Low-Moderate",
+          "action": "Occupational loading or exclusion for aviation accident",
+          "rationale": "Transport occupations have specific accident risk profile."
+        },
+        {
+          "id": "LIFE-OCC-001-E",
+          "condition": "Mining, logging, commercial fishing",
+          "risk_level": "Moderate",
+          "action": "+25-50% loading; accident exclusion may apply",
+          "rationale": "High-risk extractive industries with elevated fatality rates."
+        },
+        {
+          "id": "LIFE-OCC-001-F",
+          "condition": "Law enforcement, firefighting, military (active combat)",
+          "risk_level": "Moderate to High",
+          "action": "+25-100% loading or war/combat exclusion",
+          "rationale": "First responder and military roles with duty-related mortality risk."
+        },
+        {
+          "id": "LIFE-OCC-001-G",
+          "condition": "Offshore oil/gas, deep sea diving, extreme heights work",
+          "risk_level": "Moderate-High",
+          "action": "+50-100% loading with specific exclusions possible",
+          "rationale": "Extreme environment occupations with significant accident risk."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Years of experience",
+          "impact": "Experienced workers have lower accident rates"
+        },
+        {
+          "factor": "Safety record and certifications",
+          "impact": "Strong safety record may reduce loading"
+        },
+        {
+          "factor": "Supervisory vs field role",
+          "impact": "Supervisory roles typically lower risk than field positions"
+        }
+      ],
+      "references": [
+        "Bureau of Labor Statistics Occupational Fatality Data",
+        "Munich Re Occupation Class Manual",
+        "RGA Underwriting Manual - Occupational Risks"
+      ]
+    }
+  ]
+}

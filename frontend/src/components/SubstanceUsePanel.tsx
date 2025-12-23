@@ -116,9 +116,9 @@ export default function SubstanceUsePanel({ application }: SubstanceUsePanelProp
   const activeData = tabs.find(t => t.id === activeTab)?.data;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-h-[400px] overflow-y-auto">
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 mb-4">
+      <div className="flex border-b border-slate-200 mb-4 sticky top-0 bg-white pb-0 -mt-2 pt-2 z-10">
         {tabs.map((tab) => (
           <button
             key={tab.id}

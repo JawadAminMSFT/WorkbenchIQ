@@ -24,11 +24,25 @@ def chat_completion(
     max_tokens: int = 1200,
     max_retries: int = 3,
     retry_backoff: float = 1.5,
+    deployment_override: str | None = None,
+    model_override: str | None = None,
+    api_version_override: str | None = None,
 ) -> Dict[str, Any]:
     """Call Azure OpenAI / Foundry chat completions with retry logic.
 
     Uses the v1-style chat completions endpoint:
         POST {endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=...
+    
+    Args:
+        settings: OpenAI configuration settings
+        messages: List of chat messages
+        temperature: Sampling temperature (0.0 = deterministic)
+        max_tokens: Maximum tokens in response
+        max_retries: Number of retry attempts
+        retry_backoff: Exponential backoff multiplier
+        deployment_override: Optional deployment name to use instead of settings.deployment_name
+        model_override: Optional model name to use instead of settings.model_name
+        api_version_override: Optional API version to use instead of settings.api_version
     """
     if not settings.endpoint or not settings.api_key or not settings.deployment_name:
         raise OpenAIClientError(
@@ -36,8 +50,12 @@ def chat_completion(
             "Please set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT_NAME."
         )
 
-    url = f"{settings.endpoint}/openai/deployments/{settings.deployment_name}/chat/completions"
-    params = {"api-version": settings.api_version}
+    deployment = deployment_override or settings.deployment_name
+    model = model_override or settings.model_name
+    api_version = api_version_override or settings.api_version
+
+    url = f"{settings.endpoint}/openai/deployments/{deployment}/chat/completions"
+    params = {"api-version": api_version}
     headers = {
         "Content-Type": "application/json",
         "api-key": settings.api_key,
@@ -47,7 +65,7 @@ def chat_completion(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "model": settings.model_name,
+        "model": model,
     }
 
     last_err: Exception | None = None
