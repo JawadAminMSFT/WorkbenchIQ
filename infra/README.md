@@ -40,12 +40,9 @@ The deployment creates:
 infra/
 ├── main.bicep                          # Main template (subscription scope)
 ├── main.bicepparam                     # Parameters (location only)
-├── deploy.sh                           # Bash deployment orchestration script
-├── deploy.ps1                          # PowerShell deployment orchestration script (legacy)
-├── configure-content-understanding.sh  # Bash Content Understanding configuration
-├── configure-content-understanding.ps1 # PowerShell Content Understanding configuration (legacy)
-├── validate-deployment.sh              # Bash deployment validation script
-├── validate-deployment.ps1             # PowerShell deployment validation script (legacy)
+├── deploy.sh                           # Deployment orchestration script
+├── configure-content-understanding.sh  # Content Understanding configuration
+├── validate-deployment.sh              # Deployment validation script
 ├── lib/
 │   └── common.sh                       # Common bash functions library
 └── README.md                           # This file
@@ -53,7 +50,7 @@ infra/
 
 ## 🚀 Quick Start
 
-### Option 1: Bash Deployment Script (Recommended for Linux/macOS)
+### Deployment Script
 
 The `deploy.sh` script provides an automated subscription-level deployment with validation and configuration.
 
@@ -108,58 +105,6 @@ The script will display:
 - Model deployment names
 - Environment variables for your `.env` file
 
-### Option 2: PowerShell Deployment Script (Windows)
-
-The `deploy.ps1` script provides an automated subscription-level deployment with validation and configuration.
-
-#### 1. Login to Azure
-
-```powershell
-# Login to Azure
-Connect-AzAccount
-
-# Set subscription (if you have multiple)
-Set-AzContext -SubscriptionId "your-subscription-id"
-
-# Verify context
-Get-AzContext
-```
-
-#### 2. Run Deployment
-
-```powershell
-# Simple deployment (uses defaults: location=eastus, resource group=rg-wbiq-dev)
-.\deploy.ps1
-
-# Specify location
-.\deploy.ps1 -Location "westus"
-
-# Skip validation
-.\deploy.ps1 -Location "eastus" -SkipValidation
-```
-
-The script will:
-- ✓ Display a deployment banner with planned resources
-- ✓ Ask for confirmation before proceeding
-- ✓ Validate your Azure authentication
-- ✓ Check Bicep template syntax
-- ✓ Create the resource group (automatically based on template variables)
-- ✓ Deploy all infrastructure (10-15 minutes)
-- ✓ Configure Content Understanding defaults
-- ✓ Validate the deployment
-- ✓ Display deployment summary with endpoints and configuration
-
-**Note**: The resource group name (`rg-wbiq-dev`) is defined in the Bicep template variables. To customize it, edit the `baseName` and `environmentName` variables in [main.bicep](main.bicep).
-
-#### 3. Review Outputs
-
-The script will display:
-- Resource group name
-- AI Foundry endpoint
-- Managed Identity Client ID
-- Model deployment names
-- Environment variables for your `.env` file
-
 ## 🔧 Manual Configuration Scripts
 
 If you need to run configuration or validation independently:
@@ -183,24 +128,18 @@ If you need to run configuration or validation independently:
 ### Validate Deployment
 
 ```bash
-# Bash
 ./validate-deployment.sh \
   --resource-group "rg-aifoundry-dev" \
   --ai-foundry-account "wbiq-dev-aifoundry"
 
-# Bash with JSON output
+# With JSON output
 ./validate-deployment.sh \
   --resource-group "rg-aifoundry-dev" \
   --ai-foundry-account "wbiq-dev-aifoundry" \
   --json-output validation-report.json
-
-# PowerShell (Windows)
-.\validate-deployment.ps1 `
-  -ResourceGroupName "rg-aifoundry-dev" `
-  -AiFoundryAccountName "wbiq-dev-aifoundry"
 ```
 
-### Option 3: Azure CLI (Manual)
+## Azure CLI (Manual Deployment)
 
 #### 1. Configure Location (Optional)
 
@@ -219,17 +158,11 @@ param location = 'eastus'  // Change to your preferred region
 
 ```bash
 # Login to Azure
-az login
-
-# Set subscription (if you have multiple)
-az account set --subscription "your-subscription-id"
-
-# Verify context
-az account show
-```
-
-#### 3. Deploy
-
+./configure-content-understanding.sh \
+  --ai-foundry-endpoint "https://your-account.openai.azure.com/" \
+  --gpt4-deployment "gpt-4.1" \
+  --gpt4-mini-deployment "gpt-4.1-mini" \
+  --embedding-deployment "text-embedding-3-large"
 ```bash
 # Deploy at subscription level (creates resource group automatically)
 az deployment sub create \
@@ -267,7 +200,7 @@ bicep format main.bicep
 bicep lint main.bicep
 
 # What-if deployment (preview changes)
-az deployment sub what-if \
+az 🔍eployment sub what-if \
   --location eastus \
   --template-file main.bicep \
   --parameters main.bicepparam
