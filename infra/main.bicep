@@ -36,7 +36,7 @@ var uniqueSuffix = uniqueString(subscription().id, baseName)
 
 var tags = {
   Environment: environmentName
-  Purpose: 'AI-Foundry-Content-Understanding'
+  Purpose: 'WorkbenchIQ'
   ManagedBy: 'Bicep'
 }
 
