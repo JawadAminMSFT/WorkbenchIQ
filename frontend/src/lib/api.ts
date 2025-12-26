@@ -132,23 +132,41 @@ export async function createApplication(
 
 /**
  * Run content understanding extraction on an application
+ * @param background If true, starts in background and returns immediately
  */
-export async function runContentUnderstanding(appId: string): Promise<ApplicationMetadata> {
-  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/extract`, {
+export async function runContentUnderstanding(
+  appId: string,
+  background: boolean = false
+): Promise<ApplicationMetadata> {
+  const params = background ? '?background=true' : '';
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/extract${params}`, {
     method: 'POST',
   });
 }
 
 /**
  * Run underwriting prompts analysis on an application
+ * @param background If true, starts in background and returns immediately
  */
 export async function runUnderwritingAnalysis(
   appId: string,
-  sections?: string[]
+  sections?: string[],
+  background: boolean = false
 ): Promise<ApplicationMetadata> {
-  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/analyze`, {
+  const params = background ? '?background=true' : '';
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/analyze${params}`, {
     method: 'POST',
     body: JSON.stringify({ sections }),
+  });
+}
+
+/**
+ * Start full processing (extraction + analysis) in background.
+ * Returns immediately. Client should poll getApplication() for status updates.
+ */
+export async function startProcessing(appId: string): Promise<ApplicationMetadata> {
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/process`, {
+    method: 'POST',
   });
 }
 

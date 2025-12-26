@@ -60,6 +60,9 @@ class ApplicationMetadata:
     analyzer_id_used: Optional[str] = None  # Which analyzer was used for extraction
     # Risk analysis results (separate from main LLM outputs)
     risk_analysis: Optional[Dict[str, Any]] = None  # Policy-based risk assessment
+    # Background processing status tracking
+    processing_status: Optional[str] = None  # idle, extracting, analyzing, error
+    processing_error: Optional[str] = None  # Error message if processing failed
 
 
 # =============================================================================
@@ -212,6 +215,8 @@ def _dict_to_metadata(data: Dict[str, Any]) -> ApplicationMetadata:
         confidence_summary=data.get("confidence_summary"),
         analyzer_id_used=data.get("analyzer_id_used"),
         risk_analysis=data.get("risk_analysis"),
+        processing_status=data.get("processing_status"),
+        processing_error=data.get("processing_error"),
     )
 
 
@@ -284,6 +289,7 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
                     "external_reference": data.get("external_reference"),
                     "status": data.get("status", "unknown"),
                     "persona": app_persona,
+                    "processing_status": data.get("processing_status"),
                     "summary_title": data.get("llm_outputs", {})
                     .get("application_summary", {})
                     .get("customer_profile", {})
@@ -322,6 +328,7 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
                     "external_reference": data.get("external_reference"),
                     "status": data.get("status", "unknown"),
                     "persona": app_persona,
+                    "processing_status": data.get("processing_status"),
                     "summary_title": data.get("llm_outputs", {})
                     .get("application_summary", {})
                     .get("customer_profile", {})

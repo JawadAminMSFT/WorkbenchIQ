@@ -160,6 +160,9 @@ export interface ApplicationMetadata {
   confidence_summary?: ConfidenceSummary;
   analyzer_id_used?: string;
   risk_analysis?: RiskAnalysis;
+  // Background processing status
+  processing_status?: 'extracting' | 'analyzing' | 'error' | null;
+  processing_error?: string | null;
 }
 
 export interface ApplicationListItem {
@@ -169,6 +172,7 @@ export interface ApplicationListItem {
   status: string;
   persona?: string;
   summary_title?: string;
+  processing_status?: 'extracting' | 'analyzing' | 'error' | null;
 }
 
 // Patient/Applicant structured data derived from extracted fields

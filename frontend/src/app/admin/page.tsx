@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   createApplication,
   listApplications,
+  getApplication,
+  startProcessing,
   runContentUnderstanding,
   runUnderwritingAnalysis,
   getPrompts,
@@ -49,6 +51,9 @@ export default function AdminPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [externalRef, setExternalRef] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  
+  // Track which app is being polled to avoid duplicate polling
+  const pollingAppIdRef = useRef<string | null>(null);
 
   // Prompts state
   const [promptsData, setPromptsData] = useState<PromptsData | null>(null);
@@ -112,6 +117,84 @@ export default function AdminPage() {
       setLoading(false);
     }
   }, [currentPersona]);
+
+  // Poll for processing completion - reusable function
+  const pollForProcessingCompletion = useCallback((appId: string) => {
+    // Avoid duplicate polling for the same app
+    if (pollingAppIdRef.current === appId) {
+      return;
+    }
+    pollingAppIdRef.current = appId;
+    
+    const pollInterval = 2000;
+    const maxPolls = 300;
+    let pollCount = 0;
+    
+    const poll = async () => {
+      // Check if we should stop polling (component unmounted or different app started)
+      if (pollingAppIdRef.current !== appId) {
+        return;
+      }
+      
+      pollCount++;
+      if (pollCount > maxPolls) {
+        setProcessing({
+          step: 'error',
+          message: 'Processing timed out.',
+          appId,
+        });
+        pollingAppIdRef.current = null;
+        return;
+      }
+      
+      try {
+        const status = await getApplication(appId);
+        
+        if (status.processing_status === 'extracting') {
+          setProcessing({
+            step: 'extracting',
+            message: 'Running document extraction...',
+            appId,
+          });
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'analyzing') {
+          setProcessing({
+            step: 'analyzing',
+            message: 'Running analysis...',
+            appId,
+          });
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'error') {
+          setProcessing({
+            step: 'error',
+            message: status.processing_error || 'Processing failed',
+            appId,
+          });
+          pollingAppIdRef.current = null;
+          await loadApplications();
+        } else if (!status.processing_status) {
+          // Complete
+          setProcessing({ step: 'complete', message: 'Processing complete!', appId });
+          pollingAppIdRef.current = null;
+          await loadApplications();
+          setTimeout(() => {
+            setProcessing({ step: 'idle', message: '' });
+          }, 3000);
+        }
+      } catch (err) {
+        console.warn('Polling error, retrying...', err);
+        setTimeout(poll, pollInterval);
+      }
+    };
+    
+    // Set initial status and start polling
+    setProcessing({
+      step: 'extracting',
+      message: 'Resuming progress tracking...',
+      appId,
+    });
+    setTimeout(poll, pollInterval);
+  }, [loadApplications]);
 
   // Load prompts
   const loadPrompts = useCallback(async (resetSelection: boolean = false) => {
@@ -280,37 +363,17 @@ export default function AdminPage() {
         externalRef || undefined,
         currentPersona
       );
-      setProcessing({
-        step: 'extracting',
-        message: 'Running document extraction...',
-        appId: app.id,
-      });
-
-      // Step 2: Run Content Understanding extraction
-      await runContentUnderstanding(app.id);
-      setProcessing({
-        step: 'analyzing',
-        message: 'Running analysis...',
-        appId: app.id,
-      });
-
-      // Step 3: Run underwriting analysis
-      await runUnderwritingAnalysis(app.id);
-      setProcessing({
-        step: 'complete',
-        message: 'Processing complete!',
-        appId: app.id,
-      });
-
-      // Reset form and reload list
+      
+      // Reset form
       setSelectedFiles([]);
       setExternalRef('');
-      await loadApplications();
-
-      // Clear success message after delay
-      setTimeout(() => {
-        setProcessing({ step: 'idle', message: '' });
-      }, 3000);
+      
+      // Step 2: Start background processing (extraction + analysis)
+      await startProcessing(app.id);
+      
+      // Step 3: Start polling for completion
+      pollForProcessingCompletion(app.id);
+      
     } catch (err) {
       setProcessing({
         step: 'error',
@@ -321,41 +384,34 @@ export default function AdminPage() {
 
   const handleReprocess = async (appId: string, step: 'extract' | 'analyze' | 'prompts-only', sections?: string[]) => {
     try {
+      // Start processing in background mode
       if (step === 'extract') {
+        // Full reprocess: extraction + analysis
         setProcessing({
           step: 'extracting',
-          message: 'Re-running full extraction...',
+          message: 'Starting full reprocessing...',
           appId,
         });
-        await runContentUnderstanding(appId);
-        setProcessing({
-          step: 'analyzing',
-          message: 'Running analysis...',
-          appId,
-        });
-        await runUnderwritingAnalysis(appId);
+        await startProcessing(appId); // This does both extract + analyze
       } else if (step === 'prompts-only') {
         setProcessing({
           step: 'analyzing',
           message: sections?.length ? `Re-running prompts for: ${sections.join(', ')}...` : 'Re-running all prompts...',
           appId,
         });
-        await runUnderwritingAnalysis(appId, sections);
+        await runUnderwritingAnalysis(appId, sections, true); // background=true
       } else {
         setProcessing({
           step: 'analyzing',
-          message: 'Re-running analysis...',
+          message: 'Starting analysis...',
           appId,
         });
-        await runUnderwritingAnalysis(appId);
+        await runUnderwritingAnalysis(appId, undefined, true); // background=true
       }
       
-      setProcessing({ step: 'complete', message: 'Reprocessing complete!', appId });
-      await loadApplications();
+      // Start polling for completion
+      pollForProcessingCompletion(appId);
       
-      setTimeout(() => {
-        setProcessing({ step: 'idle', message: '' });
-      }, 3000);
     } catch (err) {
       setProcessing({
         step: 'error',
@@ -827,13 +883,23 @@ export default function AdminPage() {
                         <span className="font-mono text-sm font-medium text-slate-900">
                           {app.id}
                         </span>
-                        <span
-                          className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(
-                            app.status
-                          )}`}
-                        >
-                          {app.status}
-                        </span>
+                        {/* Processing status indicator */}
+                        {app.processing_status ? (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 flex items-center gap-1">
+                            <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                            {app.processing_status === 'extracting' ? 'Extracting...' : 
+                             app.processing_status === 'analyzing' ? 'Analyzing...' : 
+                             app.processing_status}
+                          </span>
+                        ) : (
+                          <span
+                            className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(
+                              app.status
+                            )}`}
+                          >
+                            {app.status}
+                          </span>
+                        )}
                       </div>
                       {app.external_reference && (
                         <p className="text-sm text-slate-500">
@@ -848,7 +914,30 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {app.status === 'pending' && (
+                      {/* Resume tracking button for in-progress apps */}
+                      {app.processing_status && (app.processing_status === 'extracting' || app.processing_status === 'analyzing') && (
+                        <button
+                          onClick={() => pollForProcessingCompletion(app.id)}
+                          disabled={processing.appId === app.id}
+                          className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 disabled:opacity-50 transition-colors flex items-center gap-1"
+                          title="Resume tracking progress"
+                        >
+                          {processing.appId === app.id ? (
+                            <>
+                              <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                              Tracking...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                              Resume
+                            </>
+                          )}
+                        </button>
+                      )}
+                      {app.status === 'pending' && !app.processing_status && (
                         <button
                           onClick={() => handleReprocess(app.id, 'extract')}
                           disabled={isProcessing}
@@ -857,7 +946,7 @@ export default function AdminPage() {
                           Extract
                         </button>
                       )}
-                      {app.status === 'extracted' && (
+                      {app.status === 'extracted' && !app.processing_status && (
                         <button
                           onClick={() => handleReprocess(app.id, 'analyze')}
                           disabled={isProcessing}
