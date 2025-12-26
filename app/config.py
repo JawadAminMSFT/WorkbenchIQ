@@ -1,5 +1,32 @@
 
+
 from __future__ import annotations
+from dataclasses import dataclass
+# --- Database & RAG Settings ---
+from typing import Any
+
+
+@dataclass
+class DatabaseSettings:
+    backend: str = "json"  # 'json' or 'postgresql'
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    ssl_mode: Optional[str] = None
+    schema: Optional[str] = None
+
+@dataclass
+class RAGSettings:
+    enabled: bool = False
+    top_k: int = 5
+    similarity_threshold: float = 0.5
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    embedding_deployment: Optional[str] = None  # Azure OpenAI deployment for embeddings
+
+
 
 import os
 from dataclasses import dataclass
@@ -59,11 +86,14 @@ class AppSettings:
     public_files_base_url: Optional[str] = None
 
 
+
 @dataclass
 class Settings:
     content_understanding: ContentUnderstandingSettings
     openai: OpenAISettings
     app: AppSettings
+    database: DatabaseSettings
+    rag: RAGSettings
 
 
 def load_settings() -> Settings:
@@ -94,13 +124,34 @@ def load_settings() -> Settings:
         chat_api_version=os.getenv("AZURE_OPENAI_CHAT_API_VERSION") or None,
     )
 
+
     app = AppSettings(
         storage_root=os.getenv("UW_APP_STORAGE_ROOT", "data"),
         prompts_root=os.getenv("UW_APP_PROMPTS_ROOT", "prompts"),
         public_files_base_url=os.getenv("PUBLIC_FILES_BASE_URL") or None,
     )
 
-    return Settings(content_understanding=cu, openai=oa, app=app)
+    db = DatabaseSettings(
+        backend=os.getenv("DATABASE_BACKEND", "json"),
+        host=os.getenv("POSTGRESQL_HOST"),
+        port=int(os.getenv("POSTGRESQL_PORT", 5432)) if os.getenv("POSTGRESQL_PORT") else None,
+        database=os.getenv("POSTGRESQL_DATABASE"),
+        user=os.getenv("POSTGRESQL_USER"),
+        password=os.getenv("POSTGRESQL_PASSWORD"),
+        ssl_mode=os.getenv("POSTGRESQL_SSL_MODE"),
+        schema=os.getenv("POSTGRESQL_SCHEMA"),
+    )
+
+    rag = RAGSettings(
+        enabled=os.getenv("RAG_ENABLED", "false").lower() == "true",
+        top_k=int(os.getenv("RAG_TOP_K", 5)),
+        similarity_threshold=float(os.getenv("RAG_SIMILARITY_THRESHOLD", 0.5)),
+        embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+        embedding_dimensions=int(os.getenv("EMBEDDING_DIMENSIONS", 1536)),
+        embedding_deployment=os.getenv("EMBEDDING_DEPLOYMENT") or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+    )
+
+    return Settings(content_understanding=cu, openai=oa, app=app, database=db, rag=rag)
 
 
 def validate_settings(settings: Settings) -> List[str]:

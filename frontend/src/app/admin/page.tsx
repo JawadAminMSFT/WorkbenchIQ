@@ -20,8 +20,11 @@ import {
   createPolicy as createPolicyApi,
   updatePolicy as updatePolicyApi,
   deletePolicy as deletePolicyApi,
+  reindexAllPolicies,
+  getIndexStats,
 } from '@/lib/api';
 import type { ApplicationListItem, PromptsData, AnalyzerStatus, AnalyzerInfo, FieldSchema, UnderwritingPolicy, PolicyCriteriaItem } from '@/lib/types';
+import type { IndexStats } from '@/lib/api';
 import PersonaSelector from '@/components/PersonaSelector';
 import { usePersona } from '@/lib/PersonaContext';
 
@@ -83,6 +86,10 @@ export default function AdminPage() {
   const [policiesSuccess, setPoliciesSuccess] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<UnderwritingPolicy | null>(null);
   const [showNewPolicyForm, setShowNewPolicyForm] = useState(false);
+  
+  // RAG Index state
+  const [indexStats, setIndexStats] = useState<IndexStats | null>(null);
+  const [reindexing, setReindexing] = useState(false);
   const [policyFormData, setPolicyFormData] = useState({
     id: '',
     category: '',
@@ -179,6 +186,17 @@ export default function AdminPage() {
     }
   }, [currentPersona]);
 
+  // Load index stats when policies tab is active
+  const loadIndexStats = useCallback(async () => {
+    try {
+      const stats = await getIndexStats();
+      setIndexStats(stats);
+    } catch {
+      // Silently fail - stats are optional
+      setIndexStats(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadApplications();
   }, [loadApplications]);
@@ -194,8 +212,9 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'policies' && policies.length === 0 && !policiesLoading) {
       loadPolicies();
+      loadIndexStats(); // Also load RAG index stats
     }
-  }, [activeTab, policies.length, policiesLoading, loadPolicies]);
+  }, [activeTab, policies.length, policiesLoading, loadPolicies, loadIndexStats]);
 
   // Reload prompts when persona changes
   useEffect(() => {
@@ -563,6 +582,35 @@ export default function AdminPage() {
       setPoliciesError(err instanceof Error ? err.message : 'Failed to delete policy');
     } finally {
       setPoliciesSaving(false);
+    }
+  };
+
+  // Handle reindexing all policies for RAG search
+  const handleReindexPolicies = async () => {
+    if (!confirm('This will reindex all policies for RAG search. This may take a few minutes. Continue?')) return;
+    
+    setReindexing(true);
+    setPoliciesError(null);
+    
+    try {
+      const result = await reindexAllPolicies(true);
+      if (result.status === 'success') {
+        setPoliciesSuccess(
+          `Reindex complete: ${result.policies_indexed} policies, ${result.chunks_stored} chunks (${result.total_time_seconds}s)`
+        );
+        // Refresh stats
+        const stats = await getIndexStats();
+        setIndexStats(stats);
+      } else if (result.status === 'skipped') {
+        setPoliciesError(result.error || 'Reindexing skipped - PostgreSQL not configured');
+      } else {
+        setPoliciesError(result.error || 'Reindexing failed');
+      }
+      setTimeout(() => setPoliciesSuccess(null), 5000);
+    } catch (err) {
+      setPoliciesError(err instanceof Error ? err.message : 'Failed to reindex policies');
+    } finally {
+      setReindexing(false);
     }
   };
 
@@ -1365,13 +1413,31 @@ export default function AdminPage() {
           <h2 className="text-lg font-semibold text-slate-900">
             {isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
           </h2>
-          <button
-            onClick={handleNewPolicyClick}
-            className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            + New Policy
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleReindexPolicies}
+              disabled={reindexing}
+              className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Reindex all policies for RAG search"
+            >
+              {reindexing ? 'Indexing...' : '🔄 Reindex'}
+            </button>
+            <button
+              onClick={handleNewPolicyClick}
+              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              + New Policy
+            </button>
+          </div>
         </div>
+
+        {/* Index Stats */}
+        {indexStats && indexStats.status === 'ok' && (
+          <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+            <span className="font-medium">RAG Index:</span>{' '}
+            {indexStats.total_chunks} chunks from {indexStats.policy_count} policies
+          </div>
+        )}
 
         {policiesLoading ? (
           <div className="text-center py-8 text-slate-500">Loading policies...</div>

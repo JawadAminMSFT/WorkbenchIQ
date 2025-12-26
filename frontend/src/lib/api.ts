@@ -736,3 +736,50 @@ export async function deletePolicy(policyId: string): Promise<{ success: boolean
     method: 'DELETE',
   });
 }
+
+// ============================================================================
+// RAG Index Management APIs
+// ============================================================================
+
+export interface ReindexResponse {
+  status: string;
+  policies_indexed?: number;
+  chunks_stored?: number;
+  total_time_seconds?: number;
+  error?: string;
+}
+
+export interface IndexStats {
+  status: string;
+  total_chunks?: number;
+  policy_count?: number;
+  chunks_by_type?: Record<string, number>;
+  chunks_by_category?: Record<string, number>;
+  error?: string;
+}
+
+/**
+ * Reindex all policies for RAG search
+ */
+export async function reindexAllPolicies(force: boolean = true): Promise<ReindexResponse> {
+  return apiFetch<ReindexResponse>('/api/admin/policies/reindex', {
+    method: 'POST',
+    body: JSON.stringify({ force }),
+  });
+}
+
+/**
+ * Reindex a single policy
+ */
+export async function reindexPolicy(policyId: string): Promise<ReindexResponse> {
+  return apiFetch<ReindexResponse>(`/api/admin/policies/${policyId}/reindex`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Get RAG index statistics
+ */
+export async function getIndexStats(): Promise<IndexStats> {
+  return apiFetch<IndexStats>('/api/admin/policies/index-stats');
+}

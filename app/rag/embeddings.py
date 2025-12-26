@@ -1,0 +1,247 @@
+"""
+Embedding Service - Generates vector embeddings via Azure OpenAI.
+
+Uses the text-embedding-3-small model (1536 dimensions) by default.
+Supports batch processing with retry logic and exponential backoff.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import requests
+
+from app.config import OpenAISettings, RAGSettings
+from app.utils import setup_logging
+
+logger = setup_logging()
+
+
+class EmbeddingError(Exception):
+    """Raised when embedding generation fails."""
+    pass
+
+
+class EmbeddingService:
+    """
+    Service for generating text embeddings using Azure OpenAI.
+    
+    Supports:
+    - Single text embedding
+    - Batch embedding (up to 100 texts)
+    - Retry with exponential backoff
+    """
+    
+    # Azure OpenAI batch limit
+    MAX_BATCH_SIZE = 100
+    
+    def __init__(
+        self,
+        openai_settings: OpenAISettings,
+        rag_settings: RAGSettings | None = None,
+        embedding_deployment: str | None = None,
+    ):
+        """
+        Initialize the embedding service.
+        
+        Args:
+            openai_settings: Azure OpenAI configuration
+            rag_settings: RAG configuration (for model/dimensions)
+            embedding_deployment: Optional deployment name override for embeddings
+        """
+        self.settings = openai_settings
+        self.rag_settings = rag_settings or RAGSettings()
+        
+        # Use embedding-specific deployment: explicit override > RAG settings > error
+        self.embedding_deployment = (
+            embedding_deployment 
+            or self.rag_settings.embedding_deployment
+        )
+        
+        if not self.embedding_deployment:
+            raise EmbeddingError(
+                "No embedding deployment configured. "
+                "Set EMBEDDING_DEPLOYMENT environment variable to your Azure OpenAI embedding model deployment name."
+            )
+        
+        # Model configuration
+        self.model = self.rag_settings.embedding_model
+        self.dimensions = self.rag_settings.embedding_dimensions
+    
+    def get_embedding(
+        self,
+        text: str,
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+    ) -> list[float]:
+        """
+        Generate embedding for a single text.
+        
+        Args:
+            text: Text to embed
+            max_retries: Number of retry attempts
+            retry_backoff: Exponential backoff multiplier
+            
+        Returns:
+            Embedding vector (list of floats)
+            
+        Raises:
+            EmbeddingError: If embedding generation fails after retries
+        """
+        embeddings = self.get_embeddings_batch(
+            [text],
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
+        return embeddings[0]
+    
+    def get_embeddings_batch(
+        self,
+        texts: list[str],
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+    ) -> list[list[float]]:
+        """
+        Generate embeddings for a batch of texts.
+        
+        Args:
+            texts: List of texts to embed (max 100)
+            max_retries: Number of retry attempts
+            retry_backoff: Exponential backoff multiplier
+            
+        Returns:
+            List of embedding vectors
+            
+        Raises:
+            EmbeddingError: If embedding generation fails after retries
+        """
+        if not texts:
+            return []
+        
+        if len(texts) > self.MAX_BATCH_SIZE:
+            raise EmbeddingError(
+                f"Batch size {len(texts)} exceeds maximum {self.MAX_BATCH_SIZE}. "
+                "Split into smaller batches."
+            )
+        
+        # Validate settings
+        if not self.settings.endpoint or not self.settings.api_key:
+            raise EmbeddingError(
+                "Azure OpenAI settings incomplete. "
+                "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY."
+            )
+        
+        # Build request
+        url = f"{self.settings.endpoint}/openai/deployments/{self.embedding_deployment}/embeddings"
+        params = {"api-version": self.settings.api_version}
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": self.settings.api_key,
+        }
+        payload = {
+            "input": texts,
+            "model": self.model,
+        }
+        
+        # Add dimensions if not default (for newer models)
+        if self.dimensions and self.dimensions != 1536:
+            payload["dimensions"] = self.dimensions
+        
+        # Execute with retry
+        last_error: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    url,
+                    params=params,
+                    headers=headers,
+                    json=payload,
+                    timeout=60,
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # Extract embeddings in order
+                    embeddings_data = sorted(
+                        data.get("data", []),
+                        key=lambda x: x.get("index", 0)
+                    )
+                    embeddings = [item["embedding"] for item in embeddings_data]
+                    
+                    if len(embeddings) != len(texts):
+                        raise EmbeddingError(
+                            f"Expected {len(texts)} embeddings, got {len(embeddings)}"
+                        )
+                    
+                    logger.debug(f"Generated {len(embeddings)} embeddings")
+                    return embeddings
+                
+                # Handle rate limiting
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get("Retry-After", retry_backoff ** attempt))
+                    logger.warning(f"Rate limited, retrying after {retry_after}s...")
+                    time.sleep(retry_after)
+                    continue
+                
+                # Other errors
+                error_msg = response.text[:500]
+                last_error = EmbeddingError(
+                    f"Embedding API error {response.status_code}: {error_msg}"
+                )
+                
+                # Don't retry client errors (4xx except 429)
+                if 400 <= response.status_code < 500:
+                    raise last_error
+                
+            except requests.exceptions.Timeout:
+                last_error = EmbeddingError("Embedding API timeout")
+                logger.warning(f"Attempt {attempt + 1}/{max_retries}: Timeout")
+            except requests.exceptions.RequestException as e:
+                last_error = EmbeddingError(f"Network error: {e}")
+                logger.warning(f"Attempt {attempt + 1}/{max_retries}: {e}")
+            
+            # Exponential backoff
+            if attempt < max_retries - 1:
+                sleep_time = retry_backoff ** attempt
+                logger.debug(f"Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+        
+        raise last_error or EmbeddingError("Embedding generation failed")
+    
+    def embed_chunks(
+        self,
+        chunks: list[Any],
+        batch_size: int = 50,
+    ) -> list[Any]:
+        """
+        Generate embeddings for PolicyChunk objects.
+        
+        Modifies chunks in-place by setting their embedding attribute.
+        
+        Args:
+            chunks: List of PolicyChunk objects
+            batch_size: Number of chunks to process per batch
+            
+        Returns:
+            Same list of chunks with embeddings populated
+        """
+        from app.rag.chunker import PolicyChunk
+        
+        if not chunks:
+            return chunks
+        
+        # Process in batches
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            texts = [chunk.content for chunk in batch]
+            
+            logger.info(f"Embedding batch {i // batch_size + 1} ({len(texts)} chunks)...")
+            embeddings = self.get_embeddings_batch(texts)
+            
+            # Assign embeddings to chunks
+            for chunk, embedding in zip(batch, embeddings):
+                chunk.embedding = embedding
+        
+        logger.info(f"Generated embeddings for {len(chunks)} chunks")
+        return chunks

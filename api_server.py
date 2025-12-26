@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import load_settings, validate_settings
+from app.database.settings import DatabaseSettings
+from app.database.pool import init_pool
 from app.storage import (
     list_applications,
     load_application,
@@ -70,12 +72,12 @@ app.add_middleware(
 )
 
 
-# Initialize storage provider on startup
+
+# Initialize storage provider and database pool on startup
 @app.on_event("startup")
 async def startup_event():
     """Initialize application components on startup."""
     from app.storage_providers import init_storage_provider, StorageSettings
-    
     try:
         storage_settings = StorageSettings.from_env()
         init_storage_provider(storage_settings)
@@ -83,6 +85,16 @@ async def startup_event():
     except Exception as e:
         logger.error("Failed to initialize storage provider: %s", e)
         raise
+
+    # Initialize database pool if using PostgreSQL
+    settings = load_settings()
+    if settings.database.backend == "postgresql":
+        try:
+            await init_pool(settings.database)
+            logger.info("Database pool initialized (PostgreSQL)")
+        except Exception as e:
+            logger.error("Failed to initialize database pool: %s", e)
+            raise
 
 
 # Pydantic models for API responses
@@ -878,6 +890,36 @@ async def get_policies_by_category(category: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# Background RAG Indexing Helpers
+# =============================================================================
+
+async def _background_reindex_policy(settings, policy_id: str):
+    """Background task to reindex a policy after create/update."""
+    try:
+        from app.rag.indexer import PolicyIndexer
+        
+        logger.info("Background reindexing policy: %s", policy_id)
+        indexer = PolicyIndexer(settings=settings)
+        await indexer.reindex_policy(policy_id)
+        logger.info("Background reindex complete for policy: %s", policy_id)
+    except Exception as e:
+        logger.error("Background reindex failed for policy %s: %s", policy_id, e)
+
+
+async def _background_delete_policy_chunks(settings, policy_id: str):
+    """Background task to delete policy chunks after policy deletion."""
+    try:
+        from app.rag.repository import PolicyChunkRepository
+        
+        logger.info("Deleting chunks for policy: %s", policy_id)
+        repo = PolicyChunkRepository(schema=settings.database.schema or "workbenchiq")
+        deleted = await repo.delete_chunks_by_policy(policy_id)
+        logger.info("Deleted %d chunks for policy: %s", deleted, policy_id)
+    except Exception as e:
+        logger.error("Failed to delete chunks for policy %s: %s", policy_id, e)
+
+
 class PolicyCreateRequest(BaseModel):
     """Request model for creating a policy."""
     id: str
@@ -912,6 +954,12 @@ async def create_policy(request: PolicyCreateRequest):
         result = add_policy(settings.app.prompts_root, policy_data)
         
         logger.info("Created policy %s", request.id)
+        
+        # Trigger background reindex if PostgreSQL is enabled
+        if settings.database.backend == "postgresql":
+            import asyncio
+            asyncio.create_task(_background_reindex_policy(settings, request.id))
+        
         return {
             "message": "Policy created successfully",
             "policy": result["policy"]
@@ -935,6 +983,12 @@ async def update_policy_endpoint(policy_id: str, request: PolicyUpdateRequest):
         result = update_policy(settings.app.prompts_root, policy_id, update_data)
         
         logger.info("Updated policy %s", policy_id)
+        
+        # Trigger background reindex if PostgreSQL is enabled
+        if settings.database.backend == "postgresql":
+            import asyncio
+            asyncio.create_task(_background_reindex_policy(settings, policy_id))
+        
         return {
             "message": "Policy updated successfully",
             "policy": result["policy"]
@@ -956,6 +1010,12 @@ async def delete_policy_endpoint(policy_id: str):
         result = delete_policy(settings.app.prompts_root, policy_id)
         
         logger.info("Deleted policy %s", policy_id)
+        
+        # Delete from RAG index if PostgreSQL is enabled
+        if settings.database.backend == "postgresql":
+            import asyncio
+            asyncio.create_task(_background_delete_policy_chunks(settings, policy_id))
+        
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -984,9 +1044,41 @@ async def chat_with_application(app_id: str, request: ChatRequest):
         if not app_md:
             raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
         
-        # Load underwriting policies
-        policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
-        logger.info("Chat: Loaded %d chars of policy context", len(policies_context))
+        # Get policy context - use RAG if enabled, otherwise full policies
+        rag_result = None
+        rag_citations = []
+        
+        if settings.rag.enabled:
+            try:
+                from app.rag.service import get_rag_service
+                
+                rag_service = await get_rag_service(settings)
+                
+                # Use RAG to get relevant policy context based on user query
+                rag_result = await rag_service.query_with_fallback(
+                    user_query=request.message,
+                    fallback_context=format_all_policies_for_prompt(settings.app.prompts_root),
+                    top_k=10,  # Get more chunks for chat context
+                )
+                
+                policies_context = rag_service.format_context_for_prompt(rag_result)
+                rag_citations = rag_service.get_citations_for_response(rag_result)
+                
+                logger.info(
+                    "Chat: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    rag_result.chunks_retrieved,
+                    rag_result.tokens_used,
+                    rag_result.total_latency_ms,
+                    " [FALLBACK]" if rag_result.used_fallback else ""
+                )
+                
+            except Exception as e:
+                logger.warning("Chat: RAG failed, falling back to full policies: %s", e)
+                policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+        else:
+            # RAG disabled - use full policies
+            policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+            logger.info("Chat: Loaded %d chars of policy context (RAG disabled)", len(policies_context))
         
         # Build context from application data
         app_context_parts = []
@@ -1138,10 +1230,30 @@ Always wrap JSON responses in ```json code blocks.
         
         logger.info("Chat: Received response from OpenAI")
         
-        return {
+        # Build response with optional RAG metadata
+        response_data = {
             "response": result["content"],
             "usage": result.get("usage", {}),
         }
+        
+        # Add RAG metadata if available
+        if rag_result and not rag_result.used_fallback:
+            response_data["rag"] = {
+                "enabled": True,
+                "chunks_retrieved": rag_result.chunks_retrieved,
+                "tokens_used": rag_result.tokens_used,
+                "latency_ms": round(rag_result.total_latency_ms),
+                "citations": rag_citations,
+                "inferred_categories": rag_result.inferred.categories if rag_result.inferred else [],
+            }
+        elif rag_result and rag_result.used_fallback:
+            response_data["rag"] = {
+                "enabled": True,
+                "fallback": True,
+                "fallback_reason": rag_result.fallback_reason,
+            }
+        
+        return response_data
     
     except HTTPException:
         raise
@@ -1320,8 +1432,41 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
         if not app_md:
             raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
         
-        # Load underwriting policies
-        policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+        # Get policy context - use RAG if enabled, otherwise full policies
+        rag_result = None
+        rag_citations = []
+        
+        if settings.rag.enabled:
+            try:
+                from app.rag.service import get_rag_service
+                
+                rag_service = await get_rag_service(settings)
+                
+                # Use RAG to get relevant policy context based on user query
+                rag_result = await rag_service.query_with_fallback(
+                    user_query=request.message,
+                    fallback_context=format_all_policies_for_prompt(settings.app.prompts_root),
+                    top_k=10,
+                )
+                
+                policies_context = rag_service.format_context_for_prompt(rag_result)
+                rag_citations = rag_service.get_citations_for_response(rag_result)
+                
+                logger.info(
+                    "Conversation: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    rag_result.chunks_retrieved,
+                    rag_result.tokens_used,
+                    rag_result.total_latency_ms,
+                    " [FALLBACK]" if rag_result.used_fallback else ""
+                )
+                
+            except Exception as e:
+                logger.warning("Conversation: RAG failed, falling back to full policies: %s", e)
+                policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+        else:
+            # RAG disabled - use full policies
+            policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+            logger.info("Conversation: Loaded %d chars of policy context (RAG disabled)", len(policies_context))
         
         # Build context from application data
         app_context_parts = []
@@ -1487,6 +1632,139 @@ Always wrap JSON responses in ```json code blocks.
     except Exception as e:
         logger.error("Conversation failed for application %s: %s", app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Health Check API Endpoints
+# =============================================================================
+
+@app.get("/api/health/database")
+async def health_check_database():
+    """Database health check endpoint."""
+    from app.database.pool import get_pool
+    settings = load_settings()
+    if settings.database.backend != "postgresql":
+        return {"status": "skipped", "message": "Not using PostgreSQL backend."}
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            version = await conn.fetchval("SELECT version();")
+            return {"status": "ok", "version": version}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+# =============================================================================
+# RAG Indexing API Endpoints
+# =============================================================================
+
+class ReindexRequest(BaseModel):
+    force: bool = True  # Whether to delete existing chunks first
+
+
+class ReindexResponse(BaseModel):
+    status: str
+    policies_indexed: Optional[int] = None
+    chunks_stored: Optional[int] = None
+    total_time_seconds: Optional[float] = None
+    error: Optional[str] = None
+
+
+@app.post("/api/admin/policies/reindex", response_model=ReindexResponse)
+async def reindex_all_policies(request: ReindexRequest = ReindexRequest()):
+    """
+    Reindex all underwriting policies for RAG search.
+    
+    This will:
+    1. Load all policies from the JSON file
+    2. Chunk them into searchable segments
+    3. Generate embeddings via Azure OpenAI
+    4. Store in PostgreSQL with pgvector
+    
+    Use force=True (default) to delete existing chunks before reindexing.
+    """
+    settings = load_settings()
+    
+    # Check if RAG is enabled
+    if settings.database.backend != "postgresql":
+        return ReindexResponse(
+            status="skipped",
+            error="PostgreSQL backend not configured. Set DATABASE_BACKEND=postgresql."
+        )
+    
+    try:
+        from app.rag.indexer import PolicyIndexer
+        
+        indexer = PolicyIndexer(settings=settings)
+        metrics = await indexer.index_policies(force_reindex=request.force)
+        
+        return ReindexResponse(
+            status=metrics.get("status", "unknown"),
+            policies_indexed=metrics.get("policies_indexed"),
+            chunks_stored=metrics.get("chunks_stored"),
+            total_time_seconds=metrics.get("total_time_seconds"),
+        )
+    except Exception as e:
+        logger.error("Failed to reindex policies: %s", e, exc_info=True)
+        return ReindexResponse(status="error", error=str(e))
+
+
+@app.post("/api/admin/policies/{policy_id}/reindex", response_model=ReindexResponse)
+async def reindex_single_policy(policy_id: str):
+    """
+    Reindex a single policy by ID.
+    
+    Useful after editing a policy in the UI.
+    """
+    settings = load_settings()
+    
+    if settings.database.backend != "postgresql":
+        return ReindexResponse(
+            status="skipped",
+            error="PostgreSQL backend not configured."
+        )
+    
+    try:
+        from app.rag.indexer import PolicyIndexer
+        
+        indexer = PolicyIndexer(settings=settings)
+        metrics = await indexer.reindex_policy(policy_id)
+        
+        if metrics.get("status") == "skipped":
+            return ReindexResponse(
+                status="not_found",
+                error=f"Policy '{policy_id}' not found."
+            )
+        
+        return ReindexResponse(
+            status=metrics.get("status", "unknown"),
+            policies_indexed=metrics.get("policies_indexed"),
+            chunks_stored=metrics.get("chunks_stored"),
+            total_time_seconds=metrics.get("total_time_seconds"),
+        )
+    except Exception as e:
+        logger.error("Failed to reindex policy %s: %s", policy_id, e, exc_info=True)
+        return ReindexResponse(status="error", error=str(e))
+
+
+@app.get("/api/admin/policies/index-stats")
+async def get_index_stats():
+    """Get statistics about the current policy index."""
+    settings = load_settings()
+    
+    if settings.database.backend != "postgresql":
+        return {"status": "skipped", "error": "PostgreSQL backend not configured."}
+    
+    try:
+        from app.rag.indexer import PolicyIndexer
+        
+        indexer = PolicyIndexer(settings=settings)
+        stats = await indexer.get_index_stats()
+        
+        return {"status": "ok", **stats}
+    except Exception as e:
+        logger.error("Failed to get index stats: %s", e, exc_info=True)
+        return {"status": "error", "error": str(e)}
 
 
 # Entry point for running with uvicorn directly
