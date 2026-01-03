@@ -5,6 +5,7 @@ This provides REST API endpoints for the Next.js frontend.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.storage import (
     load_application,
     new_metadata,
     save_uploaded_files,
+    save_application_metadata,
     ApplicationMetadata,
 )
 from app.processing import (
@@ -93,6 +95,7 @@ class ApplicationListItem(BaseModel):
     status: str
     persona: Optional[str] = None
     summary_title: Optional[str] = None
+    processing_status: Optional[str] = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -151,7 +154,123 @@ def application_to_dict(app_md: ApplicationMetadata) -> dict:
         "confidence_summary": app_md.confidence_summary,
         "analyzer_id_used": app_md.analyzer_id_used,
         "risk_analysis": app_md.risk_analysis,
+        "processing_status": app_md.processing_status,
+        "processing_error": app_md.processing_error,
     }
+
+
+# ============================================================================
+# Background Processing Helpers
+# ============================================================================
+
+def _handle_task_exception(task: asyncio.Task):
+    """Callback to log exceptions from background tasks."""
+    try:
+        exc = task.exception()
+        if exc:
+            logger.error("Background task failed with exception: %s", exc, exc_info=exc)
+    except asyncio.CancelledError:
+        pass
+
+
+async def run_extraction_background(app_id: str):
+    """Run content extraction in background and update status."""
+    try:
+        logger.info("Starting background extraction for application %s", app_id)
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            logger.error("Background extraction: Application %s not found", app_id)
+            return
+
+        # Update status to extracting
+        app_md.processing_status = "extracting"
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+
+        # Run extraction in thread pool
+        logger.info("Running content understanding for application %s", app_id)
+        app_md = await asyncio.to_thread(
+            run_content_understanding_for_files, settings, app_md
+        )
+        
+        # Update status and save
+        app_md.processing_status = None
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+        
+        logger.info("Background extraction completed for application %s", app_id)
+
+    except Exception as e:
+        logger.error("Background extraction failed for %s: %s", app_id, e, exc_info=True)
+        try:
+            settings = load_settings()
+            app_md = load_application(settings.app.storage_root, app_id)
+            if app_md:
+                app_md.processing_status = "error"
+                app_md.processing_error = str(e)
+                save_application_metadata(settings.app.storage_root, app_md)
+        except Exception:
+            pass
+
+
+async def run_analysis_background(app_id: str, sections: Optional[List[str]] = None):
+    """Run analysis in background and update status."""
+    try:
+        logger.info("Starting background analysis for application %s", app_id)
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            logger.error("Background analysis: Application %s not found", app_id)
+            return
+
+        # Update status to analyzing
+        app_md.processing_status = "analyzing"
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+
+        # Run analysis in thread pool
+        logger.info("Running underwriting prompts for application %s", app_id)
+        app_md = await asyncio.to_thread(
+            run_underwriting_prompts,
+            settings,
+            app_md,
+            sections_to_run=sections,
+            max_workers_per_section=4,
+        )
+        
+        # Update status and save
+        app_md.processing_status = None
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+        
+        logger.info("Background analysis completed for application %s", app_id)
+
+    except Exception as e:
+        logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
+        try:
+            settings = load_settings()
+            app_md = load_application(settings.app.storage_root, app_id)
+            if app_md:
+                app_md.processing_status = "error"
+                app_md.processing_error = str(e)
+                save_application_metadata(settings.app.storage_root, app_md)
+        except Exception:
+            pass
+
+
+async def run_extract_and_analyze_background(app_id: str):
+    """Run both extraction and analysis in background."""
+    logger.info("Starting full background processing for application %s", app_id)
+    await run_extraction_background(app_id)
+    
+    # Check if extraction succeeded before continuing
+    settings = load_settings()
+    app_md = load_application(settings.app.storage_root, app_id)
+    if app_md and app_md.processing_status != "error" and app_md.document_markdown:
+        await run_analysis_background(app_id)
+    else:
+        logger.warning("Skipping analysis for %s - extraction failed or no content", app_id)
 
 
 @app.get("/")
@@ -209,6 +328,7 @@ async def get_applications(persona: Optional[str] = None):
                 status=a.get("status", "unknown"),
                 persona=a.get("persona"),
                 summary_title=a.get("summary_title"),
+                processing_status=a.get("processing_status"),
             )
             for a in apps
         ]
@@ -281,16 +401,48 @@ async def create_application(
 
 
 @app.post("/api/applications/{app_id}/extract")
-async def extract_content(app_id: str):
-    """Run Content Understanding extraction on an application."""
+async def extract_content(app_id: str, background: bool = False):
+    """Run Content Understanding extraction on an application.
+    
+    Args:
+        app_id: Application ID
+        background: If True, start extraction in background and return immediately.
+                   Client should poll GET /api/applications/{app_id} for status.
+    """
     try:
         settings = load_settings()
         app_md = load_application(settings.app.storage_root, app_id)
         if not app_md:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Run content understanding
-        app_md = run_content_understanding_for_files(settings, app_md)
+        if background:
+            # Check if already processing
+            if app_md.processing_status in ("extracting", "analyzing"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Application is already being processed: {app_md.processing_status}"
+                )
+            
+            # Start background task and return immediately
+            task = asyncio.create_task(run_extraction_background(app_id))
+            task.add_done_callback(_handle_task_exception)
+            
+            # Update status immediately so client sees it
+            app_md.processing_status = "extracting"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Started background extraction for application %s", app_id)
+            return {
+                **application_to_dict(app_md),
+                "message": "Extraction started in background. Poll GET /api/applications/{app_id} for status."
+            }
+        
+        # Synchronous mode (backward compatible)
+        # Run content understanding in thread pool to avoid blocking event loop
+        app_md = await asyncio.to_thread(
+            run_content_understanding_for_files, settings, app_md
+        )
         
         logger.info("Extraction completed for application %s", app_id)
         return application_to_dict(app_md)
@@ -303,8 +455,15 @@ async def extract_content(app_id: str):
 
 
 @app.post("/api/applications/{app_id}/analyze")
-async def analyze_application(app_id: str, request: AnalyzeRequest = None):
-    """Run underwriting prompts analysis on an application."""
+async def analyze_application(app_id: str, request: AnalyzeRequest = None, background: bool = False):
+    """Run underwriting prompts analysis on an application.
+    
+    Args:
+        app_id: Application ID
+        request: Optional request with sections to analyze
+        background: If True, start analysis in background and return immediately.
+                   Client should poll GET /api/applications/{app_id} for status.
+    """
     try:
         settings = load_settings()
         app_md = load_application(settings.app.storage_root, app_id)
@@ -319,8 +478,33 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None):
 
         sections_to_run = request.sections if request else None
 
-        # Run underwriting prompts
-        app_md = run_underwriting_prompts(
+        if background:
+            # Check if already processing
+            if app_md.processing_status in ("extracting", "analyzing"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Application is already being processed: {app_md.processing_status}"
+                )
+            
+            # Start background task and return immediately
+            task = asyncio.create_task(run_analysis_background(app_id, sections_to_run))
+            task.add_done_callback(_handle_task_exception)
+            
+            # Update status immediately so client sees it
+            app_md.processing_status = "analyzing"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Started background analysis for application %s", app_id)
+            return {
+                **application_to_dict(app_md),
+                "message": "Analysis started in background. Poll GET /api/applications/{app_id} for status."
+            }
+
+        # Synchronous mode (backward compatible)
+        # Run underwriting prompts in thread pool to avoid blocking event loop
+        app_md = await asyncio.to_thread(
+            run_underwriting_prompts,
             settings,
             app_md,
             sections_to_run=sections_to_run,
@@ -334,6 +518,55 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None):
         raise
     except Exception as e:
         logger.error("Analysis failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/applications/{app_id}/process")
+async def process_application(app_id: str):
+    """Start full processing (extraction + analysis) in background.
+    
+    This is the recommended endpoint for new uploads. It starts both
+    extraction and analysis as background tasks and returns immediately.
+    Client should poll GET /api/applications/{app_id} to check status.
+    
+    The processing_status field will be:
+    - 'extracting': Currently running content extraction
+    - 'analyzing': Extraction done, running analysis
+    - null: Processing complete
+    - 'error': Processing failed (check processing_error for details)
+    """
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Check if already processing
+        if app_md.processing_status in ("extracting", "analyzing"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Application is already being processed: {app_md.processing_status}"
+            )
+        
+        # Start background task for full processing
+        task = asyncio.create_task(run_extract_and_analyze_background(app_id))
+        task.add_done_callback(_handle_task_exception)
+        
+        # Update status immediately so client sees it
+        app_md.processing_status = "extracting"
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+        
+        logger.info("Started background processing for application %s", app_id)
+        return {
+            **application_to_dict(app_md),
+            "message": "Processing started in background. Poll GET /api/applications/{app_id} for status."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to start processing for %s: %s", app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -369,8 +602,10 @@ async def run_application_risk_analysis(app_id: str):
                 detail="Risk analysis is only available for underwriting applications."
             )
 
-        # Run risk analysis
-        risk_result = run_risk_analysis(settings, app_md)
+        # Run risk analysis in thread pool to avoid blocking event loop
+        risk_result = await asyncio.to_thread(
+            run_risk_analysis, settings, app_md
+        )
         
         logger.info("Risk analysis completed for application %s", app_id)
         return {
