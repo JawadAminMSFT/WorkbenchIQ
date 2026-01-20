@@ -27,6 +27,31 @@ class RAGSettings:
     embedding_deployment: Optional[str] = None  # Azure OpenAI deployment for embeddings
 
 
+@dataclass
+class AutomotiveClaimsSettings:
+    """Settings for Automotive Claims multimodal processing."""
+    enabled: bool = True
+    doc_analyzer: str = "autoClaimsDocAnalyzer"
+    image_analyzer: str = "autoClaimsImageAnalyzer"
+    video_analyzer: str = "autoClaimsVideoAnalyzer"
+    policies_path: str = "data/automotive-claims-policies.json"
+    video_max_duration_minutes: int = 10
+    image_max_size_mb: int = 20
+
+    @classmethod
+    def from_env(cls) -> "AutomotiveClaimsSettings":
+        """Load automotive claims settings from environment variables."""
+        return cls(
+            enabled=os.getenv("AUTO_CLAIMS_ENABLED", "true").lower() == "true",
+            doc_analyzer=os.getenv("AUTO_CLAIMS_DOC_ANALYZER", "autoClaimsDocAnalyzer"),
+            image_analyzer=os.getenv("AUTO_CLAIMS_IMAGE_ANALYZER", "autoClaimsImageAnalyzer"),
+            video_analyzer=os.getenv("AUTO_CLAIMS_VIDEO_ANALYZER", "autoClaimsVideoAnalyzer"),
+            policies_path=os.getenv("AUTO_CLAIMS_POLICIES_PATH", "data/automotive-claims-policies.json"),
+            video_max_duration_minutes=int(os.getenv("VIDEO_MAX_DURATION_MINUTES", "10")),
+            image_max_size_mb=int(os.getenv("IMAGE_MAX_SIZE_MB", "20")),
+        )
+
+
 
 import os
 from dataclasses import dataclass
@@ -72,6 +97,7 @@ class OpenAISettings:
     deployment_name: str
     api_version: str = "2024-10-21"
     model_name: str = "gpt-4.1"
+    use_azure_ad: bool = False  # Use Azure AD auth instead of API key
     # Chat-specific settings (for Ask IQ feature)
     # If not set, falls back to main deployment
     chat_deployment_name: Optional[str] = None
@@ -94,6 +120,7 @@ class Settings:
     app: AppSettings
     database: DatabaseSettings
     rag: RAGSettings
+    automotive_claims: AutomotiveClaimsSettings
 
 
 def load_settings() -> Settings:
@@ -118,6 +145,7 @@ def load_settings() -> Settings:
         deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", ""),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         model_name=os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-4.1"),
+        use_azure_ad=os.getenv("AZURE_OPENAI_USE_AZURE_AD", "true").lower() == "true",
         # Chat-specific settings for Ask IQ (defaults to main model if not set)
         chat_deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME") or None,
         chat_model_name=os.getenv("AZURE_OPENAI_CHAT_MODEL_NAME") or None,
@@ -151,7 +179,9 @@ def load_settings() -> Settings:
         embedding_deployment=os.getenv("EMBEDDING_DEPLOYMENT") or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
     )
 
-    return Settings(content_understanding=cu, openai=oa, app=app, database=db, rag=rag)
+    auto_claims = AutomotiveClaimsSettings.from_env()
+
+    return Settings(content_understanding=cu, openai=oa, app=app, database=db, rag=rag, automotive_claims=auto_claims)
 
 
 def validate_settings(settings: Settings) -> List[str]:

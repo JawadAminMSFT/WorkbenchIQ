@@ -13,7 +13,7 @@ from typing import List, Optional
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 from app.config import load_settings, validate_settings
@@ -71,6 +71,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include modular routers (lazy loading to avoid circular imports)
+try:
+    from app.claims.api import router as claims_api_router
+    app.include_router(claims_api_router)
+    logger.info("Claims API router registered")
+except ImportError as e:
+    logger.warning("Claims API router not available: %s", e)
 
 
 # Initialize storage provider and database pool on startup
@@ -242,6 +249,54 @@ async def get_application(app_id: str):
         raise
     except Exception as e:
         logger.error("Failed to load application %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/applications/{app_id}/files/{filename:path}")
+async def get_application_file(app_id: str, filename: str):
+    """Serve a file from an application's files directory."""
+    try:
+        settings = load_settings()
+        app_dir = Path(settings.app.storage_root) / "applications" / app_id / "files"
+        file_path = app_dir / filename
+        
+        # Security: ensure the file is within the application directory
+        try:
+            file_path.resolve().relative_to(app_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine media type
+        suffix = file_path.suffix.lower()
+        media_types = {
+            ".pdf": "application/pdf",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".webp": "image/webp",
+            ".mp4": "video/mp4",
+            ".mov": "video/quicktime",
+            ".avi": "video/x-msvideo",
+            ".mkv": "video/x-matroska",
+            ".webm": "video/webm",
+        }
+        media_type = media_types.get(suffix, "application/octet-stream")
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type,
+            filename=filename,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to serve file %s for app %s: %s", filename, app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -580,6 +635,7 @@ class AnalyzerCreateRequest(BaseModel):
     analyzer_id: Optional[str] = None
     persona: Optional[str] = None
     description: Optional[str] = "Custom analyzer for document extraction"
+    media_type: Optional[str] = None  # "document", "image", or "video"
 
 
 @app.get("/api/analyzer/status")
@@ -656,6 +712,7 @@ async def create_custom_analyzer(request: AnalyzerCreateRequest = None):
     try:
         settings = load_settings()
         persona_id = request.persona if request and request.persona else "underwriting"
+        media_type = request.media_type if request and request.media_type else "document"
         
         # Get the analyzer_id from persona config if not explicitly provided
         if request and request.analyzer_id:
@@ -663,21 +720,28 @@ async def create_custom_analyzer(request: AnalyzerCreateRequest = None):
         else:
             try:
                 persona_config = get_persona_config(persona_id)
-                analyzer_id = persona_config.custom_analyzer_id
+                # Select analyzer based on media type
+                if media_type == "image" and persona_config.image_analyzer_id:
+                    analyzer_id = persona_config.image_analyzer_id
+                elif media_type == "video" and persona_config.video_analyzer_id:
+                    analyzer_id = persona_config.video_analyzer_id
+                else:
+                    analyzer_id = persona_config.custom_analyzer_id
             except ValueError:
                 # Fallback to default if persona not found
                 analyzer_id = settings.content_understanding.custom_analyzer_id
         
-        description = request.description if request and request.description else f"Custom {persona_id} analyzer for document extraction with confidence scores"
+        description = request.description if request and request.description else f"Custom {persona_id} {media_type} analyzer for extraction with confidence scores"
         
         result = create_or_update_custom_analyzer(
             settings.content_understanding,
             analyzer_id=analyzer_id,
             persona_id=persona_id,
             description=description,
+            media_type=media_type,
         )
         
-        logger.info("Created/updated custom analyzer: %s", analyzer_id)
+        logger.info("Created/updated custom %s analyzer: %s", media_type, analyzer_id)
         return {
             "message": f"Analyzer '{analyzer_id}' created/updated successfully",
             "analyzer_id": analyzer_id,
@@ -728,7 +792,57 @@ async def list_analyzers():
         # Get all persona configurations
         personas = list_personas()
         
-        # Check each persona's custom analyzer
+        # Helper function to check and add an analyzer
+        def add_analyzer(analyzer_id: str, persona_id: str, persona_name: str, media_type: str = "document"):
+            """Check if analyzer exists and add to list."""
+            try:
+                custom_analyzer = get_analyzer(settings.content_understanding, analyzer_id)
+                if custom_analyzer:
+                    analyzers.append({
+                        "id": analyzer_id,
+                        "type": "custom",
+                        "media_type": media_type,
+                        "description": custom_analyzer.get("description", f"Custom {persona_name} {media_type} analyzer"),
+                        "exists": True,
+                        "persona": persona_id,
+                        "persona_name": persona_name,
+                    })
+                else:
+                    analyzers.append({
+                        "id": analyzer_id,
+                        "type": "custom",
+                        "media_type": media_type,
+                        "description": f"Custom {persona_name} {media_type} analyzer (not created yet)",
+                        "exists": False,
+                        "persona": persona_id,
+                        "persona_name": persona_name,
+                    })
+            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as timeout_err:
+                logger.warning("Timeout checking custom analyzer %s for persona %s: %s", analyzer_id, persona_id, timeout_err)
+                analyzers.append({
+                    "id": analyzer_id,
+                    "type": "custom",
+                    "media_type": media_type,
+                    "description": f"Custom {persona_name} {media_type} analyzer (status unknown - timeout)",
+                    "exists": None,
+                    "persona": persona_id,
+                    "persona_name": persona_name,
+                    "error": f"Request timeout ({timeout_err})",
+                })
+            except requests.exceptions.ConnectionError as conn_err:
+                logger.warning("Connection error checking custom analyzer %s for persona %s: %s", analyzer_id, persona_id, conn_err)
+                analyzers.append({
+                    "id": analyzer_id,
+                    "type": "custom",
+                    "media_type": media_type,
+                    "description": f"Custom {persona_name} {media_type} analyzer (status unknown - connection error)",
+                    "exists": None,
+                    "persona": persona_id,
+                    "persona_name": persona_name,
+                    "error": "Cannot connect to Azure Content Understanding service",
+                })
+        
+        # Check each persona's custom analyzers
         for persona in personas:
             if not persona.get("enabled", True):
                 continue  # Skip disabled personas
@@ -736,51 +850,18 @@ async def list_analyzers():
             persona_id = persona["id"]
             try:
                 persona_config = get_persona_config(persona_id)
-                custom_id = persona_config.custom_analyzer_id
                 
-                # Try to check if custom analyzer exists
-                try:
-                    custom_analyzer = get_analyzer(settings.content_understanding, custom_id)
-                    if custom_analyzer:
-                        analyzers.append({
-                            "id": custom_id,
-                            "type": "custom",
-                            "description": custom_analyzer.get("description", f"Custom {persona['name']} analyzer"),
-                            "exists": True,
-                            "persona": persona_id,
-                            "persona_name": persona["name"],
-                        })
-                    else:
-                        analyzers.append({
-                            "id": custom_id,
-                            "type": "custom",
-                            "description": f"Custom {persona['name']} analyzer (not created yet)",
-                            "exists": False,
-                            "persona": persona_id,
-                            "persona_name": persona["name"],
-                        })
-                except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as timeout_err:
-                    logger.warning("Timeout checking custom analyzer %s for persona %s: %s", custom_id, persona_id, timeout_err)
-                    analyzers.append({
-                        "id": custom_id,
-                        "type": "custom",
-                        "description": f"Custom {persona['name']} analyzer (status unknown - timeout)",
-                        "exists": None,
-                        "persona": persona_id,
-                        "persona_name": persona["name"],
-                        "error": f"Request timeout ({timeout_err})",
-                    })
-                except requests.exceptions.ConnectionError as conn_err:
-                    logger.warning("Connection error checking custom analyzer %s for persona %s: %s", custom_id, persona_id, conn_err)
-                    analyzers.append({
-                        "id": custom_id,
-                        "type": "custom",
-                        "description": f"Custom {persona['name']} analyzer (status unknown - connection error)",
-                        "exists": None,
-                        "persona": persona_id,
-                        "persona_name": persona["name"],
-                        "error": "Cannot connect to Azure Content Understanding service",
-                    })
+                # Add document analyzer
+                add_analyzer(persona_config.custom_analyzer_id, persona_id, persona["name"], "document")
+                
+                # Add image analyzer if configured (multimodal personas)
+                if persona_config.image_analyzer_id:
+                    add_analyzer(persona_config.image_analyzer_id, persona_id, persona["name"], "image")
+                
+                # Add video analyzer if configured (multimodal personas)
+                if persona_config.video_analyzer_id:
+                    add_analyzer(persona_config.video_analyzer_id, persona_id, persona["name"], "video")
+                    
             except Exception as e:
                 logger.warning("Error processing persona %s: %s", persona_id, e)
                 continue

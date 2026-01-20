@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -11,6 +11,30 @@ from .config import OpenAISettings
 from .utils import setup_logging
 
 logger = setup_logging()
+
+# Cache for Azure AD token
+_token_cache: Dict[str, Any] = {}
+
+
+def _get_azure_ad_token() -> str:
+    """Get Azure AD token for Azure OpenAI using DefaultAzureCredential."""
+    import time as _time
+    
+    # Check cache
+    if _token_cache.get("token") and _token_cache.get("expires_at", 0) > _time.time() + 60:
+        return _token_cache["token"]
+    
+    try:
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        token = credential.get_token("https://cognitiveservices.azure.com/.default")
+        _token_cache["token"] = token.token
+        _token_cache["expires_at"] = token.expires_on
+        logger.info("Obtained Azure AD token for OpenAI")
+        return token.token
+    except Exception as e:
+        logger.error(f"Failed to get Azure AD token: {e}")
+        raise OpenAIClientError(f"Failed to get Azure AD token: {e}")
 
 
 class OpenAIClientError(Exception):
@@ -44,10 +68,17 @@ def chat_completion(
         model_override: Optional model name to use instead of settings.model_name
         api_version_override: Optional API version to use instead of settings.api_version
     """
-    if not settings.endpoint or not settings.api_key or not settings.deployment_name:
+    # Validate settings - api_key is optional when using Azure AD
+    if not settings.endpoint or not settings.deployment_name:
         raise OpenAIClientError(
             "Azure OpenAI settings are incomplete. "
-            "Please set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT_NAME."
+            "Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT_NAME."
+        )
+    
+    if not settings.use_azure_ad and not settings.api_key:
+        raise OpenAIClientError(
+            "Azure OpenAI authentication not configured. "
+            "Either set AZURE_OPENAI_API_KEY or enable Azure AD auth with AZURE_OPENAI_USE_AZURE_AD=true."
         )
 
     deployment = deployment_override or settings.deployment_name
@@ -56,10 +87,14 @@ def chat_completion(
 
     url = f"{settings.endpoint}/openai/deployments/{deployment}/chat/completions"
     params = {"api-version": api_version}
-    headers = {
-        "Content-Type": "application/json",
-        "api-key": settings.api_key,
-    }
+    
+    # Build headers based on auth method
+    headers = {"Content-Type": "application/json"}
+    if settings.use_azure_ad:
+        token = _get_azure_ad_token()
+        headers["Authorization"] = f"Bearer {token}"
+    else:
+        headers["api-key"] = settings.api_key
 
     body = {
         "messages": messages,

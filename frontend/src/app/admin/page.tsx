@@ -115,6 +115,24 @@ export default function AdminPage() {
   
   // Helper to check if current persona is claims-related
   const isClaimsPersona = currentPersona.includes('claims');
+  
+  // Helper to check if automotive claims persona (supports multimodal uploads)
+  const isAutomotiveClaimsPersona = currentPersona === 'automotive_claims';
+  
+  // Accepted file types based on persona
+  const getAcceptedFileTypes = () => {
+    if (isAutomotiveClaimsPersona) {
+      return '.pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.avi,.webm';
+    }
+    return '.pdf';
+  };
+  
+  const getAcceptedMimeTypes = () => {
+    if (isAutomotiveClaimsPersona) {
+      return ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
+    }
+    return ['application/pdf'];
+  };
 
   // Load applications
   const loadApplications = useCallback(async () => {
@@ -276,8 +294,9 @@ export default function AdminPage() {
     e.stopPropagation();
     setDragActive(false);
 
+    const acceptedTypes = getAcceptedMimeTypes();
     const files = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type === 'application/pdf'
+      (f) => acceptedTypes.includes(f.type)
     );
     if (files.length > 0) {
       setSelectedFiles((prev) => [...prev, ...files]);
@@ -286,8 +305,9 @@ export default function AdminPage() {
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
+      const acceptedTypes = getAcceptedMimeTypes();
       const files = Array.from(e.target.files).filter(
-        (f) => f.type === 'application/pdf'
+        (f) => acceptedTypes.includes(f.type)
       );
       setSelectedFiles((prev) => [...prev, ...files]);
     }
@@ -460,14 +480,14 @@ export default function AdminPage() {
   };
 
   // Analyzer handlers
-  const handleCreateAnalyzer = async () => {
+  const handleCreateAnalyzer = async (analyzerId?: string, mediaType?: string) => {
     setAnalyzerProcessing(true);
     setAnalyzerError(null);
     setAnalyzerSuccess(null);
     
     try {
-      // Pass current persona to use persona-specific field schema
-      const result = await createAnalyzer(undefined, currentPersona);
+      // Pass current persona and optional analyzer ID/media type
+      const result = await createAnalyzer(analyzerId, currentPersona, undefined, mediaType);
       setAnalyzerSuccess(`Analyzer "${result.analyzer_id}" created successfully!`);
       await loadAnalyzerData();
       
@@ -778,11 +798,11 @@ export default function AdminPage() {
               </svg>
               <div className="text-slate-600">
                 <label className="cursor-pointer text-indigo-600 hover:text-indigo-500">
-                  <span>Upload PDF files</span>
+                  <span>{isAutomotiveClaimsPersona ? 'Upload evidence files' : 'Upload PDF files'}</span>
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".pdf"
+                    accept={getAcceptedFileTypes()}
                     multiple
                     onChange={handleFileInput}
                     disabled={isProcessing}
@@ -790,7 +810,11 @@ export default function AdminPage() {
                 </label>
                 <span> or drag and drop</span>
               </div>
-              <p className="text-xs text-slate-500">PDF files only</p>
+              <p className="text-xs text-slate-500">
+                {isAutomotiveClaimsPersona 
+                  ? 'Images (PNG, JPG), Videos (MP4, MOV), and PDF documents' 
+                  : 'PDF files only'}
+              </p>
             </div>
           </div>
 
@@ -1286,7 +1310,7 @@ export default function AdminPage() {
             {/* Actions */}
             <div className="flex gap-2 pt-4">
               <button
-                onClick={handleCreateAnalyzer}
+                onClick={() => handleCreateAnalyzer()}
                 disabled={analyzerProcessing}
                 className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
@@ -1329,15 +1353,25 @@ export default function AdminPage() {
                         {analyzer.type === 'prebuilt' ? 'Azure Prebuilt' : 'Custom'} • {analyzer.description}
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 text-xs rounded-full ${
-                        analyzer.exists
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {analyzer.exists ? 'Ready' : 'Not Created'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {analyzer.exists ? (
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700">
+                          Ready
+                        </span>
+                      ) : analyzer.type === 'custom' ? (
+                        <button
+                          onClick={() => handleCreateAnalyzer(analyzer.id, analyzer.media_type)}
+                          disabled={analyzerProcessing}
+                          className="px-3 py-1 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        >
+                          {analyzerProcessing ? '...' : 'Create'}
+                        </button>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-slate-200 text-slate-600">
+                          Not Created
+                        </span>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1422,7 +1456,7 @@ export default function AdminPage() {
         <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900">
-              {isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
+              {isAutomotiveClaimsPersona ? 'Automotive Claims Policies' : isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
             </h2>
           </div>
           {/* Action Buttons */}
@@ -1483,7 +1517,12 @@ export default function AdminPage() {
                   }`}
                 >
                   <div className="font-medium text-slate-900 text-sm">{policy.name || policy.id}</div>
-                  {isClaimsPersona ? (
+                  {isAutomotiveClaimsPersona ? (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {(policy as any).category || 'coverage'} • {(policy as any).severity_level || 'all'}
+                    </div>
+                  ) : isClaimsPersona ? (
                     <div className="text-xs text-slate-500 mt-0.5">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {(policy as any).plan_type} • {(policy as any).network?.split(' ')[0] || 'N/A'}
@@ -1533,8 +1572,163 @@ export default function AdminPage() {
 
             {/* Editor Content */}
             <div className="p-5 space-y-5">
-            {isClaimsPersona ? (
-              /* Claims Policy Editor */
+            {isAutomotiveClaimsPersona ? (
+              /* Automotive Claims Policy Editor */
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy ID</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.id || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, id: e.target.value }))}
+                      disabled={!showNewPolicyForm}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100 font-mono"
+                      placeholder="e.g., auto-cov-001"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy Name</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.name || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., Collision Coverage"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select
+                      value={claimsPolicyFormData.category || 'coverage'}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    >
+                      <option value="coverage">Coverage</option>
+                      <option value="liability">Liability</option>
+                      <option value="damage_assessment">Damage Assessment</option>
+                      <option value="fraud_detection">Fraud Detection</option>
+                      <option value="payout_rules">Payout Rules</option>
+                      <option value="repair_requirements">Repair Requirements</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Severity Level</label>
+                    <select
+                      value={claimsPolicyFormData.severity_level || 'all'}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, severity_level: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    >
+                      <option value="all">All Severities</option>
+                      <option value="minor">Minor Only</option>
+                      <option value="moderate">Moderate Only</option>
+                      <option value="severe">Severe Only</option>
+                      <option value="total_loss">Total Loss Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <textarea
+                    value={claimsPolicyFormData.description || ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="Describe when this policy applies..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Policy Rule Text</label>
+                  <textarea
+                    value={claimsPolicyFormData.rule_text || ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, rule_text: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-32"
+                    placeholder="The full policy rule text that will be used for RAG retrieval and citation..."
+                  />
+                </div>
+
+                {/* Coverage Limits */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Coverage Limits (if applicable)</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Min Amount ($)</label>
+                      <input
+                        type="number"
+                        value={claimsPolicyFormData.limits?.min_amount || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          limits: { ...prev.limits, min_amount: Number(e.target.value) }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Max Amount ($)</label>
+                      <input
+                        type="number"
+                        value={claimsPolicyFormData.limits?.max_amount || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          limits: { ...prev.limits, max_amount: Number(e.target.value) }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="50000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Deductible ($)</label>
+                      <input
+                        type="number"
+                        value={claimsPolicyFormData.limits?.deductible || ''}
+                        onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                          ...prev, 
+                          limits: { ...prev.limits, deductible: Number(e.target.value) }
+                        }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        placeholder="500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fraud Indicators (for fraud detection policies) */}
+                {claimsPolicyFormData.category === 'fraud_detection' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Fraud Indicators to Check</label>
+                    <textarea
+                      value={Array.isArray(claimsPolicyFormData.fraud_indicators) ? claimsPolicyFormData.fraud_indicators.join('\n') : ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                        ...prev, 
+                        fraud_indicators: e.target.value.split('\n').filter(Boolean)
+                      }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-24"
+                      placeholder="One indicator per line:&#10;Inconsistent damage patterns&#10;Staged accident indicators&#10;Prior claim history anomalies"
+                    />
+                  </div>
+                )}
+
+                {/* Required Documentation */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Required Documentation</label>
+                  <textarea
+                    value={Array.isArray(claimsPolicyFormData.required_docs) ? claimsPolicyFormData.required_docs.join('\n') : ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                      ...prev, 
+                      required_docs: e.target.value.split('\n').filter(Boolean)
+                    }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="One document type per line:&#10;Photos of damage&#10;Police report&#10;Repair estimate"
+                  />
+                </div>
+              </div>
+            ) : isClaimsPersona ? (
+              /* Health Claims Policy Editor */
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
