@@ -1,0 +1,348 @@
+{
+  "version": "1.0",
+  "description": "Life & Health Claims Processing Policies",
+  "policies": [
+    {
+      "id": "HC-COV-001",
+      "category": "coverage_determination",
+      "subcategory": "plan_benefits",
+      "name": "Health Plan Coverage Verification",
+      "description": "Guidelines for verifying coverage eligibility and plan benefits before claim processing.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Member has active coverage on date of service",
+          "action": "Proceed with claim processing",
+          "rationale": "Coverage must be active on DOS to process claim"
+        },
+        {
+          "id": "C2",
+          "condition": "Service falls within plan benefit categories",
+          "action": "Apply appropriate cost-sharing based on plan type",
+          "rationale": "HMO, PPO, EPO, POS plans have different benefit structures"
+        },
+        {
+          "id": "C3",
+          "condition": "Provider is in-network for HMO plans",
+          "action": "Process at in-network rates",
+          "rationale": "HMO plans require in-network providers except emergencies"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Emergency services", "impact": "In-network rates apply regardless of provider network status"},
+        {"factor": "Prior authorization obtained", "impact": "Claim eligible for standard processing"},
+        {"factor": "Coordination of benefits", "impact": "May require adjustment based on primary payer"}
+      ],
+      "references": ["CMS Guidelines", "State Insurance Regulations", "Plan Document Section 4.1"]
+    },
+    {
+      "id": "HC-DED-001",
+      "category": "cost_sharing",
+      "subcategory": "deductibles",
+      "name": "Deductible Application Rules",
+      "description": "Rules for applying individual and family deductibles to claims.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Individual deductible not yet met",
+          "action": "Apply eligible charges to deductible before coinsurance",
+          "rationale": "Deductible must be satisfied before plan pays coinsurance"
+        },
+        {
+          "id": "C2",
+          "condition": "Family deductible met but individual not met",
+          "action": "Waive remaining individual deductible for embedded plans",
+          "rationale": "Embedded family deductibles protect individual members"
+        },
+        {
+          "id": "C3",
+          "condition": "Preventive care services",
+          "action": "Cover at 100% without deductible",
+          "rationale": "ACA-compliant preventive care exempt from cost sharing"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Plan year reset", "impact": "Deductible accumulation resets to zero"},
+        {"factor": "Mid-year enrollment", "impact": "Pro-rated deductible may apply"},
+        {"factor": "Accident-first deductible", "impact": "Separate deductible for accident-related claims"}
+      ],
+      "references": ["ACA Section 1302", "Plan Summary of Benefits", "Accumulator Guidelines"]
+    },
+    {
+      "id": "HC-COP-001",
+      "category": "cost_sharing",
+      "subcategory": "copayments",
+      "name": "Copayment Collection Rules",
+      "description": "Guidelines for applying copayments based on service type and provider.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "PCP office visit",
+          "action": "Apply PCP copay amount per plan schedule",
+          "rationale": "Primary care visits have lower copays to encourage preventive care"
+        },
+        {
+          "id": "C2",
+          "condition": "Specialist office visit",
+          "action": "Apply specialist copay amount per plan schedule",
+          "rationale": "Specialist copays are higher to manage utilization"
+        },
+        {
+          "id": "C3",
+          "condition": "Emergency room visit",
+          "action": "Apply ER copay; waive if admitted within 24 hours",
+          "rationale": "ER copay waiver for admissions prevents double cost-sharing"
+        },
+        {
+          "id": "C4",
+          "condition": "Urgent care visit",
+          "action": "Apply urgent care copay per plan schedule",
+          "rationale": "Urgent care copays encourage appropriate care setting"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Out-of-network provider (PPO)", "impact": "Higher copay or coinsurance applies"},
+        {"factor": "Telehealth visit", "impact": "May have reduced or waived copay"},
+        {"factor": "After-hours service", "impact": "Standard copay applies"}
+      ],
+      "references": ["Plan Schedule of Benefits", "Provider Contract Terms"]
+    },
+    {
+      "id": "HC-OOP-001",
+      "category": "cost_sharing",
+      "subcategory": "out_of_pocket_maximum",
+      "name": "Out-of-Pocket Maximum Rules",
+      "description": "Rules for tracking and applying out-of-pocket maximums.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Individual OOP maximum reached",
+          "action": "Pay 100% of covered services for remainder of plan year",
+          "rationale": "OOP max protects members from catastrophic costs"
+        },
+        {
+          "id": "C2",
+          "condition": "Family OOP maximum reached",
+          "action": "Pay 100% for all family members for remainder of plan year",
+          "rationale": "Family OOP max provides household-level protection"
+        },
+        {
+          "id": "C3",
+          "condition": "Service not subject to OOP accumulation",
+          "action": "Process normally; do not count toward OOP max",
+          "rationale": "Some services excluded from OOP accumulation per plan terms"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "In-network vs out-of-network", "impact": "Separate OOP accumulators may apply"},
+        {"factor": "ACA maximum limits", "impact": "Federal limits on maximum OOP for essential benefits"},
+        {"factor": "HSA-qualified plan", "impact": "Must meet minimum deductible before plan pays"}
+      ],
+      "references": ["ACA Section 1302(c)", "Federal OOP Limits 2024", "Plan Document Section 5.2"]
+    },
+    {
+      "id": "HC-NET-001",
+      "category": "network_management",
+      "subcategory": "provider_network",
+      "name": "Network Status Determination",
+      "description": "Rules for determining provider network status and applicable rates.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Provider in contracted network on date of service",
+          "action": "Apply in-network rates and cost sharing",
+          "rationale": "Contracted rates ensure member protection from balance billing"
+        },
+        {
+          "id": "C2",
+          "condition": "Provider out-of-network for HMO plan",
+          "action": "Deny claim unless emergency or authorized referral",
+          "rationale": "HMO plans require network utilization except emergencies"
+        },
+        {
+          "id": "C3",
+          "condition": "Provider out-of-network for PPO plan",
+          "action": "Apply out-of-network cost sharing; member responsible for balance",
+          "rationale": "PPO allows OON access with higher member cost sharing"
+        },
+        {
+          "id": "C4",
+          "condition": "No Surprises Act applicable facility",
+          "action": "Apply in-network cost sharing for OON emergency/ancillary services",
+          "rationale": "NSA protects patients from surprise medical bills"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Provider terminated mid-treatment", "impact": "Continuity of care provisions may apply"},
+        {"factor": "Geographic access standards", "impact": "OON may be covered if no network provider available"},
+        {"factor": "Center of Excellence program", "impact": "Special network arrangements for complex care"}
+      ],
+      "references": ["No Surprises Act 2022", "Network Adequacy Standards", "State Continuity of Care Laws"]
+    },
+    {
+      "id": "HC-AUTH-001",
+      "category": "utilization_management",
+      "subcategory": "prior_authorization",
+      "name": "Prior Authorization Requirements",
+      "description": "Guidelines for services requiring prior authorization.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Service on prior auth required list without authorization",
+          "action": "Pend claim; request clinical documentation",
+          "rationale": "Prior auth ensures medical necessity before expensive services"
+        },
+        {
+          "id": "C2",
+          "condition": "Valid prior authorization on file",
+          "action": "Process claim per authorization terms",
+          "rationale": "Pre-approved services should process without additional review"
+        },
+        {
+          "id": "C3",
+          "condition": "Emergency service requiring post-service review",
+          "action": "Process claim; conduct retrospective review within 48 hours",
+          "rationale": "Emergency services cannot wait for prior auth"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Urgent/expedited request", "impact": "24-hour turnaround required"},
+        {"factor": "Gold card provider", "impact": "May have reduced auth requirements"},
+        {"factor": "Concurrent review in progress", "impact": "Continued stay auth may be needed"}
+      ],
+      "references": ["NCQA UM Standards", "State Prompt Pay Laws", "CMS Interoperability Rules"]
+    },
+    {
+      "id": "HC-COB-001",
+      "category": "coordination_of_benefits",
+      "subcategory": "primary_secondary",
+      "name": "Coordination of Benefits Rules",
+      "description": "Rules for coordinating payment when member has multiple coverage.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "This plan is primary",
+          "action": "Process claim applying standard benefits and cost sharing",
+          "rationale": "Primary plan pays first based on COB rules"
+        },
+        {
+          "id": "C2",
+          "condition": "This plan is secondary",
+          "action": "Pay up to plan allowance minus primary payment and patient responsibility",
+          "rationale": "Secondary plan coordinates to prevent overpayment"
+        },
+        {
+          "id": "C3",
+          "condition": "Birthday rule applies for dependent children",
+          "action": "Parent with earlier birthday month/day is primary",
+          "rationale": "Industry standard for determining primary coverage for dependents"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Medicare as secondary payer", "impact": "Special MSP rules apply"},
+        {"factor": "Workers compensation claim", "impact": "WC is always primary for work injuries"},
+        {"factor": "Auto insurance with medical payments", "impact": "PIP/MedPay primary for auto accidents"}
+      ],
+      "references": ["NAIC COB Model Regulation", "Medicare Secondary Payer Rules", "State COB Laws"]
+    },
+    {
+      "id": "HC-FEE-001",
+      "category": "payment_calculation",
+      "subcategory": "fee_schedule",
+      "name": "Fee Schedule Application",
+      "description": "Rules for applying contracted fee schedules to claims.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Procedure code has contracted rate",
+          "action": "Pay contracted rate less member cost sharing",
+          "rationale": "Contracted rates ensure predictable costs for all parties"
+        },
+        {
+          "id": "C2",
+          "condition": "Procedure code not in fee schedule",
+          "action": "Apply usual and customary or Medicare-based rate",
+          "rationale": "Non-contracted codes priced using reference rates"
+        },
+        {
+          "id": "C3",
+          "condition": "Billed amount less than fee schedule",
+          "action": "Pay billed amount as maximum",
+          "rationale": "Never pay more than provider charges"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Multiple procedure discount", "impact": "Secondary procedures paid at reduced rate"},
+        {"factor": "Assistant surgeon modifier", "impact": "Reduced payment for surgical assistance"},
+        {"factor": "Bilateral procedure", "impact": "May have bundled or reduced payment"}
+      ],
+      "references": ["Provider Contract Exhibit A", "Medicare MPFS", "CPT Coding Guidelines"]
+    },
+    {
+      "id": "HC-EXC-001",
+      "category": "exclusions",
+      "subcategory": "non_covered_services",
+      "name": "Plan Exclusion Determination",
+      "description": "Guidelines for identifying and processing excluded services.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Service is cosmetic in nature",
+          "action": "Deny claim with cosmetic exclusion code",
+          "rationale": "Cosmetic procedures not medically necessary"
+        },
+        {
+          "id": "C2",
+          "condition": "Experimental or investigational treatment",
+          "action": "Deny unless approved under clinical trial exception",
+          "rationale": "Experimental treatments require special approval process"
+        },
+        {
+          "id": "C3",
+          "condition": "Service not covered under plan benefits",
+          "action": "Deny with benefit exclusion code; member responsible",
+          "rationale": "Non-covered services are member's financial responsibility"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Reconstructive vs cosmetic", "impact": "Reconstructive after illness/injury may be covered"},
+        {"factor": "FDA approval status", "impact": "FDA-approved uses may convert experimental to covered"},
+        {"factor": "State mandate coverage", "impact": "Some exclusions overridden by state law"}
+      ],
+      "references": ["Plan Exclusion List", "State Mandated Benefits", "Medical Policy Bulletins"]
+    },
+    {
+      "id": "HC-TMT-001",
+      "category": "timely_filing",
+      "subcategory": "claim_submission",
+      "name": "Timely Filing Requirements",
+      "description": "Rules for claim submission deadlines and exceptions.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Claim submitted within filing deadline (typically 90-180 days)",
+          "action": "Accept claim for processing",
+          "rationale": "Timely filing limits ensure accurate and efficient processing"
+        },
+        {
+          "id": "C2",
+          "condition": "Claim submitted after deadline without valid exception",
+          "action": "Deny claim with timely filing denial code",
+          "rationale": "Late claims impact administrative efficiency"
+        },
+        {
+          "id": "C3",
+          "condition": "COB or subrogation delayed claim",
+          "action": "Allow extended filing period from discovery date",
+          "rationale": "COB claims may have delayed filing rights"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Provider vs member submitted", "impact": "Different filing limits may apply"},
+        {"factor": "Corrected claim", "impact": "Original timely filing date preserved"},
+        {"factor": "Retroactive eligibility", "impact": "Filing period may start from eligibility confirmation"}
+      ],
+      "references": ["Provider Contract Filing Requirements", "State Prompt Pay Laws", "CMS Timely Filing Guidelines"]
+    }
+  ]
+}

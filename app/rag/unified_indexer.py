@@ -32,22 +32,22 @@ class IndexingError(Exception):
 # Persona configuration mapping
 PERSONA_CONFIG = {
     "underwriting": {
-        "policies_path": "data/life-health-underwriting-policies.json",
+        "policies_path": "prompts/life-health-underwriting-policies.json",
         "table_name": "policy_chunks",
         "display_name": "Underwriting",
     },
     "life_health_claims": {
-        "policies_path": "data/life-health-claims-policies.json",
+        "policies_path": "prompts/life-health-claims-policies.json",
         "table_name": "health_claims_policy_chunks",
         "display_name": "Life & Health Claims",
     },
     "automotive_claims": {
-        "policies_path": "data/automotive-claims-policies.json",
+        "policies_path": "prompts/automotive-claims-policies.json",
         "table_name": "claim_policy_chunks",
         "display_name": "Automotive Claims",
     },
     "property_casualty_claims": {
-        "policies_path": "data/property-casualty-claims-policies.json",
+        "policies_path": "prompts/property-casualty-claims-policies.json",
         "table_name": "pc_claims_policy_chunks",
         "display_name": "Property & Casualty Claims",
     },

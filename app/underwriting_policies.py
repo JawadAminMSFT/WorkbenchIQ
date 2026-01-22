@@ -433,14 +433,20 @@ def format_policy_for_prompt(policy: Dict[str, Any]) -> str:
     """
     lines = []
     lines.append(f"### Policy: {policy['id']} - {policy['name']}")
-    lines.append(f"Category: {policy['category']}/{policy['subcategory']}")
+    lines.append(f"Category: {policy['category']}/{policy.get('subcategory', 'general')}")
     lines.append(f"Description: {policy['description']}")
     lines.append("")
-    lines.append("**Risk Assessment Criteria:**")
+    lines.append("**Criteria:**")
     
     for criteria in policy.get("criteria", []):
         lines.append(f"- [{criteria['id']}] {criteria['condition']}")
-        lines.append(f"  - Risk Level: {criteria['risk_level']}")
+        # Handle different policy schema variants
+        if criteria.get('risk_level'):
+            lines.append(f"  - Risk Level: {criteria['risk_level']}")
+        if criteria.get('severity'):
+            lines.append(f"  - Severity: {criteria['severity']}")
+        if criteria.get('liability_determination'):
+            lines.append(f"  - Liability: {criteria['liability_determination']}")
         lines.append(f"  - Action: {criteria['action']}")
         lines.append(f"  - Rationale: {criteria['rationale']}")
     
@@ -468,16 +474,16 @@ def format_policies_for_prompt(
         Formatted string containing all policies
     """
     if not policies:
-        return "No specific underwriting policies applicable."
+        return "No specific policies applicable."
     
     # Limit policies to avoid token overflow
     policies_to_format = policies[:max_policies]
     
     lines = [
-        "# UNDERWRITING POLICY REFERENCE",
+        "# POLICY REFERENCE",
         "",
-        "Use the following underwriting policies to assess risk and determine appropriate actions.",
-        "When providing a risk assessment, you MUST cite the specific policy and criteria used.",
+        "Use the following policies to assess and determine appropriate actions.",
+        "When providing an assessment, you MUST cite the specific policy and criteria used.",
         "",
     ]
     

@@ -52,7 +52,7 @@ class PolicyIndexer:
         """
         self.settings = settings or load_settings()
         self.policies_path = Path(policies_path) if policies_path else Path(
-            "data/life-health-underwriting-policies.json"
+            "prompts/life-health-underwriting-policies.json"
         )
         
         # Initialize components
@@ -262,7 +262,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Index underwriting policies for RAG")
     parser.add_argument(
         "--policies",
-        default="data/life-health-underwriting-policies.json",
+        default="prompts/life-health-underwriting-policies.json",
         help="Path to policies JSON file",
     )
     parser.add_argument(

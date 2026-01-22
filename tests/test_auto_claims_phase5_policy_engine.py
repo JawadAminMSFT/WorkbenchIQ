@@ -57,7 +57,7 @@ from app.claims.engine import (
 @pytest.fixture
 def policy_json_path():
     """Return path to the automotive claims policies JSON."""
-    return Path("data/automotive-claims-policies.json")
+    return Path("prompts/automotive-claims-policies.json")
 
 
 @pytest.fixture

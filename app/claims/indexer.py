@@ -269,7 +269,7 @@ class ClaimsPolicyIndexer:
         self.policies_path = (
             Path(policies_path)
             if policies_path
-            else Path("data/automotive-claims-policies.json")
+            else Path("prompts/automotive-claims-policies.json")
         )
 
         # Initialize components

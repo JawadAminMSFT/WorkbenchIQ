@@ -1278,7 +1278,7 @@ async def get_policies(persona: str = "underwriting"):
         if persona == "automotive_claims":
             from app.claims.policies import ClaimsPolicyLoader
             loader = ClaimsPolicyLoader()
-            loader.load_policies("data/automotive-claims-policies.json")
+            loader.load_policies("prompts/automotive-claims-policies.json")
             policies = [
                 {
                     "id": p.id,
@@ -1345,16 +1345,20 @@ async def get_policies(persona: str = "underwriting"):
 
 @app.get("/api/policies/{policy_id}")
 async def get_policy_by_id(policy_id: str, persona: str = "underwriting"):
-    """Get a specific policy by ID for the specified persona."""
+    """Get a specific policy by ID for the specified persona.
+    
+    Supports both policy IDs (e.g., FRD-001) and criteria IDs (e.g., FRD-001-B).
+    For criteria IDs, returns the parent policy with the matching criteria highlighted.
+    """
     import json
     from pathlib import Path
     
     # Mapping of personas to their policy files
     PERSONA_POLICY_FILES = {
-        "underwriting": "data/life-health-underwriting-policies.json",
-        "life_health_claims": "data/life-health-claims-policies.json",
-        "automotive_claims": "data/automotive-claims-policies.json",
-        "property_casualty_claims": "data/property-casualty-claims-policies.json",
+        "underwriting": "prompts/life-health-underwriting-policies.json",
+        "life_health_claims": "prompts/life-health-claims-policies.json",
+        "automotive_claims": "prompts/automotive-claims-policies.json",
+        "property_casualty_claims": "prompts/property-casualty-claims-policies.json",
     }
     
     try:
@@ -1373,10 +1377,20 @@ async def get_policy_by_id(policy_id: str, persona: str = "underwriting"):
         
         policies = data.get("policies", [])
         
-        # Find the policy by ID
+        # First, try to find an exact policy match
         for policy in policies:
             if policy.get("id") == policy_id:
                 return policy
+        
+        # If not found, search within criteria (for criteria IDs like FRD-001-B)
+        for policy in policies:
+            for criteria in policy.get("criteria", []):
+                if criteria.get("id") == policy_id:
+                    # Return the parent policy with matched_criteria indicated
+                    result = dict(policy)
+                    result["matched_criteria_id"] = policy_id
+                    result["matched_criteria"] = criteria
+                    return result
         
         raise HTTPException(status_code=404, detail=f"Policy not found: {policy_id}")
         

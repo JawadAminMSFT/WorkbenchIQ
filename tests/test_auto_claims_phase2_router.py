@@ -111,7 +111,7 @@ class TestAnalyzerRouter:
             doc_analyzer="autoClaimsDocAnalyzer",
             image_analyzer="autoClaimsImageAnalyzer",
             video_analyzer="autoClaimsVideoAnalyzer",
-            policies_path="data/automotive-claims-policies.json",
+            policies_path="prompts/automotive-claims-policies.json",
             video_max_duration_minutes=30,
             image_max_size_mb=20,
         )

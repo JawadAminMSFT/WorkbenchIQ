@@ -34,7 +34,7 @@ class AutomotiveClaimsSettings:
     doc_analyzer: str = "autoClaimsDocAnalyzer"
     image_analyzer: str = "autoClaimsImageAnalyzer"
     video_analyzer: str = "autoClaimsVideoAnalyzer"
-    policies_path: str = "data/automotive-claims-policies.json"
+    policies_path: str = "prompts/automotive-claims-policies.json"
     video_max_duration_minutes: int = 10
     image_max_size_mb: int = 20
 
@@ -46,7 +46,7 @@ class AutomotiveClaimsSettings:
             doc_analyzer=os.getenv("AUTO_CLAIMS_DOC_ANALYZER", "autoClaimsDocAnalyzer"),
             image_analyzer=os.getenv("AUTO_CLAIMS_IMAGE_ANALYZER", "autoClaimsImageAnalyzer"),
             video_analyzer=os.getenv("AUTO_CLAIMS_VIDEO_ANALYZER", "autoClaimsVideoAnalyzer"),
-            policies_path=os.getenv("AUTO_CLAIMS_POLICIES_PATH", "data/automotive-claims-policies.json"),
+            policies_path=os.getenv("AUTO_CLAIMS_POLICIES_PATH", "prompts/automotive-claims-policies.json"),
             video_max_duration_minutes=int(os.getenv("VIDEO_MAX_DURATION_MINUTES", "10")),
             image_max_size_mb=int(os.getenv("IMAGE_MAX_SIZE_MB", "20")),
         )

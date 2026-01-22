@@ -7,7 +7,7 @@ determination, fraud detection, and payout calculation.
 
 Usage:
     loader = ClaimsPolicyLoader()
-    policies = loader.load_policies("data/automotive-claims-policies.json")
+    policies = loader.load_policies("prompts/automotive-claims-policies.json")
     damage_policies = loader.get_policies_by_category("damage_assessment")
 """
 
@@ -83,7 +83,7 @@ class ClaimsPolicyLoader:
 
     Example:
         loader = ClaimsPolicyLoader()
-        loader.load_policies("data/automotive-claims-policies.json")
+        loader.load_policies("prompts/automotive-claims-policies.json")
 
         # Get all damage assessment policies
         damage_policies = loader.get_policies_by_category("damage_assessment")
