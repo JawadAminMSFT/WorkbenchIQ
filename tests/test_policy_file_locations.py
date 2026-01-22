@@ -20,12 +20,12 @@ class TestPolicyFileLocations:
     """Test that policy files exist in expected locations."""
 
     # Expected files in prompts/ folder after migration
+    # Note: policies.json has been merged into life-health-claims-policies.json
     EXPECTED_PROMPTS_FILES = [
         "prompts.json",
         "risk-analysis-prompts.json",
-        "policies.json",
         "life-health-underwriting-policies.json",
-        "life-health-claims-policies.json",
+        "life-health-claims-policies.json",  # Now contains plan_benefits + processing policies
         "automotive-claims-policies.json",
         "property-casualty-claims-policies.json",
     ]
@@ -264,6 +264,69 @@ class TestClaimsPolicyLoading:
             pytest.skip("automotive-claims-policies.json not found in either location")
         except ImportError:
             pytest.skip("app.claims.policies module not available")
+
+
+class TestUnifiedLifeHealthClaimsSchema:
+    """Test the unified life-health-claims-policies.json schema."""
+
+    def test_unified_schema_has_plan_benefits(self):
+        """Test that life-health-claims-policies.json has plan_benefits section."""
+        policy_path = PROJECT_ROOT / "prompts" / "life-health-claims-policies.json"
+        if not policy_path.exists():
+            pytest.skip("life-health-claims-policies.json not found")
+        
+        with open(policy_path, "r") as f:
+            data = json.load(f)
+        
+        assert "plan_benefits" in data, "Should have plan_benefits section"
+        assert isinstance(data["plan_benefits"], dict), "plan_benefits should be a dict"
+        assert len(data["plan_benefits"]) > 0, "Should have at least one plan"
+
+    def test_unified_schema_has_policies(self):
+        """Test that life-health-claims-policies.json has policies section."""
+        policy_path = PROJECT_ROOT / "prompts" / "life-health-claims-policies.json"
+        if not policy_path.exists():
+            pytest.skip("life-health-claims-policies.json not found")
+        
+        with open(policy_path, "r") as f:
+            data = json.load(f)
+        
+        assert "policies" in data, "Should have policies section"
+        assert isinstance(data["policies"], list), "policies should be a list"
+        assert len(data["policies"]) > 0, "Should have at least one policy"
+
+    def test_plan_benefits_structure(self):
+        """Test that each plan benefit has expected fields."""
+        policy_path = PROJECT_ROOT / "prompts" / "life-health-claims-policies.json"
+        if not policy_path.exists():
+            pytest.skip("life-health-claims-policies.json not found")
+        
+        with open(policy_path, "r") as f:
+            data = json.load(f)
+        
+        plan_benefits = data.get("plan_benefits", {})
+        for plan_name, plan_data in plan_benefits.items():
+            assert "plan_name" in plan_data, f"{plan_name} should have plan_name"
+            assert "plan_type" in plan_data, f"{plan_name} should have plan_type"
+            # These are common but optional
+            # deductible, oop_max, copays, coinsurance
+
+    def test_format_policies_for_persona_includes_plan_benefits(self):
+        """Test that format_policies_for_persona includes plan benefits."""
+        try:
+            from app.underwriting_policies import format_policies_for_persona
+            
+            formatted = format_policies_for_persona("prompts", "life_health_claims")
+            
+            # Should contain plan benefit info
+            assert "PLAN BENEFIT REFERENCE" in formatted or "HealthPlus" in formatted, \
+                "Formatted output should include plan benefits"
+            
+            # Should also contain processing policies
+            assert "HC-COV-001" in formatted or "coverage" in formatted.lower(), \
+                "Formatted output should include processing policies"
+        except ImportError:
+            pytest.skip("app.underwriting_policies module not available")
 
 
 if __name__ == "__main__":

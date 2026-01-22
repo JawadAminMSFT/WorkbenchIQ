@@ -1266,10 +1266,10 @@ async def get_policies(persona: str = "underwriting"):
     
     - For 'underwriting' persona: Returns underwriting policies from life-health-underwriting-policies.json
     - For 'automotive_claims' persona: Returns automotive claims policies from automotive-claims-policies.json
-    - For other claims personas (life_health_claims, property_casualty_claims): Returns claims/health plan policies from policies.json
+    - For 'life_health_claims': Returns both processing policies AND plan benefits from unified file
+    - For other claims personas: Returns claims policies from their respective files
     """
     from app.underwriting_policies import load_policies as load_underwriting_policies
-    from app.processing import load_policies as load_claims_policies
     
     try:
         settings = load_settings()
@@ -1311,17 +1311,54 @@ async def get_policies(persona: str = "underwriting"):
                 "type": "automotive_claims",
             }
         
-        # Check if this is a claims persona (life_health_claims, property_casualty_claims, etc.)
+        # Life & Health Claims - load from unified file with both policies and plan benefits
+        if persona == "life_health_claims":
+            import json
+            policy_file = Path(settings.app.prompts_root) / "life-health-claims-policies.json"
+            if policy_file.exists():
+                with open(policy_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                policies = []
+                
+                # Add processing policies
+                for policy in data.get("policies", []):
+                    policies.append(policy)
+                
+                # Add plan benefits as policies
+                for plan_name, plan_data in data.get("plan_benefits", {}).items():
+                    policies.append({
+                        "id": f"PLAN-{plan_name.replace(' ', '-').upper()}",
+                        "name": plan_name,
+                        "category": "plan_benefits",
+                        "subcategory": plan_data.get("plan_type", "Unknown"),
+                        "description": f"{plan_data.get('plan_type', '')} plan with {plan_data.get('network', 'standard')} network",
+                        **plan_data,
+                    })
+                
+                return {
+                    "policies": policies,
+                    "total": len(policies),
+                    "persona": persona,
+                    "type": "life_health_claims",
+                }
+            else:
+                return {
+                    "policies": [],
+                    "total": 0,
+                    "persona": persona,
+                    "type": "life_health_claims",
+                    "error": "Policy file not found",
+                }
+        
+        # Check if this is another claims persona (property_casualty_claims, etc.)
         is_claims_persona = "claims" in persona.lower()
         
         if is_claims_persona:
-            # Load claims policies (health plans with coverage info)
-            policies_data = load_claims_policies(settings.app.prompts_root)
-            # Convert dict format to list format for consistency
-            policies = [
-                {"id": plan_name, "name": plan_name, **plan_data}
-                for plan_name, plan_data in policies_data.items()
-            ]
+            # Load from persona-specific policy file
+            from app.underwriting_policies import load_policies_for_persona
+            policies_data = load_policies_for_persona(settings.app.prompts_root, persona)
+            policies = policies_data.get("policies", [])
             return {
                 "policies": policies,
                 "total": len(policies),

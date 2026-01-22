@@ -686,11 +686,76 @@ def load_policies_for_persona(
         return _get_empty_policies()
 
 
+def format_plan_benefits_for_prompt(plan_benefits: dict) -> str:
+    """
+    Format plan benefit definitions for injection into prompts.
+    
+    Args:
+        plan_benefits: Dictionary of plan_name -> plan_data
+        
+    Returns:
+        Formatted string of plan benefits
+    """
+    if not plan_benefits:
+        return ""
+    
+    formatted_parts = []
+    formatted_parts.append("=" * 60)
+    formatted_parts.append("PLAN BENEFIT REFERENCE")
+    formatted_parts.append("=" * 60)
+    
+    for plan_name, plan_data in plan_benefits.items():
+        formatted_parts.append(f"\n### {plan_name}")
+        formatted_parts.append(f"Plan Type: {plan_data.get('plan_type', 'Unknown')}")
+        formatted_parts.append(f"Network: {plan_data.get('network', 'Unknown')}")
+        
+        # Deductible
+        deductible = plan_data.get("deductible", {})
+        if deductible:
+            formatted_parts.append(f"Deductible: Individual {deductible.get('individual', 'N/A')} / Family {deductible.get('family', 'N/A')}")
+        
+        # OOP Max
+        oop_max = plan_data.get("oop_max", {})
+        if oop_max:
+            formatted_parts.append(f"OOP Max: Individual {oop_max.get('individual', 'N/A')} / Family {oop_max.get('family', 'N/A')}")
+        
+        # Copays
+        copays = plan_data.get("copays", {})
+        if copays:
+            copay_str = ", ".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in copays.items()])
+            formatted_parts.append(f"Copays: {copay_str}")
+        
+        # Coinsurance
+        coinsurance = plan_data.get("coinsurance")
+        if coinsurance:
+            formatted_parts.append(f"Coinsurance: {coinsurance}")
+        
+        # Preventive care
+        preventive = plan_data.get("preventive_care")
+        if preventive:
+            formatted_parts.append(f"Preventive Care: {preventive}")
+        
+        # Exclusions
+        exclusions = plan_data.get("exclusions", [])
+        if exclusions:
+            formatted_parts.append(f"Exclusions: {', '.join(exclusions)}")
+        
+        # Fee schedule
+        fee_schedule = plan_data.get("fee_schedule", {})
+        if fee_schedule:
+            fee_str = ", ".join([f"{code}: {rate}" for code, rate in fee_schedule.items()])
+            formatted_parts.append(f"Fee Schedule: {fee_str}")
+    
+    return "\n".join(formatted_parts)
+
+
 def format_policies_for_persona(storage_root: str, persona: str) -> str:
     """
     Format all policies for a specific persona for injection into a prompt.
     
     This is the persona-aware version of format_all_policies_for_prompt.
+    For claims personas with unified schema, includes both plan benefits
+    and processing policies.
     
     Args:
         storage_root: Path to the data storage directory
@@ -699,5 +764,18 @@ def format_policies_for_persona(storage_root: str, persona: str) -> str:
     Returns:
         Formatted string containing all policies for the persona
     """
-    policies = load_policies_for_persona(storage_root, persona)
-    return format_policies_for_prompt(policies.get("policies", []))
+    data = load_policies_for_persona(storage_root, persona)
+    
+    formatted_parts = []
+    
+    # Format processing policies
+    policies = data.get("policies", [])
+    if policies:
+        formatted_parts.append(format_policies_for_prompt(policies))
+    
+    # Format plan benefits (for claims personas with unified schema)
+    plan_benefits = data.get("plan_benefits", {})
+    if plan_benefits:
+        formatted_parts.append(format_plan_benefits_for_prompt(plan_benefits))
+    
+    return "\n\n".join(formatted_parts)

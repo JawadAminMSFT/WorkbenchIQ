@@ -1282,21 +1282,23 @@ For each line item assess:
 - Modifier appropriateness
 - Bundle/unbundle issues
 
+IMPORTANT: All monetary fields must be SHORT values like "$520.00" or "Unknown". Never include explanations in monetary fields.
+
 Return STRICT JSON:
 
 {
   "summary": "Overall claim line evaluation.",
-  "total_billed": "Total billed amount",
-  "total_allowed": "Total allowed amount (sum of line allowed amounts)",
-  "total_plan_pays": "Plan liability (or 'Unknown')",
-  "total_member_pays": "Member responsibility (or 'Unknown')",
+  "total_billed": "$X.XX (dollar amount only)",
+  "total_allowed": "$X.XX or 'Unknown'",
+  "total_plan_pays": "$X.XX or 'Unknown'",
+  "total_member_pays": "$X.XX or 'Unknown'",
   "claim_lines": [
     {
       "line_number": 1,
       "code": "CPT/HCPCS code",
       "description": "Service description",
-      "billed": "Billed amount",
-      "allowed": "Allowed amount (from fee_schedule or 'Unknown')",
+      "billed": "$X.XX",
+      "allowed": "$X.XX or 'Unknown'",
       "ai_opinion": "Approve | Deny | Review | Adjust",
       "adjustment_reason": "Reason if adjusting",
       "notes": "Processing notes"
@@ -1325,6 +1327,8 @@ Consider:
 - Coding accuracy
 - Documentation completeness
 
+IMPORTANT: All monetary fields in payment_summary must be SHORT values like "$520.00" or "Unknown". Never include explanations in monetary fields.
+
 Return STRICT JSON:
 
 {
@@ -1332,11 +1336,11 @@ Return STRICT JSON:
   "decision": "Approve | Approve with Adjustment | Pend | Deny",
   "decision_rationale": "Detailed explanation of the decision",
   "payment_summary": {
-    "total_billed": "Amount billed",
-    "total_allowed": "Amount allowed (or 'Unknown')",
-    "plan_pays": "Plan payment (or 'Unknown')",
-    "member_pays": "Member responsibility (or 'Unknown')",
-    "adjustment_amount": "Any adjustments"
+    "total_billed": "$X.XX",
+    "total_allowed": "$X.XX or 'Unknown'",
+    "plan_pays": "$X.XX or 'Unknown'",
+    "member_pays": "$X.XX or 'Unknown'",
+    "adjustment_amount": "$X.XX or '$0.00'"
   },
   "denial_reasons": ["If denying, list specific reasons"],
   "pend_reasons": ["If pending, what additional info needed"],

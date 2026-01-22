@@ -27,7 +27,7 @@ from .storage import (
 )
 from .personas import get_persona_config
 from .utils import setup_logging
-from .underwriting_policies import format_all_policies_for_prompt
+from .underwriting_policies import format_all_policies_for_prompt, format_policies_for_persona
 
 logger = setup_logging()
 
@@ -53,13 +53,30 @@ def detect_media_type(filename: str) -> str:
     return 'unknown'
 
 
-def load_policies(prompts_root: str) -> Dict[str, Any]:
-    """Load policy definitions from JSON file.
+def load_policies(prompts_root: str, persona: str = None) -> Dict[str, Any]:
+    """Load plan benefit definitions for claims processing.
+    
+    For claims personas, loads from the unified claims policy file which
+    contains both plan_benefits and processing policies.
     
     Args:
-        prompts_root: Path to the prompts directory containing policies.json
+        prompts_root: Path to the prompts directory
+        persona: Optional persona to load persona-specific plan benefits
+        
+    Returns:
+        Dictionary of plan benefit definitions (plan_name -> plan_data)
     """
     try:
+        # For life_health_claims, load from the unified policy file
+        if persona == "life_health_claims":
+            policy_path = os.path.join(prompts_root, "life-health-claims-policies.json")
+            if os.path.exists(policy_path):
+                with open(policy_path, "r") as f:
+                    data = json.load(f)
+                    # Return plan_benefits section from unified file
+                    return data.get("plan_benefits", {})
+        
+        # Fallback: try legacy policies.json (will be removed)
         policy_path = os.path.join(prompts_root, "policies.json")
         if os.path.exists(policy_path):
             with open(policy_path, "r") as f:
@@ -82,6 +99,26 @@ def load_underwriting_policies(prompts_root: str) -> str:
         return format_all_policies_for_prompt(prompts_root)
     except Exception as e:
         logger.warning(f"Failed to load underwriting policies: {e}")
+        return ""
+
+
+def load_policies_for_persona_prompts(prompts_root: str, persona: str) -> str:
+    """Load and format persona-specific policies for prompt injection.
+    
+    For claims personas, this loads claims processing rules.
+    For underwriting persona, this loads underwriting policies.
+    
+    Args:
+        prompts_root: Path to the prompts directory
+        persona: The persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Formatted string of policies suitable for prompt injection
+    """
+    try:
+        return format_policies_for_persona(prompts_root, persona)
+    except Exception as e:
+        logger.warning(f"Failed to load {persona} policies: {e}")
         return ""
 
 
@@ -538,7 +575,7 @@ def run_underwriting_prompts(
     )
 
     # Load policies and determine context
-    policies = load_policies(settings.app.prompts_root)
+    policies = load_policies(settings.app.prompts_root, persona=app_md.persona)
     policy_context = ""
     
     if policies:
@@ -569,11 +606,23 @@ def run_underwriting_prompts(
             # If no plan name found, provide all as reference
             policy_context = f"\n\n---\n\nAVAILABLE PLANS REFERENCE (Use if plan name matches):\n{json.dumps(policies, indent=2)}\n"
 
-    # NOTE: Underwriting policies are NOT injected during standard extraction/analysis.
-    # Risk analysis with policy citations is a separate operation triggered by the user.
-    # This keeps extraction prompts focused and avoids context bloat.
+    # Load persona-specific policies for claims personas
+    # Claims personas need claims processing rules injected during analysis
+    # Underwriting policies are only injected during explicit risk analysis
+    persona_policies = ""
+    if app_md.persona and app_md.persona in ["life_health_claims", "automotive_claims", "property_casualty_claims"]:
+        persona_policies = load_policies_for_persona_prompts(settings.app.prompts_root, app_md.persona)
+        if persona_policies:
+            logger.info("Loaded %d chars of %s claims policies for prompt injection", 
+                       len(persona_policies), app_md.persona)
+            # Append claims policies to the policy context
+            policy_context += f"\n\n---\n\nCLAIMS PROCESSING POLICIES (Use for claim decisions):\n{persona_policies}\n"
+        else:
+            logger.warning("No claims policies found for persona %s", app_md.persona)
+    else:
+        logger.info("Standard analysis - underwriting policies injected separately during risk analysis")
+    
     underwriting_policies = ""
-    logger.info("Standard analysis - skipping underwriting policy injection")
 
     results: Dict[str, Dict[str, Any]] = {}
 

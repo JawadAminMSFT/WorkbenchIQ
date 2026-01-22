@@ -1,6 +1,68 @@
 {
   "version": "1.0",
-  "description": "Life & Health Claims Processing Policies",
+  "description": "Life & Health Claims - Unified Policy Manual (Plan Benefits + Processing Policies)",
+  "plan_benefits": {
+    "HealthPlus Gold HMO": {
+      "plan_name": "HealthPlus Gold HMO",
+      "plan_type": "HMO",
+      "network": "In-Network Only (except emergencies)",
+      "deductible": {
+        "individual": "$500",
+        "family": "$1,000"
+      },
+      "oop_max": {
+        "individual": "$3,000",
+        "family": "$6,000"
+      },
+      "copays": {
+        "pcp_visit": "$20",
+        "specialist_visit": "$40",
+        "urgent_care": "$50",
+        "er_visit": "$250"
+      },
+      "coinsurance": "10% after deductible",
+      "preventive_care": "Covered 100%",
+      "exclusions": [
+        "Cosmetic surgery",
+        "Experimental treatments",
+        "Out-of-network routine care"
+      ],
+      "fee_schedule": {
+        "99214": "$120.00",
+        "93000": "$40.00",
+        "93308": "$250.00",
+        "80053": "$35.00",
+        "80061": "$30.00",
+        "84443": "$25.00",
+        "83036": "$20.00"
+      }
+    },
+    "HealthPlus Silver PPO": {
+      "plan_name": "HealthPlus Silver PPO",
+      "plan_type": "PPO",
+      "network": "In-Network and Out-of-Network",
+      "deductible": {
+        "individual": "$1,500",
+        "family": "$3,000"
+      },
+      "oop_max": {
+        "individual": "$5,000",
+        "family": "$10,000"
+      },
+      "copays": {
+        "pcp_visit": "$30",
+        "specialist_visit": "$60",
+        "urgent_care": "$75",
+        "er_visit": "$300"
+      },
+      "coinsurance": "20% after deductible",
+      "preventive_care": "Covered 100%",
+      "exclusions": [
+        "Cosmetic surgery",
+        "Experimental treatments"
+      ]
+    }
+  },
   "policies": [
     {
       "id": "HC-COV-001",
