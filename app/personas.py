@@ -17,7 +17,8 @@ class PersonaType(str, Enum):
     UNDERWRITING = "underwriting"
     LIFE_HEALTH_CLAIMS = "life_health_claims"
     AUTOMOTIVE_CLAIMS = "automotive_claims"  # New multimodal automotive claims persona
-    MORTGAGE = "mortgage"
+    MORTGAGE_UNDERWRITING = "mortgage_underwriting"  # Canadian mortgage underwriting
+    MORTGAGE = "mortgage"  # Legacy alias for MORTGAGE_UNDERWRITING
     # Legacy aliases for backward compatibility
     CLAIMS = "claims"  # Maps to life_health_claims
     PROPERTY_CASUALTY_CLAIMS = "property_casualty_claims"  # Alias for automotive_claims
@@ -2889,54 +2890,269 @@ CLAIMS_DEFAULT_PROMPTS = LIFE_HEALTH_CLAIMS_DEFAULT_PROMPTS
 # =============================================================================
 
 MORTGAGE_FIELD_SCHEMA = {
-    "name": "MortgageFields",
+    "name": "MortgageUnderwritingFields",
     "fields": {
+        # ===== Borrower Information =====
         "BorrowerName": {
             "type": "string",
-            "description": "Full name of the mortgage applicant/borrower.",
+            "description": "Full legal name of the primary mortgage borrower as it appears on government-issued ID. Format: FirstName LastName or LastName, FirstName.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "PropertyAddress": {
+        "BorrowerSIN": {
             "type": "string",
-            "description": "Address of the property being financed.",
+            "description": "Social Insurance Number of the primary borrower (Canadian SIN format: XXX-XXX-XXX). Redact if present for privacy.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "LoanAmount": {
-            "type": "string",
-            "description": "Requested mortgage loan amount.",
+        "DateOfBirth": {
+            "type": "date",
+            "description": "Borrower's date of birth in format YYYY-MM-DD or DD/MM/YYYY.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "PropertyValue": {
+        "CoBorrowerName": {
             "type": "string",
-            "description": "Appraised value of the property.",
+            "description": "Full legal name of the co-borrower/co-applicant if present.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "AnnualIncome": {
+        "MaritalStatus": {
             "type": "string",
-            "description": "Borrower's annual income.",
-            "method": "extract",
-            "estimateSourceAndConfidence": True
-        },
-        "EmploymentStatus": {
-            "type": "string",
-            "description": "Current employment status of the borrower.",
+            "description": "Marital status: Single, Married, Common-law, Separated, Divorced, Widowed.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
         "CreditScore": {
             "type": "number",
-            "description": "Borrower's credit score.",
+            "description": "Borrower's credit score (Equifax or TransUnion). Canadian scores range 300-900.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "DebtToIncomeRatio": {
+        
+        # ===== Employment & Income =====
+        "EmploymentStatus": {
             "type": "string",
-            "description": "Calculated debt-to-income ratio.",
+            "description": "Current employment status: Permanent Full-Time, Permanent Part-Time, Contract, Self-Employed, Retired, Other.",
             "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EmployerName": {
+            "type": "string",
+            "description": "Name of current employer or business name if self-employed.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "OccupationTitle": {
+            "type": "string",
+            "description": "Job title or occupation of the borrower.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EmploymentStartDate": {
+            "type": "date",
+            "description": "Start date of current employment in YYYY-MM-DD format.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AnnualIncome": {
+            "type": "string",
+            "description": "Total annual gross income of borrower in CAD. May include salary, bonus, commissions, rental income.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BaseSalary": {
+            "type": "string",
+            "description": "Base annual salary excluding bonuses and commissions.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BonusIncome": {
+            "type": "string",
+            "description": "Annual bonus income (subject to 50% haircut per policy).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CommissionIncome": {
+            "type": "string",
+            "description": "Annual commission income (subject to 50% haircut per policy).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "RentalIncome": {
+            "type": "string",
+            "description": "Monthly or annual rental income from investment properties.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "OtherIncome": {
+            "type": "string",
+            "description": "Other income sources: pension, disability, child support, investment income.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Property Information =====
+        "PropertyAddress": {
+            "type": "string",
+            "description": "Full civic address of the property being financed including street number, street name, unit, city, province, postal code.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyType": {
+            "type": "string",
+            "description": "Type of property: Single-Family Detached, Semi-Detached, Townhouse, Condominium, Multi-Unit (2-4 units), Mobile Home.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyOccupancy": {
+            "type": "string",
+            "description": "Intended occupancy: Owner-Occupied, Second Home, Investment/Rental Property.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PurchasePrice": {
+            "type": "string",
+            "description": "Purchase price of the property in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AppraisedValue": {
+            "type": "string",
+            "description": "Professional appraisal value of the property in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyTaxesAnnual": {
+            "type": "string",
+            "description": "Annual property taxes in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CondoFees": {
+            "type": "string",
+            "description": "Monthly condominium fees (if applicable).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "HeatingCostsMonthly": {
+            "type": "string",
+            "description": "Estimated monthly heating costs.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Loan Details =====
+        "RequestedLoanAmount": {
+            "type": "string",
+            "description": "Requested mortgage amount in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentAmount": {
+            "type": "string",
+            "description": "Down payment amount in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentPercentage": {
+            "type": "string",
+            "description": "Down payment as percentage of purchase price.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentSource": {
+            "type": "string",
+            "description": "Source of down payment: Savings, Gift, RRSP Withdrawal (HBP), Sale of Property, Other.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "LoanType": {
+            "type": "string",
+            "description": "Loan type: Conventional (>=20% down), High-Ratio (<20% down, requires CMHC insurance), Refinance.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AmortizationYears": {
+            "type": "number",
+            "description": "Requested amortization period in years (max 30 for uninsured, 25 for insured per OSFI B-20).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ContractRate": {
+            "type": "string",
+            "description": "Mortgage interest rate offered (contract rate) as percentage.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "RateTerm": {
+            "type": "string",
+            "description": "Interest rate term: Variable, 1-year, 2-year, 3-year, 5-year, 7-year, 10-year fixed.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Liabilities & Debts =====
+        "OtherDebtsMonthly": {
+            "type": "string",
+            "description": "Total monthly debt obligations: car loans, credit cards, lines of credit, student loans, other mortgages.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CreditCardBalances": {
+            "type": "string",
+            "description": "Outstanding credit card balances.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AutoLoanPayment": {
+            "type": "string",
+            "description": "Monthly auto loan payment.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "StudentLoanPayment": {
+            "type": "string",
+            "description": "Monthly student loan payment.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Calculated Ratios (Generated) =====
+        "GrossDebtServiceRatio": {
+            "type": "string",
+            "description": "GDS ratio: (PITH)/Gross Income. OSFI B-20 limit is 39%.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "TotalDebtServiceRatio": {
+            "type": "string",
+            "description": "TDS ratio: (PITH + Other Debts)/Gross Income. OSFI B-20 limit is 44%.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "LoanToValueRatio": {
+            "type": "string",
+            "description": "LTV ratio: Loan Amount/Property Value. Max 80% for conventional, 95% for insured.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "QualifyingRate": {
+            "type": "string",
+            "description": "OSFI Mortgage Qualifying Rate (MQR): greater of (contract rate + 2%) or floor rate (5.25%).",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "StressTestGDS": {
+            "type": "string",
+            "description": "GDS calculated at the qualifying rate (stress test).",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "StressTestTDS": {
+            "type": "string",
+            "description": "TDS calculated at the qualifying rate (stress test).",
+            "method": "generate",
             "estimateSourceAndConfidence": True
         }
     }
@@ -2944,15 +3160,88 @@ MORTGAGE_FIELD_SCHEMA = {
 
 MORTGAGE_DEFAULT_PROMPTS = {
     "application_summary": {
-        "borrower_profile": """
-You are an expert mortgage underwriter.
+        "system": """You are an expert Canadian mortgage underwriter with deep knowledge of OSFI B-20 guidelines 
+and residential mortgage underwriting best practices. You analyze mortgage applications for Canadian 
+residential properties with expertise in:
 
-Given the mortgage application documents, extract a comprehensive borrower profile.
+- OSFI B-20 compliance (GDS ≤39%, TDS ≤44%, MQR stress test)
+- Income qualification and haircut rules
+- Debt service ratio calculations  
+- Risk assessment and fraud detection
+- Canadian real estate and mortgage regulations
 
-Return STRICT JSON with borrower details, income verification, and initial assessment.
-        """
+Provide thorough, accurate analysis while maintaining a professional and helpful tone.""",
+        
+        "borrower_profile": """Analyze the mortgage application documents and extract a comprehensive borrower profile including:
+
+- Personal information (name, DOB, SIN, credit score)
+- Employment details and income sources
+- Property information and purchase details
+- Loan characteristics and down payment
+- Existing debts and liabilities
+
+Return structured JSON with complete borrower details.""",
+        
+        "income_analysis": """Analyze all income documentation (paystubs, T4s, employment letters, NOAs) and provide:
+
+- Verified base salary
+- Variable income (bonus, commission) with applicable haircuts
+- Self-employment income (2-year average if applicable)  
+- Rental or other income
+- Monthly qualifying income calculation
+- Income consistency check across documents
+
+Flag any discrepancies between stated and verified income.""",
+        
+        "ratio_calculation": """Calculate the following debt service ratios per OSFI B-20:
+
+1. GDS (Gross Debt Service): PITH / Gross Income
+   - P&I: Principal & Interest payment
+   - Property Taxes (monthly)
+   - Heating costs
+   - 50% of condo fees (if applicable)
+
+2. TDS (Total Debt Service): (PITH + Other Debts) / Gross Income
+
+3. LTV (Loan-to-Value): Loan Amount / Property Value
+
+4. MQR Stress Test: Use qualifying rate = MAX(contract_rate + 2%, 5.25%)
+   - Recalculate payment at MQR
+   - Compute stress-tested GDS and TDS
+
+Return all ratios as percentages with comparison to limits (GDS ≤39%, TDS ≤44%).""",
+        
+        "risk_assessment": """Perform comprehensive risk assessment including:
+
+- Income consistency verification
+- Fraud detection signals (round numbers, employment discrepancies)
+- AML considerations (large cash deposits, structured transactions)
+- Credit risk factors (score, derogatory items, utilization)
+- Property risk (rapid price appreciation, non-arms-length)
+
+Aggregate risk signals and provide overall risk level: Low, Medium, or High.""",
+        
+        "recommendation": """Based on the complete analysis, provide an underwriting recommendation:
+
+DECISION: APPROVE | REFER | DECLINE
+
+RATIONALE:
+- GDS ratio: [value]% (limit 39%)
+- TDS ratio: [value]% (limit 44%)
+- LTV ratio: [value]%
+- Stress test qualification: PASS/FAIL at [MQR]%
+- Risk level: Low/Medium/High
+
+CONDITIONS (if applicable):
+- List any approval conditions
+
+NEXT STEPS:
+- Actions required from borrower/broker/underwriter
+
+Be specific and reference OSFI B-20 guidelines where applicable."""
     }
 }
+
 
 
 # =============================================================================
@@ -3018,16 +3307,27 @@ PERSONA_CONFIGS: Dict[PersonaType, PersonaConfig] = {
         custom_analyzer_id="claimsAnalyzer",
         enabled=False,  # Disabled - replaced by specific claims personas
     ),
-    PersonaType.MORTGAGE: PersonaConfig(
-        id="mortgage",
-        name="Mortgage",
-        description="Mortgage underwriting workbench for loan applications and property documents",
+    PersonaType.MORTGAGE_UNDERWRITING: PersonaConfig(
+        id="mortgage_underwriting",
+        name="Mortgage Underwriting",
+        description="Canadian residential mortgage underwriting with OSFI B-20 compliance",
         icon="🏠",
         color="#059669",  # Emerald
         field_schema=MORTGAGE_FIELD_SCHEMA,
         default_prompts=MORTGAGE_DEFAULT_PROMPTS,
-        custom_analyzer_id="mortgageAnalyzer",
-        enabled=False,  # Coming soon
+        custom_analyzer_id="mortgageDocAnalyzer",
+        enabled=True,  # Now enabled
+    ),
+    PersonaType.MORTGAGE: PersonaConfig(
+        id="mortgage_underwriting",  # Maps to MORTGAGE_UNDERWRITING
+        name="Mortgage Underwriting",
+        description="Canadian residential mortgage underwriting with OSFI B-20 compliance",
+        icon="🏠",
+        color="#059669",  # Emerald
+        field_schema=MORTGAGE_FIELD_SCHEMA,
+        default_prompts=MORTGAGE_DEFAULT_PROMPTS,
+        custom_analyzer_id="mortgageDocAnalyzer",
+        enabled=True,  # Now enabled
     ),
 }
 

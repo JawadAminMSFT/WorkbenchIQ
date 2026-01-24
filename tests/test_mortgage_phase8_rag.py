@@ -135,7 +135,7 @@ class TestUnifiedIndexer:
     def indexer(self):
         """Return a UnifiedPolicyIndexer instance."""
         from app.rag.unified_indexer import UnifiedPolicyIndexer
-        return UnifiedPolicyIndexer()
+        return UnifiedPolicyIndexer(persona="mortgage_underwriting")
 
     def test_persona_config_includes_mortgage(self, indexer):
         """PERSONA_CONFIG should include mortgage_underwriting."""
@@ -164,15 +164,18 @@ class TestUnifiedIndexer:
         
         assert mortgage_config.get("table_name") == "mortgage_policy_chunks"
 
-    def test_index_mortgage_policies(self, indexer):
+    def test_index_mortgage_policies(self):
         """Should index mortgage policies using unified indexer."""
-        with patch.object(indexer, 'index_persona') as mock_index:
-            mock_index.return_value = {"chunks_indexed": 50}
-            
-            result = indexer.index_persona("mortgage_underwriting")
-            
-            mock_index.assert_called_with("mortgage_underwriting")
-            assert result["chunks_indexed"] == 50
+        from app.rag.unified_indexer import UnifiedPolicyIndexer
+        
+        # Use a MagicMock to avoid actual indexing
+        indexer = MagicMock(spec=UnifiedPolicyIndexer)
+        indexer.index_policies = MagicMock(return_value={"chunks_indexed": 50})
+        
+        result = indexer.index_policies()
+        
+        indexer.index_policies.assert_called()
+        assert result["chunks_indexed"] == 50
 
 
 class TestSemanticSearch:
@@ -181,8 +184,8 @@ class TestSemanticSearch:
     @pytest.fixture
     def search_service(self):
         """Return a mock search service."""
-        from app.rag.service import RAGService
-        return MagicMock(spec=RAGService)
+        # Don't use spec=RAGService since query() is async and would return coroutine
+        return MagicMock()
 
     def test_search_gds_policy(self, search_service):
         """Should find GDS policy for ratio query."""

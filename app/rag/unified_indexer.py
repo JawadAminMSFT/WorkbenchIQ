@@ -33,23 +33,39 @@ class IndexingError(Exception):
 PERSONA_CONFIG = {
     "underwriting": {
         "policies_path": "prompts/life-health-underwriting-policies.json",
+        "policy_file": "prompts/life-health-underwriting-policies.json",
         "table_name": "policy_chunks",
         "display_name": "Underwriting",
     },
     "life_health_claims": {
         "policies_path": "prompts/life-health-claims-policies.json",
+        "policy_file": "prompts/life-health-claims-policies.json",
         "table_name": "health_claims_policy_chunks",
         "display_name": "Life & Health Claims",
     },
     "automotive_claims": {
         "policies_path": "prompts/automotive-claims-policies.json",
+        "policy_file": "prompts/automotive-claims-policies.json",
         "table_name": "claim_policy_chunks",
         "display_name": "Automotive Claims",
     },
     "property_casualty_claims": {
         "policies_path": "prompts/property-casualty-claims-policies.json",
+        "policy_file": "prompts/property-casualty-claims-policies.json",
         "table_name": "pc_claims_policy_chunks",
         "display_name": "Property & Casualty Claims",
+    },
+    "mortgage_underwriting": {
+        "policies_path": "prompts/mortgage-underwriting-policies.json",
+        "policy_file": "prompts/mortgage-underwriting-policies.json",
+        "table_name": "mortgage_policy_chunks",
+        "display_name": "Mortgage Underwriting",
+    },
+    "mortgage": {
+        "policies_path": "prompts/mortgage-underwriting-policies.json",
+        "policy_file": "prompts/mortgage-underwriting-policies.json",
+        "table_name": "mortgage_policy_chunks",
+        "display_name": "Mortgage Underwriting",
     },
 }
 

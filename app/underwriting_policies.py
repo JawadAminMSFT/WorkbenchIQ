@@ -615,6 +615,8 @@ PERSONA_POLICY_FILES = {
     "life_health_claims": "life-health-claims-policies.json",
     "automotive_claims": "automotive-claims-policies.json",
     "property_casualty_claims": "property-casualty-claims-policies.json",
+    "mortgage_underwriting": "mortgage-underwriting-policies.json",
+    "mortgage": "mortgage-underwriting-policies.json",
 }
 
 

@@ -153,11 +153,11 @@ class TestContentUnderstandingExtensions:
 
     def test_analyze_mortgage_document(self):
         """Should analyze mortgage document with doc_type parameter."""
-        from app.content_understanding_client import ContentUnderstandingClient
+        # The CU client uses functions, not a class
+        from app.content_understanding_client import analyze_document
         
-        # Verify the method exists and accepts doc_type
-        client = ContentUnderstandingClient.__new__(ContentUnderstandingClient)
-        assert hasattr(client, "analyze_document") or hasattr(client, "analyze_mortgage_document")
+        # Verify the function exists
+        assert callable(analyze_document)
 
     def test_provenance_extraction_from_cu_response(self):
         """Should extract provenance (page, bounding region) from CU response."""

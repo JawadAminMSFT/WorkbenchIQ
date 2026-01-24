@@ -52,6 +52,40 @@ class AutomotiveClaimsSettings:
         )
 
 
+@dataclass
+class MortgageUnderwritingSettings:
+    """Settings for Mortgage Underwriting."""
+    enabled: bool = True
+    doc_analyzer: str = "mortgageDocAnalyzer"
+    policies_path: str = "prompts/mortgage-underwriting-policies.json"
+    osfi_mqr_floor_pct: float = 5.25  # OSFI B-20 floor rate
+    osfi_mqr_buffer_pct: float = 2.0  # Contract rate buffer
+    gds_limit_standard: float = 0.39  # 39%
+    tds_limit_standard: float = 0.44  # 44%
+    ltv_limit_conventional: float = 0.80  # 80% for conventional
+    ltv_limit_insured: float = 0.95  # 95% for insured
+    max_amortization_insured: int = 25  # years
+    max_amortization_uninsured: int = 30  # years
+
+    @classmethod
+    def from_env(cls) -> "MortgageUnderwritingSettings":
+        """Load mortgage underwriting settings from environment variables."""
+        return cls(
+            enabled=os.getenv("MORTGAGE_ENABLED", "true").lower() == "true",
+            doc_analyzer=os.getenv("MORTGAGE_DOC_ANALYZER", "mortgageDocAnalyzer"),
+            policies_path=os.getenv("MORTGAGE_POLICIES_PATH", "prompts/mortgage-underwriting-policies.json"),
+            osfi_mqr_floor_pct=float(os.getenv("OSFI_MQR_FLOOR_PCT", "5.25")),
+            osfi_mqr_buffer_pct=float(os.getenv("OSFI_MQR_BUFFER_PCT", "2.0")),
+            gds_limit_standard=float(os.getenv("GDS_LIMIT_STANDARD", "0.39")),
+            tds_limit_standard=float(os.getenv("TDS_LIMIT_STANDARD", "0.44")),
+            ltv_limit_conventional=float(os.getenv("LTV_LIMIT_CONVENTIONAL", "0.80")),
+            ltv_limit_insured=float(os.getenv("LTV_LIMIT_INSURED", "0.95")),
+            max_amortization_insured=int(os.getenv("MAX_AMORT_INSURED", "25")),
+            max_amortization_uninsured=int(os.getenv("MAX_AMORT_UNINSURED", "30")),
+        )
+
+
+
 
 import os
 from dataclasses import dataclass
@@ -121,6 +155,7 @@ class Settings:
     database: DatabaseSettings
     rag: RAGSettings
     automotive_claims: AutomotiveClaimsSettings
+    mortgage_underwriting: MortgageUnderwritingSettings
 
 
 def load_settings() -> Settings:
@@ -180,8 +215,17 @@ def load_settings() -> Settings:
     )
 
     auto_claims = AutomotiveClaimsSettings.from_env()
+    mortgage = MortgageUnderwritingSettings.from_env()
 
-    return Settings(content_understanding=cu, openai=oa, app=app, database=db, rag=rag, automotive_claims=auto_claims)
+    return Settings(
+        content_understanding=cu,
+        openai=oa,
+        app=app,
+        database=db,
+        rag=rag,
+        automotive_claims=auto_claims,
+        mortgage_underwriting=mortgage
+    )
 
 
 def validate_settings(settings: Settings) -> List[str]:

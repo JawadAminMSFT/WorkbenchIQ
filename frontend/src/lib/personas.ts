@@ -74,14 +74,14 @@ export const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
   mortgage: {
     id: 'mortgage',
-    name: 'Mortgage',
-    description: 'Mortgage underwriting workbench for loan applications and property documents',
+    name: 'Mortgage Underwriting',
+    description: 'Canadian mortgage underwriting workbench with OSFI B-20 compliance checks',
     icon: Home,
-    color: '#6366f1',
-    enabled: false,
-    primaryColor: '#6366f1', // Indigo
-    secondaryColor: '#818cf8',
-    accentColor: '#4f46e5',
+    color: '#059669',
+    enabled: true,
+    primaryColor: '#059669', // Emerald
+    secondaryColor: '#10b981',
+    accentColor: '#047857',
   },
 };
 

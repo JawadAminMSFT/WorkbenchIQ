@@ -154,6 +154,57 @@ class Conversation(BaseModel):
     messages: List[ChatMessage]
 
 
+# =============================================================================
+# Mortgage Underwriting API Models
+# =============================================================================
+
+class MortgageBorrowerInfo(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    sin_hash: Optional[str] = None
+
+
+class MortgageIncomeInfo(BaseModel):
+    employment_type: Optional[str] = None
+    annual_salary: Optional[float] = None
+
+
+class MortgagePropertyInfo(BaseModel):
+    address: Optional[str] = None
+    purchase_price: Optional[float] = None
+    property_type: Optional[str] = None
+
+
+class MortgageLoanInfo(BaseModel):
+    amount: Optional[float] = None
+    amortization_years: Optional[int] = None
+    rate: Optional[float] = None
+
+
+class MortgageAnalyzeRequest(BaseModel):
+    application_id: str
+    borrower: Optional[MortgageBorrowerInfo] = None
+    income: Optional[MortgageIncomeInfo] = None
+    property: Optional[MortgagePropertyInfo] = None
+    loan: Optional[MortgageLoanInfo] = None
+
+
+class MortgageQueryRequest(BaseModel):
+    application_id: Optional[str] = None
+    query: str
+    persona: Optional[str] = "mortgage_underwriting"
+
+
+class MortgageApplicationCreate(BaseModel):
+    borrower: Optional[MortgageBorrowerInfo] = None
+
+
+class MortgageChatRequest(BaseModel):
+    query: str
+    persona: Optional[str] = "mortgage_underwriting"
+    stream: Optional[bool] = False
+
+
 def application_to_dict(app_md: ApplicationMetadata) -> dict:
     """Convert ApplicationMetadata to JSON-serializable dict."""
     return {
@@ -325,6 +376,13 @@ PERSONA_CHAT_CONFIG = {
         "item_type": "claim",
         "decision_type": "claims processing decisions",
         "example_policy_id": "PC-COV-001",
+    },
+    "mortgage_underwriting": {
+        "role": "expert Canadian mortgage underwriter specializing in OSFI B-20 compliance",
+        "context_type": "mortgage underwriting policies including OSFI B-20 guidelines",
+        "item_type": "mortgage application",
+        "decision_type": "mortgage underwriting decisions",
+        "example_policy_id": "OSFI-B20-GDS-001",
     },
 }
 
@@ -1353,8 +1411,20 @@ async def get_policies(persona: str = "underwriting"):
         
         # Check if this is another claims persona (property_casualty_claims, etc.)
         is_claims_persona = "claims" in persona.lower()
+        is_mortgage_persona = persona in ("mortgage", "mortgage_underwriting")
         
-        if is_claims_persona:
+        if is_mortgage_persona:
+            # Load mortgage underwriting policies (OSFI B-20)
+            from app.underwriting_policies import load_policies_for_persona
+            policies_data = load_policies_for_persona(settings.app.prompts_root, persona)
+            policies = policies_data.get("policies", [])
+            return {
+                "policies": policies,
+                "total": len(policies),
+                "persona": persona,
+                "type": "mortgage_underwriting",
+            }
+        elif is_claims_persona:
             # Load from persona-specific policy file
             from app.underwriting_policies import load_policies_for_persona
             policies_data = load_policies_for_persona(settings.app.prompts_root, persona)
@@ -1396,6 +1466,8 @@ async def get_policy_by_id(policy_id: str, persona: str = "underwriting"):
         "life_health_claims": "prompts/life-health-claims-policies.json",
         "automotive_claims": "prompts/automotive-claims-policies.json",
         "property_casualty_claims": "prompts/property-casualty-claims-policies.json",
+        "mortgage_underwriting": "prompts/mortgage-underwriting-policies.json",
+        "mortgage": "prompts/mortgage-underwriting-policies.json",
     }
     
     try:
@@ -1606,13 +1678,13 @@ async def chat_with_application(app_id: str, request: ChatRequest):
     try:
         settings = load_settings()
         
-        # Determine persona - use from request or default to underwriting
-        persona = request.persona or "underwriting"
-        
-        # Load application data
+        # Load application data first to get its persona
         app_md = load_application(settings.app.storage_root, app_id)
         if not app_md:
             raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
+        
+        # Determine persona - prefer request, then app's persona, then default to underwriting
+        persona = request.persona or app_md.persona or "underwriting"
         
         # Build augmented RAG query with claim/application context for better retrieval
         rag_query = request.message
@@ -1973,8 +2045,15 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
         settings = load_settings()
         now = datetime.utcnow().isoformat() + "Z"
         
-        # Determine persona - use from request or default to underwriting
-        persona = request.persona or "underwriting"
+        # Load application first to get its persona
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
+        
+        # Determine persona - use from request, then app's persona, then default
+        persona = request.persona or app_md.persona or "underwriting"
+        logger.info("Conversation for app %s using persona: %s (request=%s, app=%s)", 
+                    app_id, persona, request.persona, app_md.persona)
         
         # Load or create conversation
         if request.conversation_id:
@@ -2001,11 +2080,6 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
         }
         conversation["messages"].append(user_message)
         conversation["updated_at"] = now
-        
-        # Load application data
-        app_md = load_application(settings.app.storage_root, app_id)
-        if not app_md:
-            raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
         
         # Build augmented RAG query with claim/application context for better retrieval
         rag_query = request.message
@@ -2350,6 +2424,756 @@ async def get_claims_index_stats():
     """
     # Redirect to unified endpoint
     return await get_index_stats(persona="automotive_claims")
+
+
+# =============================================================================
+# Mortgage Underwriting API Endpoints
+# =============================================================================
+
+@app.post("/api/mortgage/analyze")
+async def mortgage_analyze(request: MortgageAnalyzeRequest):
+    """
+    Analyze a mortgage application against OSFI B-20 policies.
+    
+    Returns:
+        - ratios: GDS, TDS, LTV calculations
+        - decision: APPROVE, DECLINE, or REFER
+        - findings: List of policy evaluation findings
+        - conditions: Any conditions for approval
+    """
+    try:
+        # Validate required fields
+        if not request.borrower or not request.income or not request.property or not request.loan:
+            raise HTTPException(
+                status_code=422,
+                detail="Missing required fields: borrower, income, property, and loan are required"
+            )
+        
+        # Build case data for mortgage processing
+        case_data = {
+            "application_id": request.application_id,
+            "borrower": request.borrower.model_dump() if request.borrower else {},
+            "income": request.income.model_dump() if request.income else {},
+            "property": request.property.model_dump() if request.property else {},
+            "loan": request.loan.model_dump() if request.loan else {},
+        }
+        
+        # Calculate ratios using mortgage calculator
+        from app.mortgage.calculator import MortgageCalculator
+        calculator = MortgageCalculator()
+        
+        purchase_price = case_data["property"].get("purchase_price", 0)
+        loan_amount = case_data["loan"].get("amount", 0)
+        down_payment = purchase_price - loan_amount
+        annual_income = case_data["income"].get("annual_salary", 0)
+        amortization = case_data["loan"].get("amortization_years", 25)
+        rate = case_data["loan"].get("rate", 5.25) / 100
+        
+        # Calculate housing costs (simplified - PITI)
+        monthly_payment = calculator.compute_mortgage_payment(
+            principal=loan_amount,
+            annual_rate=rate,
+            amortization_years=amortization,
+        )
+        property_tax_monthly = purchase_price * 0.01 / 12  # Estimate 1% annual
+        heating_monthly = 150  # Estimate
+        
+        total_housing_cost = monthly_payment + property_tax_monthly + heating_monthly
+        monthly_income = annual_income / 12
+        
+        # Calculate ratios
+        gds = total_housing_cost / monthly_income if monthly_income > 0 else 0
+        tds = gds  # Simplified - would add other debts
+        ltv = loan_amount / purchase_price if purchase_price > 0 else 0
+        
+        ratios = {"gds": round(gds, 4), "tds": round(tds, 4), "ltv": round(ltv, 4)}
+        
+        # Build case for policy evaluation
+        case_for_eval = {
+            "ratios": ratios,
+            "deal": {
+                "purchase_price": purchase_price,
+                "down_payment": down_payment,
+            },
+            "loan": {
+                "amount": loan_amount,
+                "amortization_years": amortization,
+                "contract_rate": rate,
+                "loan_type": "insured" if ltv > 0.80 else "conventional",
+            },
+        }
+        
+        # Evaluate against policies
+        from app.mortgage.policy_engine import MortgagePolicyEvaluator, RecommendationEngine
+        evaluator = MortgagePolicyEvaluator()
+        findings = evaluator.evaluate_all(case_for_eval)
+        
+        # Generate recommendation
+        recommendation_engine = RecommendationEngine()
+        recommendation = recommendation_engine.generate_recommendation(findings)
+        
+        return {
+            "application_id": request.application_id,
+            "ratios": ratios,
+            "decision": recommendation.decision,
+            "confidence": recommendation.confidence,
+            "findings": [
+                {
+                    "rule_id": f.rule_id,
+                    "severity": f.severity,
+                    "category": f.category,
+                    "message": f.message,
+                }
+                for f in findings
+            ],
+            "conditions": recommendation.conditions,
+            "reasons": recommendation.reasons,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Mortgage analysis failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mortgage/upload")
+async def mortgage_upload(
+    file: UploadFile = File(...),
+    application_id: str = Form(...),
+    doc_type: str = Form("application"),
+):
+    """
+    Upload a document for mortgage application processing.
+    
+    Supported doc_types:
+        - application: Mortgage application form
+        - paystub: Pay stub for income verification
+        - t4: T4 tax slip
+        - employment_letter: Employment verification letter
+        - property_assessment: Property assessment/appraisal
+    """
+    try:
+        settings = load_settings()
+        
+        # Read file content
+        content = await file.read()
+        
+        # Store the file
+        file_data = [{"name": file.filename, "content": content}]
+        stored_files = save_uploaded_files(
+            settings.app.storage_root,
+            application_id,
+            file_data,
+            public_base_url=settings.app.public_files_base_url,
+        )
+        
+        # Return basic response (full extraction would use Content Understanding)
+        return {
+            "doc_id": f"{application_id}-{doc_type}-001",
+            "doc_type": doc_type,
+            "filename": file.filename,
+            "application_id": application_id,
+            "extracted_fields": {},  # Would be populated by document processor
+            "status": "uploaded",
+        }
+        
+    except Exception as e:
+        logger.error("Mortgage upload failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mortgage/query")
+async def mortgage_query(request: MortgageQueryRequest):
+    """
+    Query mortgage policies using RAG.
+    
+    Returns relevant policy excerpts and sources for the query.
+    """
+    try:
+        from app.rag.service import RAGService
+        
+        rag_service = RAGService(persona="mortgage_underwriting")
+        await rag_service.initialize()
+        
+        result = await rag_service.query(
+            user_query=request.query,
+            top_k=5,
+        )
+        
+        return {
+            "answer": result.context,
+            "sources": [
+                {
+                    "content": r.content[:200],
+                    "source": r.source,
+                    "score": r.similarity_score,
+                }
+                for r in result.results
+            ],
+            "query": request.query,
+        }
+        
+    except Exception as e:
+        logger.error("Mortgage query failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mortgage/applications")
+async def list_mortgage_applications():
+    """List all mortgage applications."""
+    try:
+        settings = load_settings()
+        apps = list_applications(settings.app.storage_root)
+        
+        # Filter to mortgage persona
+        mortgage_apps = [
+            app for app in apps
+            if getattr(app, 'persona', None) == 'mortgage_underwriting'
+        ]
+        
+        return {
+            "applications": [
+                {
+                    "id": app.id,
+                    "created_at": app.created_at,
+                    "status": app.status,
+                    "external_reference": app.external_reference,
+                }
+                for app in mortgage_apps
+            ],
+            "count": len(mortgage_apps),
+        }
+        
+    except Exception as e:
+        logger.error("Failed to list mortgage applications: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_field_value(extracted_fields: dict, field_name: str, default=None):
+    """Extract a field value from extracted_fields dictionary.
+    
+    Keys are formatted as 'filename:FieldName', so we search for any key ending with the field name.
+    Returns the first match found, or default if not found.
+    """
+    for key, field_data in extracted_fields.items():
+        if key.endswith(f":{field_name}"):
+            if isinstance(field_data, dict):
+                return field_data.get("value", default)
+            return field_data
+    return default
+
+
+def _parse_currency(value) -> float:
+    """Parse a currency string to float, handling commas and dollar signs."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Remove currency symbols, commas, spaces
+        cleaned = value.replace("$", "").replace(",", "").replace(" ", "").strip()
+        try:
+            return float(cleaned)
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
+
+def _parse_percentage(value) -> float:
+    """Parse a percentage string to float."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = value.replace("%", "").strip()
+        try:
+            return float(cleaned)
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
+
+@app.get("/api/mortgage/applications/{app_id}")
+async def get_mortgage_application(app_id: str):
+    """Get a specific mortgage application with mortgage-specific data."""
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Get base application data
+        base_data = application_to_dict(app_md)
+        
+        # Extract data from extracted_fields (format: "filename:FieldName" -> {value, confidence, ...})
+        ef = app_md.extracted_fields or {}
+        
+        # Helper to get field value
+        def get_field(field_name: str, default=None):
+            return _get_field_value(ef, field_name, default)
+        
+        # Build borrower info
+        borrower_name = get_field("BorrowerName", "Unknown")
+        co_borrower_name = get_field("CoBorrowerName")
+        credit_score = get_field("CreditScore", 0)
+        if isinstance(credit_score, str):
+            try:
+                credit_score = int(credit_score)
+            except ValueError:
+                credit_score = 0
+        
+        borrower = {
+            "name": borrower_name,
+            "co_borrower_name": co_borrower_name,
+            "credit_score": credit_score,
+            "employment_type": get_field("EmploymentStatus", "Permanent"),
+            "employer_name": get_field("EmployerName"),
+            "occupation": get_field("OccupationTitle"),
+        }
+        
+        # Build income info - sum up all base salaries and annual incomes
+        base_salary_b1 = _parse_currency(get_field("BaseSalary"))  # First occurrence
+        # Look for B1 and B2 salaries specifically
+        b1_salary = 0.0
+        b2_salary = 0.0
+        for key, field_data in ef.items():
+            if "B1" in key and ":BaseSalary" in key:
+                b1_salary = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+            elif "B2" in key and ":BaseSalary" in key:
+                b2_salary = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+        
+        # Use T4 annual income if available for more accuracy
+        b1_annual = 0.0
+        b2_annual = 0.0
+        for key, field_data in ef.items():
+            if "T4_B1" in key and ":AnnualIncome" in key:
+                b1_annual = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+            elif "T4_B2" in key and ":AnnualIncome" in key:
+                b2_annual = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+        
+        # Use T4 income if available, otherwise use base salary
+        primary_income = b1_annual if b1_annual > 0 else b1_salary
+        secondary_income = b2_annual if b2_annual > 0 else b2_salary
+        total_annual_income = primary_income + secondary_income
+        
+        income = {
+            "primary_borrower_income": primary_income,
+            "co_borrower_income": secondary_income,
+            "total_annual_income": total_annual_income,
+            "monthly_income": total_annual_income / 12 if total_annual_income else 0,
+        }
+        
+        # Build property info
+        purchase_price = _parse_currency(get_field("PurchasePrice", 0))
+        appraised_value = _parse_currency(get_field("AppraisedValue", purchase_price))
+        
+        property_info = {
+            "address": get_field("PropertyAddress", "Unknown"),
+            "purchase_price": purchase_price,
+            "appraised_value": appraised_value,
+            "property_type": get_field("PropertyType", "single_family"),
+            "occupancy": get_field("PropertyOccupancy", "owner_occupied"),
+        }
+        
+        # Build loan info
+        loan_amount = _parse_currency(get_field("RequestedLoanAmount", 0))
+        down_payment = _parse_currency(get_field("DownPaymentAmount", 0))
+        amortization = get_field("AmortizationYears", 25)
+        if isinstance(amortization, str):
+            try:
+                amortization = int(amortization)
+            except ValueError:
+                amortization = 25
+        
+        contract_rate = _parse_percentage(get_field("ContractRate", 5.25))
+        qualifying_rate = _parse_percentage(get_field("QualifyingRate", max(contract_rate + 2, 5.25)))
+        
+        loan = {
+            "amount": loan_amount,
+            "down_payment": down_payment,
+            "down_payment_source": get_field("DownPaymentSource", "Savings"),
+            "amortization_years": amortization,
+            "contract_rate": contract_rate,
+            "qualifying_rate": qualifying_rate,
+            "term": get_field("RateTerm", "5 years Fixed"),
+        }
+        
+        # Build liabilities info
+        other_debts_monthly = _parse_currency(get_field("OtherDebtsMonthly", 0))
+        
+        # Calculate PITH (Principal, Interest, Taxes, Heating) for housing costs
+        # Using standard assumptions where not provided
+        property_taxes_monthly = purchase_price * 0.01 / 12 if purchase_price else 0  # ~1% annually
+        heating_monthly = 150  # Standard assumption
+        condo_fees = 0
+        if "condo" in (property_info.get("property_type", "") or "").lower():
+            condo_fees = 500  # Typical condo fee
+        
+        liabilities = {
+            "property_taxes_monthly": property_taxes_monthly,
+            "heating_monthly": heating_monthly,
+            "condo_fees_monthly": condo_fees,
+            "other_debts_monthly": other_debts_monthly,
+        }
+        
+        # Calculate mortgage payment (monthly)
+        def calc_monthly_payment(principal: float, annual_rate: float, amort_years: int) -> float:
+            if principal <= 0 or annual_rate <= 0:
+                return 0
+            monthly_rate = annual_rate / 100 / 12
+            n_payments = amort_years * 12
+            if monthly_rate == 0:
+                return principal / n_payments
+            return principal * (monthly_rate * (1 + monthly_rate)**n_payments) / ((1 + monthly_rate)**n_payments - 1)
+        
+        monthly_payment_contract = calc_monthly_payment(loan_amount, contract_rate, amortization)
+        monthly_payment_stress = calc_monthly_payment(loan_amount, qualifying_rate, amortization)
+        
+        # Calculate ratios
+        monthly_income = income["monthly_income"]
+        
+        # GDS = (PITH) / Gross Monthly Income
+        pith = monthly_payment_contract + property_taxes_monthly + heating_monthly + (condo_fees * 0.5)  # 50% of condo fees
+        gds = (pith / monthly_income * 100) if monthly_income > 0 else 0
+        
+        # TDS = (PITH + Other Debts) / Gross Monthly Income
+        tds = ((pith + other_debts_monthly) / monthly_income * 100) if monthly_income > 0 else 0
+        
+        # LTV = Loan Amount / Lesser of (Purchase Price, Appraised Value)
+        lesser_value = min(purchase_price, appraised_value) if appraised_value > 0 else purchase_price
+        ltv = (loan_amount / lesser_value * 100) if lesser_value > 0 else 0
+        
+        ratios = {
+            "gds": round(gds, 2),
+            "tds": round(tds, 2),
+            "ltv": round(ltv, 2),
+            "monthly_payment": round(monthly_payment_contract, 2),
+        }
+        
+        # Stress test ratios (using MQR qualifying rate)
+        pith_stress = monthly_payment_stress + property_taxes_monthly + heating_monthly + (condo_fees * 0.5)
+        gds_stress = (pith_stress / monthly_income * 100) if monthly_income > 0 else 0
+        tds_stress = ((pith_stress + other_debts_monthly) / monthly_income * 100) if monthly_income > 0 else 0
+        
+        stress_ratios = {
+            "gds": round(gds_stress, 2),
+            "tds": round(tds_stress, 2),
+            "qualifying_rate": qualifying_rate,
+            "monthly_payment_stressed": round(monthly_payment_stress, 2),
+        }
+        
+        # Determine decision based on OSFI B-20 guidelines
+        # GDS limit: 39%, TDS limit: 44%, LTV limit: 80% (conventional)
+        findings = []
+        risk_signals = []
+        
+        # Helper to get source citation for a field
+        def get_field_citation(field_name: str) -> dict:
+            for key, field_data in ef.items():
+                if key.endswith(f":{field_name}") and isinstance(field_data, dict):
+                    return {
+                        "source_file": field_data.get("source_file"),
+                        "confidence": field_data.get("confidence"),
+                    }
+            return {}
+        
+        if gds_stress > 39:
+            findings.append({
+                "type": "warning", 
+                "message": f"Stressed GDS ({gds_stress:.1f}%) exceeds 39% limit",
+                "category": "Income Ratio",
+                "sources": ["T4/Paystub", "Mortgage Application"],
+            })
+            risk_signals.append({"level": "high", "category": "income", "message": "GDS ratio above guideline"})
+        elif gds_stress > 35:
+            findings.append({
+                "type": "info", 
+                "message": f"Stressed GDS ({gds_stress:.1f}%) approaching 39% limit",
+                "category": "Income Ratio",
+            })
+            
+        if tds_stress > 44:
+            findings.append({
+                "type": "warning", 
+                "message": f"Stressed TDS ({tds_stress:.1f}%) exceeds 44% limit",
+                "category": "Debt Ratio",
+                "sources": ["Credit Report", "Mortgage Application"],
+            })
+            risk_signals.append({"level": "high", "category": "debt", "message": "TDS ratio above guideline"})
+        elif tds_stress > 40:
+            findings.append({
+                "type": "info", 
+                "message": f"Stressed TDS ({tds_stress:.1f}%) approaching 44% limit",
+                "category": "Debt Ratio",
+            })
+            
+        if ltv > 80:
+            findings.append({
+                "type": "warning", 
+                "message": f"LTV ({ltv:.1f}%) exceeds 80% - mortgage insurance required",
+                "category": "Loan-to-Value",
+                "sources": ["Appraisal", "Mortgage Application"],
+            })
+            risk_signals.append({"level": "medium", "category": "ltv", "message": "High LTV requires insurance"})
+        
+        # Credit score finding with source
+        credit_citation = get_field_citation("CreditScore")
+        if credit_score < 680:
+            findings.append({
+                "type": "warning", 
+                "message": f"Credit score ({credit_score}) below preferred threshold",
+                "category": "Credit",
+                "source_file": credit_citation.get("source_file"),
+                "confidence": credit_citation.get("confidence"),
+            })
+            risk_signals.append({"level": "medium", "category": "credit", "message": "Credit score needs review"})
+        elif credit_score >= 750:
+            findings.append({
+                "type": "success", 
+                "message": f"Excellent credit score ({credit_score})",
+                "category": "Credit",
+                "source_file": credit_citation.get("source_file"),
+                "confidence": credit_citation.get("confidence"),
+            })
+            
+        # Determine overall decision
+        if gds_stress > 39 or tds_stress > 44:
+            decision = "DECLINE"
+        elif gds_stress > 35 or tds_stress > 40 or ltv > 80 or credit_score < 680:
+            decision = "REFER"
+        else:
+            decision = "APPROVE"
+        
+        # Get LLM analysis data
+        llm_outputs = app_md.llm_outputs or {}
+        app_summary = llm_outputs.get("application_summary", {})
+        
+        # Extract LLM-calculated ratios if available
+        ratio_calc = app_summary.get("ratio_calculation", {})
+        if ratio_calc:
+            parsed = ratio_calc.get("parsed", {})
+            if parsed and not parsed.get("_error"):
+                calcs = parsed.get("calculations", {})
+                if calcs:
+                    # Use LLM-calculated ratios if available
+                    gds_calc = calcs.get("GDS", {})
+                    tds_calc = calcs.get("TDS", {})
+                    ltv_calc = calcs.get("LTV", {})
+                    stress_calc = calcs.get("stress_test", {})
+                    
+                    if gds_calc.get("value"):
+                        ratios["gds"] = gds_calc.get("value", ratios["gds"])
+                    if tds_calc.get("value"):
+                        ratios["tds"] = tds_calc.get("value", ratios["tds"])
+                    if ltv_calc.get("value"):
+                        ratios["ltv"] = ltv_calc.get("value", ratios["ltv"])
+                    
+                    # Update stress ratios from LLM
+                    if stress_calc:
+                        stress_gds = stress_calc.get("GDS", {})
+                        stress_tds = stress_calc.get("TDS", {})
+                        if stress_gds.get("value"):
+                            stress_ratios["gds"] = stress_gds.get("value", stress_ratios["gds"])
+                        if stress_tds.get("value"):
+                            stress_ratios["tds"] = stress_tds.get("value", stress_ratios["tds"])
+        
+        # Get risk assessment from LLM
+        risk_data = app_summary.get("risk_assessment", {})
+        risk_parsed = risk_data.get("parsed", {})
+        if risk_parsed and not risk_parsed.get("_error"):
+            ra = risk_parsed.get("risk_assessment", {})
+            overall_risk = ra.get("overall_risk_level", "Medium")
+            aggregate = ra.get("aggregate_risk_signals", {})
+            
+            for category, level in aggregate.items():
+                if "low" not in level.lower():
+                    risk_signals.append({
+                        "level": "high" if "high" in level.lower() else "medium",
+                        "category": category,
+                        "message": f"{category.replace('_', ' ').title()}: {level}"
+                    })
+        
+        # Get recommendation from LLM
+        recommendation = app_summary.get("recommendation", {})
+        rec_parsed = recommendation.get("parsed", {})
+        if rec_parsed and not rec_parsed.get("_error"):
+            llm_decision = rec_parsed.get("DECISION")
+            if llm_decision:
+                decision = llm_decision
+            
+            rationale = rec_parsed.get("RATIONALE", {})
+            conditions = rec_parsed.get("CONDITIONS", [])
+            
+            # Add conditions as findings
+            for condition in conditions:
+                findings.append({
+                    "type": "condition",
+                    "message": condition,
+                })
+        
+        # Build AI narrative from recommendation rationale
+        narrative_parts = []
+        if rec_parsed and not rec_parsed.get("_error"):
+            rationale = rec_parsed.get("RATIONALE", {})
+            details = rationale.get("Details", [])
+            if details:
+                narrative_parts.append("**Key observations:**")
+                for detail in details[:5]:  # Limit to 5
+                    narrative_parts.append(f"• {detail}")
+            
+            refs = rationale.get("OSFI_B20_References", [])
+            if refs:
+                narrative_parts.append("")
+                narrative_parts.append(f"**OSFI B-20 Compliance:** All {len(refs)} policy checks passed")
+        
+        narrative = "\n".join(narrative_parts) if narrative_parts else None
+        
+        # Count policy checks from OSFI references
+        policy_checks_count = 0
+        if rec_parsed and not rec_parsed.get("_error"):
+            refs = rec_parsed.get("RATIONALE", {}).get("OSFI_B20_References", [])
+            policy_checks_count = len(refs)
+        
+        # Merge mortgage-specific data with base data
+        return {
+            **base_data,
+            "borrower": borrower,
+            "income": income,
+            "property": property_info,
+            "loan": loan,
+            "liabilities": liabilities,
+            "ratios": ratios,
+            "stress_ratios": stress_ratios,
+            "decision": decision,
+            "findings": findings,
+            "risk_signals": risk_signals,
+            "narrative": narrative,
+            "policy_checks_count": policy_checks_count,
+            # Include field-level citations for confidence indicators
+            "field_citations": {
+                field_data.get("field_name", key.split(":")[-1]): {
+                    "field_name": field_data.get("field_name", key.split(":")[-1]),
+                    "value": field_data.get("value"),
+                    "confidence": field_data.get("confidence"),
+                    "source_file": field_data.get("source_file"),
+                    "page_number": field_data.get("page_number"),
+                    "source_text": field_data.get("source_text"),
+                    "bounding_box": field_data.get("bounding_box"),
+                }
+                for key, field_data in ef.items()
+                if isinstance(field_data, dict)
+            },
+            "documents": [
+                {
+                    "id": f.filename,
+                    "type": "application",
+                    "filename": f.filename,
+                    "uploaded_at": app_md.created_at,
+                    "status": "processed" if ef else "pending",
+                    "url": f"/api/applications/{app_id}/files/{f.filename}",
+                    "fields_extracted": len([k for k in ef.keys() if f.filename.split('.')[0] in k]) if ef else 0,
+                }
+                for f in app_md.files
+            ] if app_md.files else [],
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get mortgage application: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mortgage/applications")
+async def create_mortgage_application(request: MortgageApplicationCreate):
+    """Create a new mortgage application."""
+    try:
+        settings = load_settings()
+        app_id = str(uuid.uuid4())[:8]
+        
+        # Create application metadata
+        app_md = new_metadata(
+            settings.app.storage_root,
+            app_id,
+            files=[],
+            persona="mortgage_underwriting",
+        )
+        
+        logger.info("Created mortgage application %s", app_id)
+        return application_to_dict(app_md)
+        
+    except Exception as e:
+        logger.error("Failed to create mortgage application: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: MortgageChatRequest):
+    """
+    General chat endpoint supporting multiple personas.
+    
+    For mortgage_underwriting persona, uses OSFI B-20 policies as context.
+    """
+    try:
+        from app.openai_client import chat_completion
+        
+        # Get persona-specific context
+        persona = request.persona or "mortgage_underwriting"
+        policies_context = ""
+        
+        if persona == "mortgage_underwriting":
+            # Load mortgage policies
+            try:
+                import json
+                from pathlib import Path
+                policy_path = Path("prompts/mortgage-underwriting-policies.json")
+                if policy_path.exists():
+                    with open(policy_path) as f:
+                        policies = json.load(f)
+                    # Format for context
+                    policies_context = json.dumps(policies.get("policies", [])[:5], indent=2)
+            except Exception as e:
+                logger.warning("Failed to load mortgage policies: %s", e)
+        
+        # Build system prompt
+        config = PERSONA_CHAT_CONFIG.get(persona, PERSONA_CHAT_CONFIG["underwriting"])
+        system_prompt = f"""You are an {config['role']}.
+
+You have access to the following {config['context_type']}:
+
+{policies_context[:8000] if policies_context else 'No policies loaded.'}
+
+When answering questions:
+1. Reference specific policies when applicable
+2. Be precise about regulatory requirements
+3. Explain ratios and calculations clearly
+4. Cite sources for your answers"""
+
+        # Call LLM
+        settings = load_settings()
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": request.query},
+        ]
+        
+        response = await asyncio.to_thread(
+            chat_completion,
+            messages,
+            settings,
+        )
+        
+        return {
+            "response": response,
+            "persona": persona,
+            "query": request.query,
+        }
+        
+    except Exception as e:
+        logger.error("Chat failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Entry point for running with uvicorn directly
