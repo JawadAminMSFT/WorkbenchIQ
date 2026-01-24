@@ -20,6 +20,7 @@ from app.database.settings import DatabaseSettings
 from app.rag.context import RAGContextBuilder, RAGContext
 from app.rag.search import PolicySearchService, SearchResult
 from app.rag.inference import InferredContext
+from app.rag.persona_search import get_search_service_for_persona
 from app.utils import setup_logging
 
 if TYPE_CHECKING:
@@ -65,6 +66,9 @@ class RAGService:
     2. Semantic/hybrid search for relevant policy chunks
     3. Context assembly with token budgets
     4. Fallback handling when RAG is unavailable
+    
+    Supports persona-aware search - uses different policy indexes
+    depending on the configured persona type.
     """
     
     def __init__(
@@ -72,6 +76,7 @@ class RAGService:
         settings: Settings | None = None,
         max_context_tokens: int = 4000,
         use_hybrid_search: bool = True,
+        persona: str = "underwriting",
     ):
         """
         Initialize RAG service.
@@ -80,10 +85,12 @@ class RAGService:
             settings: Application settings
             max_context_tokens: Maximum tokens for assembled context
             use_hybrid_search: Whether to use hybrid (keyword+semantic) search
+            persona: The persona type for policy index selection
         """
         self.settings = settings or load_settings()
         self.max_context_tokens = max_context_tokens
         self.use_hybrid_search = use_hybrid_search
+        self.persona = persona
         
         # Lazy initialization of components
         self._search_service: PolicySearchService | None = None
@@ -100,16 +107,20 @@ class RAGService:
             db_settings = DatabaseSettings.from_env()
             await init_pool(db_settings)
             
-            # Initialize search service
-            self._search_service = PolicySearchService(self.settings)
+            # Initialize persona-aware search service
+            self._search_service = get_search_service_for_persona(
+                persona=self.persona,
+                settings=self.settings,
+            )
             
-            # Initialize context builder
+            # Initialize context builder with persona awareness
             self._context_builder = RAGContextBuilder(
                 max_tokens=self.max_context_tokens,
+                persona=self.persona,
             )
             
             self._initialized = True
-            logger.info("RAG service initialized successfully")
+            logger.info(f"RAG service initialized for persona '{self.persona}'")
             
         except Exception as e:
             logger.error(f"Failed to initialize RAG service: {e}")
@@ -126,7 +137,10 @@ class RAGService:
     def context_builder(self) -> RAGContextBuilder:
         """Get context builder."""
         if not self._context_builder:
-            self._context_builder = RAGContextBuilder(max_tokens=self.max_context_tokens)
+            self._context_builder = RAGContextBuilder(
+                max_tokens=self.max_context_tokens,
+                persona=self.persona,
+            )
         return self._context_builder
     
     async def query(
@@ -271,6 +285,14 @@ class RAGService:
         
         return result
     
+    # Persona-specific context headers
+    PERSONA_CONTEXT_HEADERS = {
+        "underwriting": "Relevant Underwriting Policies",
+        "life_health_claims": "Relevant Claims Processing Policies",
+        "automotive_claims": "Relevant Auto Claims Policies",
+        "property_casualty_claims": "Relevant Property & Casualty Policies",
+    }
+    
     def format_context_for_prompt(
         self,
         result: RAGQueryResult,
@@ -290,7 +312,11 @@ class RAGService:
             return ""
         
         if include_header:
-            header = "## Relevant Underwriting Policies\n\n"
+            header_text = self.PERSONA_CONTEXT_HEADERS.get(
+                self.persona, 
+                "Relevant Policies"
+            )
+            header = f"## {header_text}\n\n"
             if result.used_fallback:
                 header += "(Full policy context - RAG unavailable)\n\n"
             return header + result.context
@@ -324,33 +350,51 @@ class RAGService:
         ]
 
 
-# Singleton instance for app-wide usage
-_rag_service: RAGService | None = None
+# Per-persona singleton instances for app-wide usage
+_rag_services: dict[str, RAGService] = {}
 
 
-async def get_rag_service(settings: Settings | None = None) -> RAGService:
+async def get_rag_service(
+    settings: Settings | None = None,
+    persona: str = "underwriting",
+) -> RAGService:
     """
-    Get or create the RAG service singleton.
+    Get or create the RAG service for a specific persona.
+    
+    Maintains separate service instances per persona to support
+    different policy indexes for each persona type.
     
     Args:
         settings: Optional settings override
+        persona: The persona type (underwriting, life_health_claims, automotive_claims, property_casualty_claims)
         
     Returns:
-        Initialized RAGService instance
+        Initialized RAGService instance for the specified persona
     """
-    global _rag_service
+    global _rag_services
     
-    if _rag_service is None:
-        _rag_service = RAGService(settings=settings)
-        await _rag_service.initialize()
+    if persona not in _rag_services:
+        _rag_services[persona] = RAGService(settings=settings, persona=persona)
+        await _rag_services[persona].initialize()
+        logger.info(f"Created RAG service for persona '{persona}'")
     
-    return _rag_service
+    return _rag_services[persona]
 
 
-async def close_rag_service() -> None:
-    """Close the RAG service and release resources."""
-    global _rag_service
+async def close_rag_service(persona: str | None = None) -> None:
+    """
+    Close the RAG service and release resources.
     
-    if _rag_service is not None:
-        # Pool is managed separately
-        _rag_service = None
+    Args:
+        persona: If specified, close only that persona's service.
+                 If None, close all services.
+    """
+    global _rag_services
+    
+    if persona is not None:
+        if persona in _rag_services:
+            del _rag_services[persona]
+            logger.info(f"Closed RAG service for persona '{persona}'")
+    else:
+        _rag_services.clear()
+        logger.info("Closed all RAG services")

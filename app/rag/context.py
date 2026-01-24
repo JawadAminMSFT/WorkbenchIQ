@@ -85,12 +85,22 @@ class RAGContextBuilder:
     - Policy deduplication
     - Citation tracking
     - Structured formatting
+    - Persona-aware headers
     """
+    
+    # Persona-specific policy type labels
+    PERSONA_POLICY_LABELS = {
+        "underwriting": "UNDERWRITING POLICIES",
+        "life_health_claims": "CLAIMS PROCESSING POLICIES",
+        "automotive_claims": "AUTO CLAIMS POLICIES",
+        "property_casualty_claims": "PROPERTY & CASUALTY POLICIES",
+    }
     
     def __init__(
         self,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         model: str = "gpt-4",
+        persona: str = "underwriting",
     ):
         """
         Initialize context builder.
@@ -98,8 +108,10 @@ class RAGContextBuilder:
         Args:
             max_tokens: Maximum tokens for assembled context
             model: Model name for tokenization (affects token counting)
+            persona: Persona type for context header customization
         """
         self.max_tokens = max_tokens
+        self.persona = persona
         
         # Initialize tokenizer
         try:
@@ -211,13 +223,18 @@ class RAGContextBuilder:
         )
     
     def _format_header(self, query: str | None, style: str) -> str:
-        """Format context header."""
+        """Format context header with persona-aware labels."""
+        policy_label = self.PERSONA_POLICY_LABELS.get(
+            self.persona, 
+            "RELEVANT POLICIES"
+        )
+        
         if style == "compact":
-            return "=== RELEVANT UNDERWRITING POLICIES ==="
+            return f"=== RELEVANT {policy_label} ==="
         elif style == "prose":
-            return "The following underwriting policy information is relevant to this assessment:"
+            return f"The following {policy_label.lower()} are relevant to this assessment:"
         else:  # structured
-            header = "### Relevant Underwriting Policy Context\n"
+            header = f"### Relevant {policy_label.title()} Context\n"
             if query:
                 header += f"Query: {query}\n"
             return header

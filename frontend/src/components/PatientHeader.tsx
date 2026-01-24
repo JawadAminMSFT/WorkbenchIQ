@@ -99,7 +99,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.ApplicantName.confidence} fieldName="Name" />
             )}
             {buildCitation('ApplicantName') && (
-              <CitationTooltip citation={buildCitation('ApplicantName')!}>
+              <CitationTooltip citation={buildCitation('ApplicantName')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}
@@ -113,7 +113,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.Occupation.confidence} fieldName="Occupation" />
             )}
             {buildCitation('Occupation') && (
-              <CitationTooltip citation={buildCitation('Occupation')!}>
+              <CitationTooltip citation={buildCitation('Occupation')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}
@@ -127,7 +127,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.Weight.confidence} fieldName="Weight" />
             )}
             {buildCitation('Weight') && (
-              <CitationTooltip citation={buildCitation('Weight')!}>
+              <CitationTooltip citation={buildCitation('Weight')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}
@@ -144,7 +144,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.DateOfBirth.confidence} fieldName="Date of Birth" />
             )}
             {buildCitation('DateOfBirth') && (
-              <CitationTooltip citation={buildCitation('DateOfBirth')!}>
+              <CitationTooltip citation={buildCitation('DateOfBirth')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}
@@ -158,7 +158,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.Gender.confidence} fieldName="Gender" />
             )}
             {buildCitation('Gender') && (
-              <CitationTooltip citation={buildCitation('Gender')!}>
+              <CitationTooltip citation={buildCitation('Gender')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}
@@ -178,7 +178,7 @@ export default function PatientHeader({ application }: PatientHeaderProps) {
               <ConfidenceIndicator confidence={citations.Height.confidence} fieldName="Height" />
             )}
             {buildCitation('Height') && (
-              <CitationTooltip citation={buildCitation('Height')!}>
+              <CitationTooltip citation={buildCitation('Height')!} appId={application.id}>
                 <span></span>
               </CitationTooltip>
             )}

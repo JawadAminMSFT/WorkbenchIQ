@@ -165,7 +165,7 @@ export default function OccupationPanel({ application }: OccupationPanelProps) {
                   <ConfidenceIndicator confidence={data.occupation.confidence} fieldName="Occupation" />
                 )}
                 {buildCitation(data.occupation) && (
-                  <CitationTooltip citation={buildCitation(data.occupation)!}>
+                  <CitationTooltip citation={buildCitation(data.occupation)!} appId={application.id}>
                     <span></span>
                   </CitationTooltip>
                 )}
@@ -184,7 +184,7 @@ export default function OccupationPanel({ application }: OccupationPanelProps) {
                   <ConfidenceIndicator confidence={data.hazardousActivities.confidence} fieldName="Hazardous Activities" />
                 )}
                 {buildCitation(data.hazardousActivities) && (
-                  <CitationTooltip citation={buildCitation(data.hazardousActivities)!}>
+                  <CitationTooltip citation={buildCitation(data.hazardousActivities)!} appId={application.id}>
                     <span></span>
                   </CitationTooltip>
                 )}
@@ -200,7 +200,7 @@ export default function OccupationPanel({ application }: OccupationPanelProps) {
                   <ConfidenceIndicator confidence={data.foreignTravel.confidence} fieldName="Foreign Travel" />
                 )}
                 {buildCitation(data.foreignTravel) && (
-                  <CitationTooltip citation={buildCitation(data.foreignTravel)!}>
+                  <CitationTooltip citation={buildCitation(data.foreignTravel)!} appId={application.id}>
                     <span></span>
                   </CitationTooltip>
                 )}

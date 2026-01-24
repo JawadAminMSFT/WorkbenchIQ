@@ -13,6 +13,7 @@ export interface CitationData {
 
 interface CitationTooltipProps {
   citation: CitationData;
+  appId?: string;  // Application ID for building PDF URLs
   onViewDocument?: (pageNumber: number, sourceFile?: string) => void;
   children: React.ReactNode;
   position?: 'top' | 'bottom' | 'left' | 'right';
@@ -38,6 +39,7 @@ function truncateText(text: string, maxLength: number = 150): string {
  */
 export default function CitationTooltip({
   citation,
+  appId,
   onViewDocument,
   children,
   position = 'top',
@@ -46,8 +48,34 @@ export default function CitationTooltip({
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { sourceFile, pageNumber, sourceText, fieldName } = citation;
+
+  // Handle showing tooltip
+  const showTooltip = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+    setIsVisible(true);
+  };
+
+  // Handle hiding tooltip with delay
+  const hideTooltip = () => {
+    hideTimeoutRef.current = setTimeout(() => {
+      setIsVisible(false);
+    }, 150); // Small delay to allow moving to tooltip
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Calculate tooltip position
   useEffect(() => {
@@ -111,8 +139,8 @@ export default function CitationTooltip({
     <span
       ref={triggerRef}
       className="relative inline-flex items-center gap-1 cursor-help group"
-      onMouseEnter={() => setIsVisible(true)}
-      onMouseLeave={() => setIsVisible(false)}
+      onMouseEnter={showTooltip}
+      onMouseLeave={hideTooltip}
     >
       {children}
       
@@ -125,6 +153,8 @@ export default function CitationTooltip({
       {isVisible && (
         <div
           ref={tooltipRef}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
           className="absolute z-50 w-72 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
           style={{
             top: tooltipPosition.top,
@@ -183,6 +213,20 @@ export default function CitationTooltip({
                 <ExternalLink className="w-3.5 h-3.5" />
                 View in Document
               </button>
+            )}
+
+            {/* Open PDF in new tab */}
+            {appId && sourceFile && sourceFile.toLowerCase().endsWith('.pdf') && (
+              <a
+                href={`/api/applications/${appId}/files/${encodeURIComponent(sourceFile)}${pageNumber ? `#page=${pageNumber}` : ''}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open PDF
+              </a>
             )}
           </div>
 

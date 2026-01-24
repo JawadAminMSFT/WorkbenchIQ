@@ -297,8 +297,11 @@ export interface AnalyzerStatus {
 export interface AnalyzerInfo {
   id: string;
   type: 'prebuilt' | 'custom';
+  media_type?: 'document' | 'image' | 'video';
   description: string;
   exists: boolean;
+  persona?: string;
+  persona_name?: string;
 }
 
 /**

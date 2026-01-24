@@ -247,7 +247,7 @@ export default function LabResultsPanel({ application }: LabResultsPanelProps) {
                     sourceFile: result.citation.source_file,
                     pageNumber: result.citation.page_number,
                     sourceText: result.citation.source_text,
-                  }}>
+                  }} appId={application.id}>
                     <span></span>
                   </CitationTooltip>
                 )}

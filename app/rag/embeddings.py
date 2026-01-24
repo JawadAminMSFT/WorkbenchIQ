@@ -3,6 +3,7 @@ Embedding Service - Generates vector embeddings via Azure OpenAI.
 
 Uses the text-embedding-3-small model (1536 dimensions) by default.
 Supports batch processing with retry logic and exponential backoff.
+Supports both API key and Azure AD (Managed Identity) authentication.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import time
 from typing import Any
 
 import requests
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 from app.config import OpenAISettings, RAGSettings
 from app.utils import setup_logging
@@ -31,16 +33,21 @@ class EmbeddingService:
     - Single text embedding
     - Batch embedding (up to 100 texts)
     - Retry with exponential backoff
+    - Azure AD authentication (preferred) or API key authentication
     """
     
     # Azure OpenAI batch limit
     MAX_BATCH_SIZE = 100
+    
+    # Azure OpenAI cognitive services scope for Azure AD auth
+    AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
     
     def __init__(
         self,
         openai_settings: OpenAISettings,
         rag_settings: RAGSettings | None = None,
         embedding_deployment: str | None = None,
+        use_azure_ad: bool = True,
     ):
         """
         Initialize the embedding service.
@@ -49,9 +56,11 @@ class EmbeddingService:
             openai_settings: Azure OpenAI configuration
             rag_settings: RAG configuration (for model/dimensions)
             embedding_deployment: Optional deployment name override for embeddings
+            use_azure_ad: If True, use Azure AD auth; if False, use API key
         """
         self.settings = openai_settings
         self.rag_settings = rag_settings or RAGSettings()
+        self.use_azure_ad = use_azure_ad
         
         # Use embedding-specific deployment: explicit override > RAG settings > error
         self.embedding_deployment = (
@@ -68,6 +77,47 @@ class EmbeddingService:
         # Model configuration
         self.model = self.rag_settings.embedding_model
         self.dimensions = self.rag_settings.embedding_dimensions
+        
+        # Initialize Azure AD credential if using Azure AD auth
+        self._credential = None
+        self._token_provider = None
+        if self.use_azure_ad:
+            try:
+                self._credential = DefaultAzureCredential()
+                self._token_provider = get_bearer_token_provider(
+                    self._credential, 
+                    self.AZURE_OPENAI_SCOPE
+                )
+                logger.info("EmbeddingService initialized with Azure AD authentication")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Azure AD auth, falling back to API key: {e}")
+                self.use_azure_ad = False
+        
+        if not self.use_azure_ad:
+            logger.info("EmbeddingService initialized with API key authentication")
+    
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Get authentication headers for Azure OpenAI API."""
+        headers = {"Content-Type": "application/json"}
+        
+        if self.use_azure_ad and self._token_provider:
+            try:
+                token = self._token_provider()
+                headers["Authorization"] = f"Bearer {token}"
+                return headers
+            except Exception as e:
+                logger.warning(f"Azure AD token acquisition failed, falling back to API key: {e}")
+        
+        # Fallback to API key
+        if self.settings.api_key:
+            headers["api-key"] = self.settings.api_key
+        else:
+            raise EmbeddingError(
+                "No authentication available. Either configure Azure AD credentials "
+                "or set AZURE_OPENAI_API_KEY environment variable."
+            )
+        
+        return headers
     
     def get_embedding(
         self,
@@ -126,19 +176,16 @@ class EmbeddingService:
             )
         
         # Validate settings
-        if not self.settings.endpoint or not self.settings.api_key:
+        if not self.settings.endpoint:
             raise EmbeddingError(
-                "Azure OpenAI settings incomplete. "
-                "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY."
+                "Azure OpenAI endpoint not configured. "
+                "Set AZURE_OPENAI_ENDPOINT environment variable."
             )
         
         # Build request
         url = f"{self.settings.endpoint}/openai/deployments/{self.embedding_deployment}/embeddings"
         params = {"api-version": self.settings.api_version}
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": self.settings.api_key,
-        }
+        headers = self._get_auth_headers()
         payload = {
             "input": texts,
             "model": self.model,

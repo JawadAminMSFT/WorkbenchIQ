@@ -16,6 +16,8 @@ class StoredFile:
     filename: str
     path: str
     url: Optional[str] = None
+    content_type: Optional[str] = None
+    media_type: Optional[str] = None  # 'image', 'video', 'document'
 
 
 @dataclass

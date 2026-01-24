@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, MessageSquare, Bot, User, Loader2, Trash2, Info, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Send, MessageSquare, Bot, User, Loader2, Trash2, Info, BookOpen, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { StructuredContentRenderer } from './chat/ChatCards';
 import ChatHistoryPanel from './chat/ChatHistoryPanel';
+import PolicyDetailModal from './chat/PolicyDetailModal';
 
 // Citation data from RAG response
 interface RAGCitation {
@@ -98,8 +99,14 @@ function RAGStatsTooltip({ rag }: { rag: RAGMetadata }) {
   );
 }
 
-// Expandable Citations Component
-function PolicyCitations({ citations }: { citations?: RAGCitation[] }) {
+// Expandable Citations Component with clickable policy viewer
+function PolicyCitations({ 
+  citations, 
+  onPolicyClick 
+}: { 
+  citations?: RAGCitation[];
+  onPolicyClick?: (policyId: string) => void;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   
@@ -109,6 +116,12 @@ function PolicyCitations({ citations }: { citations?: RAGCitation[] }) {
   const uniquePolicies = Array.from(
     new Map(citations.map(c => [c.policy_id, c])).values()
   );
+  
+  const handleCitationClick = (policyId: string) => {
+    if (onPolicyClick) {
+      onPolicyClick(policyId);
+    }
+  };
   
   return (
     <div className="mt-2 pt-2 border-t border-slate-200">
@@ -130,10 +143,16 @@ function PolicyCitations({ citations }: { citations?: RAGCitation[] }) {
               onMouseEnter={() => setHoveredIdx(idx)}
               onMouseLeave={() => setHoveredIdx(null)}
             >
-              <div className="flex items-center gap-2 text-xs bg-slate-50 rounded px-2 py-1.5 cursor-pointer hover:bg-slate-100 transition-colors">
-                <span className="font-mono text-indigo-600">{citation.policy_id}</span>
-                <span className="text-slate-500 truncate">{citation.policy_name}</span>
-              </div>
+              <button
+                onClick={() => handleCitationClick(citation.policy_id)}
+                className="w-full flex items-center justify-between gap-2 text-xs bg-slate-50 rounded px-2 py-1.5 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 border border-transparent transition-colors text-left"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-indigo-600">{citation.policy_id}</span>
+                  <span className="text-slate-500 truncate">{citation.policy_name}</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-slate-400 flex-shrink-0" />
+              </button>
               
               {/* Hover tooltip with details */}
               {hoveredIdx === idx && (
@@ -155,6 +174,9 @@ function PolicyCitations({ citations }: { citations?: RAGCitation[] }) {
                       </div>
                     )}
                   </div>
+                  <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-indigo-600">
+                    Click to view full policy details
+                  </div>
                 </div>
               )}
             </div>
@@ -166,7 +188,13 @@ function PolicyCitations({ citations }: { citations?: RAGCitation[] }) {
 }
 
 // Message Bubble Component with RAG enhancements
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function MessageBubble({ 
+  msg, 
+  onPolicyClick 
+}: { 
+  msg: ChatMessage;
+  onPolicyClick?: (policyId: string) => void;
+}) {
   return (
     <div className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       {msg.role === 'assistant' && (
@@ -183,7 +211,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       >
         <div className="text-sm">
           {msg.role === 'assistant' ? (
-            <StructuredContentRenderer content={msg.content} />
+            <StructuredContentRenderer content={msg.content} onPolicyClick={onPolicyClick} />
           ) : (
             <span className="whitespace-pre-wrap">{msg.content}</span>
           )}
@@ -191,7 +219,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         
         {/* Citations for assistant messages with RAG */}
         {msg.role === 'assistant' && msg.rag?.citations && (
-          <PolicyCitations citations={msg.rag.citations} />
+          <PolicyCitations citations={msg.rag.citations} onPolicyClick={onPolicyClick} />
         )}
         
         <div className={`flex items-center gap-1 text-xs mt-1 ${
@@ -215,6 +243,7 @@ interface ChatDrawerProps {
   onClose: () => void;
   onOpen: () => void;
   applicationId: string;
+  persona?: string;  // Persona type for RAG context
 }
 
 export default function ChatDrawer({
@@ -222,6 +251,7 @@ export default function ChatDrawer({
   onClose,
   onOpen,
   applicationId,
+  persona = 'underwriting',
 }: ChatDrawerProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -231,6 +261,7 @@ export default function ChatDrawer({
   const [conversationTitle, setConversationTitle] = useState<string>('New Chat');
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -255,6 +286,11 @@ export default function ChatDrawer({
       loadingPhaseTimerRef.current = null;
     }
     setLoadingPhase(null);
+  }, []);
+
+  // Handle clicking on a policy citation to open the detail modal
+  const handlePolicyClick = useCallback((policyId: string) => {
+    setSelectedPolicyId(policyId);
   }, []);
 
   // Reset state when application changes
@@ -361,6 +397,7 @@ export default function ChatDrawer({
           body: JSON.stringify({
             message: userMessage.content,
             conversation_id: conversationId,
+            persona: persona,  // Include persona for RAG context
           }),
           signal: controller.signal,
         }
@@ -527,7 +564,7 @@ export default function ChatDrawer({
               </div>
             ) : (
               messages.map((msg, idx) => (
-                <MessageBubble key={idx} msg={msg} />
+                <MessageBubble key={idx} msg={msg} onPolicyClick={handlePolicyClick} />
               ))
             )}
             
@@ -577,6 +614,15 @@ export default function ChatDrawer({
           </div>
         </div>
       </div>
+
+      {/* Policy Detail Modal */}
+      {selectedPolicyId && (
+        <PolicyDetailModal
+          policyId={selectedPolicyId}
+          persona={persona}
+          onClose={() => setSelectedPolicyId(null)}
+        />
+      )}
     </>
   );
 }

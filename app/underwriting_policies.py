@@ -601,3 +601,97 @@ def validate_policy_citation(
         "policy": policy,
         "criteria": None,
     }
+
+
+# Mapping of personas to their policy JSON files
+PERSONA_POLICY_FILES = {
+    "underwriting": "life-health-underwriting-policies.json",
+    "life_health_claims": "life-health-claims-policies.json",
+    "automotive_claims": "automotive-claims-policies.json",
+    "property_casualty_claims": "property-casualty-claims-policies.json",
+}
+
+
+def get_policy_file_for_persona(storage_root: str, persona: str) -> str:
+    """
+    Get the path to the policy file for a specific persona.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Path to the persona's policy JSON file
+    """
+    policy_file = PERSONA_POLICY_FILES.get(persona, PERSONA_POLICY_FILES["underwriting"])
+    return os.path.join(storage_root, policy_file)
+
+
+def load_policies_for_persona(
+    storage_root: str,
+    persona: str,
+    use_cache: bool = True,
+) -> Dict[str, Any]:
+    """
+    Load policies from the JSON file for a specific persona.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        use_cache: Whether to use cached policies if available
+        
+    Returns:
+        Dictionary containing the full policies structure
+    """
+    cache_key = f"{storage_root}:{persona}"
+    
+    if use_cache and cache_key in _policy_cache:
+        return _policy_cache[cache_key]
+    
+    policy_file = get_policy_file_for_persona(storage_root, persona)
+    
+    try:
+        if os.path.exists(policy_file):
+            with open(policy_file, 'r', encoding='utf-8') as f:
+                policies = json.load(f)
+                
+            # Validate basic structure
+            if "policies" not in policies or not isinstance(policies["policies"], list):
+                logger.warning(f"Invalid policy file structure for {persona}. Expected 'policies' array.")
+                return _get_empty_policies()
+            
+            logger.info(
+                "Loaded %d %s policies from %s",
+                len(policies["policies"]),
+                persona,
+                policy_file
+            )
+            
+            if use_cache:
+                _policy_cache[cache_key] = policies
+                
+            return policies
+        else:
+            logger.warning("Policy file not found for %s: %s", persona, policy_file)
+            return _get_empty_policies()
+            
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error("Failed to load %s policies: %s", persona, str(e))
+        return _get_empty_policies()
+
+
+def format_policies_for_persona(storage_root: str, persona: str) -> str:
+    """
+    Format all policies for a specific persona for injection into a prompt.
+    
+    This is the persona-aware version of format_all_policies_for_prompt.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Formatted string containing all policies for the persona
+    """
+    policies = load_policies_for_persona(storage_root, persona)
+    return format_policies_for_prompt(policies.get("policies", []))

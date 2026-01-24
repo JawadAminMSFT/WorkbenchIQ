@@ -20,6 +20,7 @@ import ChatDrawer from '@/components/ChatDrawer';
 import { ClaimsSummary, MedicalRecordsPanel, EligibilityPanel } from '@/components/claims';
 import LifeHealthClaimsOverview from '@/components/claims/LifeHealthClaimsOverview';
 import PropertyCasualtyClaimsOverview from '@/components/claims/PropertyCasualtyClaimsOverview';
+import AutomotiveClaimsOverview from '@/components/claims/AutomotiveClaimsOverview';
 import { usePersona } from '@/lib/PersonaContext';
 import type { ApplicationMetadata, ApplicationListItem } from '@/lib/types';
 
@@ -162,6 +163,9 @@ export default function Home() {
       case 'overview':
       default:
         // Render persona-specific overview
+        if (currentPersona === 'automotive_claims') {
+          return renderAutomotiveClaimsOverview();
+        }
         if (currentPersona === 'life_health_claims') {
           return renderLifeHealthClaimsOverview();
         }
@@ -292,6 +296,24 @@ export default function Home() {
     );
   };
 
+  const renderAutomotiveClaimsOverview = () => {
+    if (!selectedApp) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-slate-500">
+            <p className="text-lg font-medium">No automotive claim selected</p>
+            <p className="text-sm mt-2">Select a claim from the dropdown to view details</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <AutomotiveClaimsOverview 
+        applicationId={selectedApp.id}
+      />
+    );
+  };
+
   const renderMortgageOverview = () => {
     return (
       <div className="flex-1 overflow-auto p-6">
@@ -398,6 +420,7 @@ export default function Home() {
           onClose={() => setIsChatOpen(false)}
           onOpen={() => setIsChatOpen(true)}
           applicationId={selectedApp.id}
+          persona={currentPersona}
         />
       )}
     </div>

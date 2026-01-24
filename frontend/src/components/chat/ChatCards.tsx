@@ -14,7 +14,8 @@ import {
   AlertCircle,
   ArrowRight,
   Shield,
-  Activity
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 
 // Type definitions for structured chat responses
@@ -140,7 +141,13 @@ const decisionConfig = {
 };
 
 // Risk Factors Card
-export function RiskFactorsCard({ data }: { data: RiskFactorsResponse }) {
+export function RiskFactorsCard({ 
+  data, 
+  onPolicyClick 
+}: { 
+  data: RiskFactorsResponse;
+  onPolicyClick?: (policyId: string) => void;
+}) {
   const overallConfig = riskLevelConfig[data.overall_risk] || riskLevelConfig.moderate;
   const OverallIcon = overallConfig.icon;
 
@@ -176,9 +183,20 @@ export function RiskFactorsCard({ data }: { data: RiskFactorsResponse }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm text-slate-800">{factor.title}</span>
                     {factor.policy_id && (
-                      <span className="text-xs font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
-                        {factor.policy_id}
-                      </span>
+                      onPolicyClick ? (
+                        <button
+                          onClick={() => onPolicyClick(factor.policy_id!)}
+                          className="flex items-center gap-1 text-xs font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded hover:bg-indigo-200 transition-colors cursor-pointer"
+                          title="Click to view policy details"
+                        >
+                          {factor.policy_id}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <span className="text-xs font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                          {factor.policy_id}
+                        </span>
+                      )
                     )}
                   </div>
                   <p className="text-xs text-slate-600 mt-1">{factor.description}</p>
@@ -193,33 +211,65 @@ export function RiskFactorsCard({ data }: { data: RiskFactorsResponse }) {
 }
 
 // Policy List Card
-export function PolicyListCard({ data }: { data: PolicyListResponse }) {
+export function PolicyListCard({ 
+  data, 
+  onPolicyClick 
+}: { 
+  data: PolicyListResponse;
+  onPolicyClick?: (policyId: string) => void;
+}) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">{data.summary}</p>
       
       <div className="space-y-2">
         {data.policies.map((policy, idx) => (
-          <div 
-            key={idx}
-            className="bg-slate-50 border border-slate-200 rounded-lg p-3"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Shield className="w-4 h-4 text-indigo-600" />
-              <span className="font-mono text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
-                {policy.policy_id}
-              </span>
-              <span className="font-medium text-sm text-slate-800">{policy.name}</span>
+          onPolicyClick ? (
+            <button
+              key={idx}
+              onClick={() => onPolicyClick(policy.policy_id)}
+              className="w-full text-left bg-slate-50 border border-slate-200 rounded-lg p-3 hover:bg-indigo-50 hover:border-indigo-200 transition-colors cursor-pointer group"
+              title="Click to view full policy details"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-4 h-4 text-indigo-600" />
+                <span className="font-mono text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                  {policy.policy_id}
+                </span>
+                <span className="font-medium text-sm text-slate-800 flex-1">{policy.name}</span>
+                <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+              </div>
+              <div className="pl-6 space-y-1">
+                <p className="text-xs text-slate-500">
+                  <span className="font-medium">Relevance:</span> {policy.relevance}
+                </p>
+                <p className="text-xs text-slate-700">
+                  <span className="font-medium">Finding:</span> {policy.finding}
+                </p>
+              </div>
+            </button>
+          ) : (
+            <div 
+              key={idx}
+              className="bg-slate-50 border border-slate-200 rounded-lg p-3"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-4 h-4 text-indigo-600" />
+                <span className="font-mono text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                  {policy.policy_id}
+                </span>
+                <span className="font-medium text-sm text-slate-800">{policy.name}</span>
+              </div>
+              <div className="pl-6 space-y-1">
+                <p className="text-xs text-slate-500">
+                  <span className="font-medium">Relevance:</span> {policy.relevance}
+                </p>
+                <p className="text-xs text-slate-700">
+                  <span className="font-medium">Finding:</span> {policy.finding}
+                </p>
+              </div>
             </div>
-            <div className="pl-6 space-y-1">
-              <p className="text-xs text-slate-500">
-                <span className="font-medium">Relevance:</span> {policy.relevance}
-              </p>
-              <p className="text-xs text-slate-700">
-                <span className="font-medium">Finding:</span> {policy.finding}
-              </p>
-            </div>
-          </div>
+          )
         ))}
       </div>
     </div>
@@ -403,7 +453,13 @@ function formatPlainText(text: string): React.ReactNode {
 }
 
 // Main renderer component
-export function StructuredContentRenderer({ content }: { content: string }) {
+export function StructuredContentRenderer({ 
+  content, 
+  onPolicyClick 
+}: { 
+  content: string;
+  onPolicyClick?: (policyId: string) => void;
+}) {
   const { structured, plainText } = parseStructuredContent(content);
   
   return (
@@ -416,8 +472,8 @@ export function StructuredContentRenderer({ content }: { content: string }) {
       {/* Render structured content */}
       {structured && (
         <div className="mt-2">
-          {structured.type === 'risk_factors' && <RiskFactorsCard data={structured} />}
-          {structured.type === 'policy_list' && <PolicyListCard data={structured} />}
+          {structured.type === 'risk_factors' && <RiskFactorsCard data={structured} onPolicyClick={onPolicyClick} />}
+          {structured.type === 'policy_list' && <PolicyListCard data={structured} onPolicyClick={onPolicyClick} />}
           {structured.type === 'recommendation' && <RecommendationCard data={structured} />}
           {structured.type === 'comparison' && <ComparisonCard data={structured} />}
         </div>

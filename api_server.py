@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 from app.config import load_settings, validate_settings
@@ -73,6 +73,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include modular routers (lazy loading to avoid circular imports)
+try:
+    from app.claims.api import router as claims_api_router
+    app.include_router(claims_api_router)
+    logger.info("Claims API router registered")
+except ImportError as e:
+    logger.warning("Claims API router not available: %s", e)
 
 
 # Initialize storage provider and database pool on startup
@@ -125,6 +132,7 @@ class ChatRequest(BaseModel):
     history: Optional[List[ChatMessage]] = None
     application_id: Optional[str] = None
     conversation_id: Optional[str] = None  # If provided, continues existing conversation
+    persona: Optional[str] = None  # Persona for RAG context (underwriting, life_health_claims, automotive_claims, property_casualty_claims)
 
 
 class ConversationSummary(BaseModel):
@@ -285,6 +293,147 @@ async def run_extract_and_analyze_background(app_id: str):
         logger.warning("Skipping analysis for %s - extraction failed or no content", app_id)
 
 
+# =============================================================================
+# Persona-Aware Chat Prompts
+# =============================================================================
+
+PERSONA_CHAT_CONFIG = {
+    "underwriting": {
+        "role": "expert life insurance underwriter assistant",
+        "context_type": "underwriting policies",
+        "item_type": "application",
+        "decision_type": "underwriting decisions",
+        "example_policy_id": "CVD-BP-001",
+    },
+    "life_health_claims": {
+        "role": "expert life and health insurance claims analyst",
+        "context_type": "claims processing policies",
+        "item_type": "claim",
+        "decision_type": "claims processing decisions",
+        "example_policy_id": "HC-COV-001",
+    },
+    "automotive_claims": {
+        "role": "expert automotive insurance claims analyst",
+        "context_type": "auto claims policies",
+        "item_type": "claim",
+        "decision_type": "claims processing decisions",
+        "example_policy_id": "DMG-SEV-001",
+    },
+    "property_casualty_claims": {
+        "role": "expert property and casualty claims analyst",
+        "context_type": "property & casualty policies",
+        "item_type": "claim",
+        "decision_type": "claims processing decisions",
+        "example_policy_id": "PC-COV-001",
+    },
+}
+
+
+def get_chat_system_prompt(
+    persona: str,
+    policies_context: str,
+    app_id: str,
+    app_context_parts: list[str],
+) -> str:
+    """
+    Generate a persona-aware system prompt for Ask IQ chat.
+    
+    Args:
+        persona: The current persona type
+        policies_context: RAG-retrieved or fallback policy context
+        app_id: The application/claim ID
+        app_context_parts: Parts of the application context to include
+        
+    Returns:
+        System prompt string for the LLM
+    """
+    config = PERSONA_CHAT_CONFIG.get(persona, PERSONA_CHAT_CONFIG["underwriting"])
+    
+    return f"""You are an {config['role']}. You have access to the following context:
+
+{policies_context}
+
+## {config['item_type'].title()} Information (ID: {app_id})
+
+{chr(10).join(app_context_parts) if app_context_parts else f"No {config['item_type']} details available yet."}
+
+---
+
+## Response Format Instructions:
+
+When appropriate, structure your response as JSON to enable rich UI rendering. Use these formats:
+
+### For risk factor summaries (when asked about risks, key factors, concerns):
+```json
+{{{{
+  "type": "risk_factors",
+  "summary": "Brief overall summary",
+  "factors": [
+    {{{{
+      "title": "Factor name",
+      "description": "Details about the factor",
+      "risk_level": "low|moderate|high",
+      "policy_id": "Optional policy ID like {config['example_policy_id']}"
+    }}}}
+  ],
+  "overall_risk": "low|low-moderate|moderate|moderate-high|high"
+}}}}
+```
+
+### For policy citations (when explaining which policies apply):
+```json
+{{{{
+  "type": "policy_list",
+  "summary": "Brief intro",
+  "policies": [
+    {{{{
+      "policy_id": "{config['example_policy_id']}",
+      "name": "Policy name",
+      "relevance": "Why this policy applies",
+      "finding": "What the policy evaluation found"
+    }}}}
+  ]
+}}}}
+```
+
+### For recommendations (when asked about approval, action, decision):
+```json
+{{{{
+  "type": "recommendation",
+  "decision": "approve|approve_with_conditions|defer|decline",
+  "confidence": "high|medium|low",
+  "summary": "Brief recommendation summary",
+  "conditions": ["List of conditions if applicable"],
+  "rationale": "Detailed reasoning",
+  "next_steps": ["Suggested next steps"]
+}}}}
+```
+
+### For comparisons or tables:
+```json
+{{{{
+  "type": "comparison",
+  "title": "Comparison title",
+  "columns": ["Column1", "Column2", "Column3"],
+  "rows": [
+    {{{{"label": "Row label", "values": ["val1", "val2", "val3"]}}}}
+  ]
+}}}}
+```
+
+For simple conversational responses or when structured format doesn't apply, respond with plain text.
+Always wrap JSON responses in ```json code blocks.
+
+## General Instructions:
+1. Answer questions about this specific {config['item_type']} and the {config['context_type']}.
+2. **IMPORTANT: Only reference policy IDs that appear in the policy context above.** Do not invent or guess policy IDs. Use exact IDs like {config['example_policy_id']} from the provided policies.
+3. Provide clear, actionable guidance for {config['decision_type']}.
+4. If you need more information to answer a question, ask for it.
+5. Use structured JSON formats when they enhance clarity; use plain text for simple answers.
+6. If no relevant policy exists for a topic, say so rather than inventing a policy ID.
+"""
+
+
 @app.get("/")
 async def root():
     """Health check endpoint."""
@@ -362,6 +511,61 @@ async def get_application(app_id: str):
         raise
     except Exception as e:
         logger.error("Failed to load application %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/applications/{app_id}/files/{filename:path}")
+async def get_application_file(app_id: str, filename: str):
+    """Serve a file from an application's files directory."""
+    try:
+        settings = load_settings()
+        app_dir = Path(settings.app.storage_root) / "applications" / app_id / "files"
+        file_path = app_dir / filename
+        
+        # Security: ensure the file is within the application directory
+        try:
+            file_path.resolve().relative_to(app_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine media type
+        suffix = file_path.suffix.lower()
+        media_types = {
+            ".pdf": "application/pdf",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".webp": "image/webp",
+            ".mp4": "video/mp4",
+            ".mov": "video/quicktime",
+            ".avi": "video/x-msvideo",
+            ".mkv": "video/x-matroska",
+            ".webm": "video/webm",
+        }
+        media_type = media_types.get(suffix, "application/octet-stream")
+        
+        # For PDFs, allow inline viewing in iframes/object tags
+        headers = {}
+        if suffix == ".pdf":
+            headers["Content-Disposition"] = f"inline; filename=\"{filename}\""
+            headers["X-Content-Type-Options"] = "nosniff"
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type,
+            filename=filename,
+            headers=headers if headers else None,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to serve file %s for app %s: %s", filename, app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -815,6 +1019,7 @@ class AnalyzerCreateRequest(BaseModel):
     analyzer_id: Optional[str] = None
     persona: Optional[str] = None
     description: Optional[str] = "Custom analyzer for document extraction"
+    media_type: Optional[str] = None  # "document", "image", or "video"
 
 
 @app.get("/api/analyzer/status")
@@ -891,6 +1096,7 @@ async def create_custom_analyzer(request: AnalyzerCreateRequest = None):
     try:
         settings = load_settings()
         persona_id = request.persona if request and request.persona else "underwriting"
+        media_type = request.media_type if request and request.media_type else "document"
         
         # Get the analyzer_id from persona config if not explicitly provided
         if request and request.analyzer_id:
@@ -898,21 +1104,28 @@ async def create_custom_analyzer(request: AnalyzerCreateRequest = None):
         else:
             try:
                 persona_config = get_persona_config(persona_id)
-                analyzer_id = persona_config.custom_analyzer_id
+                # Select analyzer based on media type
+                if media_type == "image" and persona_config.image_analyzer_id:
+                    analyzer_id = persona_config.image_analyzer_id
+                elif media_type == "video" and persona_config.video_analyzer_id:
+                    analyzer_id = persona_config.video_analyzer_id
+                else:
+                    analyzer_id = persona_config.custom_analyzer_id
             except ValueError:
                 # Fallback to default if persona not found
                 analyzer_id = settings.content_understanding.custom_analyzer_id
         
-        description = request.description if request and request.description else f"Custom {persona_id} analyzer for document extraction with confidence scores"
+        description = request.description if request and request.description else f"Custom {persona_id} {media_type} analyzer for extraction with confidence scores"
         
         result = create_or_update_custom_analyzer(
             settings.content_understanding,
             analyzer_id=analyzer_id,
             persona_id=persona_id,
             description=description,
+            media_type=media_type,
         )
         
-        logger.info("Created/updated custom analyzer: %s", analyzer_id)
+        logger.info("Created/updated custom %s analyzer: %s", media_type, analyzer_id)
         return {
             "message": f"Analyzer '{analyzer_id}' created/updated successfully",
             "analyzer_id": analyzer_id,
@@ -963,7 +1176,57 @@ async def list_analyzers():
         # Get all persona configurations
         personas = list_personas()
         
-        # Check each persona's custom analyzer
+        # Helper function to check and add an analyzer
+        def add_analyzer(analyzer_id: str, persona_id: str, persona_name: str, media_type: str = "document"):
+            """Check if analyzer exists and add to list."""
+            try:
+                custom_analyzer = get_analyzer(settings.content_understanding, analyzer_id)
+                if custom_analyzer:
+                    analyzers.append({
+                        "id": analyzer_id,
+                        "type": "custom",
+                        "media_type": media_type,
+                        "description": custom_analyzer.get("description", f"Custom {persona_name} {media_type} analyzer"),
+                        "exists": True,
+                        "persona": persona_id,
+                        "persona_name": persona_name,
+                    })
+                else:
+                    analyzers.append({
+                        "id": analyzer_id,
+                        "type": "custom",
+                        "media_type": media_type,
+                        "description": f"Custom {persona_name} {media_type} analyzer (not created yet)",
+                        "exists": False,
+                        "persona": persona_id,
+                        "persona_name": persona_name,
+                    })
+            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as timeout_err:
+                logger.warning("Timeout checking custom analyzer %s for persona %s: %s", analyzer_id, persona_id, timeout_err)
+                analyzers.append({
+                    "id": analyzer_id,
+                    "type": "custom",
+                    "media_type": media_type,
+                    "description": f"Custom {persona_name} {media_type} analyzer (status unknown - timeout)",
+                    "exists": None,
+                    "persona": persona_id,
+                    "persona_name": persona_name,
+                    "error": f"Request timeout ({timeout_err})",
+                })
+            except requests.exceptions.ConnectionError as conn_err:
+                logger.warning("Connection error checking custom analyzer %s for persona %s: %s", analyzer_id, persona_id, conn_err)
+                analyzers.append({
+                    "id": analyzer_id,
+                    "type": "custom",
+                    "media_type": media_type,
+                    "description": f"Custom {persona_name} {media_type} analyzer (status unknown - connection error)",
+                    "exists": None,
+                    "persona": persona_id,
+                    "persona_name": persona_name,
+                    "error": "Cannot connect to Azure Content Understanding service",
+                })
+        
+        # Check each persona's custom analyzers
         for persona in personas:
             if not persona.get("enabled", True):
                 continue  # Skip disabled personas
@@ -971,51 +1234,18 @@ async def list_analyzers():
             persona_id = persona["id"]
             try:
                 persona_config = get_persona_config(persona_id)
-                custom_id = persona_config.custom_analyzer_id
                 
-                # Try to check if custom analyzer exists
-                try:
-                    custom_analyzer = get_analyzer(settings.content_understanding, custom_id)
-                    if custom_analyzer:
-                        analyzers.append({
-                            "id": custom_id,
-                            "type": "custom",
-                            "description": custom_analyzer.get("description", f"Custom {persona['name']} analyzer"),
-                            "exists": True,
-                            "persona": persona_id,
-                            "persona_name": persona["name"],
-                        })
-                    else:
-                        analyzers.append({
-                            "id": custom_id,
-                            "type": "custom",
-                            "description": f"Custom {persona['name']} analyzer (not created yet)",
-                            "exists": False,
-                            "persona": persona_id,
-                            "persona_name": persona["name"],
-                        })
-                except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as timeout_err:
-                    logger.warning("Timeout checking custom analyzer %s for persona %s: %s", custom_id, persona_id, timeout_err)
-                    analyzers.append({
-                        "id": custom_id,
-                        "type": "custom",
-                        "description": f"Custom {persona['name']} analyzer (status unknown - timeout)",
-                        "exists": None,
-                        "persona": persona_id,
-                        "persona_name": persona["name"],
-                        "error": f"Request timeout ({timeout_err})",
-                    })
-                except requests.exceptions.ConnectionError as conn_err:
-                    logger.warning("Connection error checking custom analyzer %s for persona %s: %s", custom_id, persona_id, conn_err)
-                    analyzers.append({
-                        "id": custom_id,
-                        "type": "custom",
-                        "description": f"Custom {persona['name']} analyzer (status unknown - connection error)",
-                        "exists": None,
-                        "persona": persona_id,
-                        "persona_name": persona["name"],
-                        "error": "Cannot connect to Azure Content Understanding service",
-                    })
+                # Add document analyzer
+                add_analyzer(persona_config.custom_analyzer_id, persona_id, persona["name"], "document")
+                
+                # Add image analyzer if configured (multimodal personas)
+                if persona_config.image_analyzer_id:
+                    add_analyzer(persona_config.image_analyzer_id, persona_id, persona["name"], "image")
+                
+                # Add video analyzer if configured (multimodal personas)
+                if persona_config.video_analyzer_id:
+                    add_analyzer(persona_config.video_analyzer_id, persona_id, persona["name"], "video")
+                    
             except Exception as e:
                 logger.warning("Error processing persona %s: %s", persona_id, e)
                 continue
@@ -1035,13 +1265,51 @@ async def get_policies(persona: str = "underwriting"):
     """Get policies for the specified persona.
     
     - For 'underwriting' persona: Returns underwriting policies from life-health-underwriting-policies.json
-    - For claims personas (life_health_claims, property_casualty_claims): Returns claims/health plan policies from policies.json
+    - For 'automotive_claims' persona: Returns automotive claims policies from automotive-claims-policies.json
+    - For other claims personas (life_health_claims, property_casualty_claims): Returns claims/health plan policies from policies.json
     """
     from app.underwriting_policies import load_policies as load_underwriting_policies
     from app.processing import load_policies as load_claims_policies
     
     try:
         settings = load_settings()
+        
+        # Special handling for automotive claims
+        if persona == "automotive_claims":
+            from app.claims.policies import ClaimsPolicyLoader
+            loader = ClaimsPolicyLoader()
+            loader.load_policies("data/automotive-claims-policies.json")
+            policies = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "category": p.category,
+                    "subcategory": p.subcategory,
+                    "description": p.description,
+                    "criteria": [
+                        {
+                            "id": c.id,
+                            "condition": c.condition,
+                            "severity": c.severity,
+                            "action": c.action,
+                            "rationale": c.rationale,
+                        }
+                        for c in p.criteria
+                    ],
+                    "modifying_factors": [
+                        {"factor": mf.factor, "impact": mf.impact}
+                        for mf in p.modifying_factors
+                    ],
+                    "references": p.references,
+                }
+                for p in loader.get_all_policies()
+            ]
+            return {
+                "policies": policies,
+                "total": len(policies),
+                "persona": persona,
+                "type": "automotive_claims",
+            }
         
         # Check if this is a claims persona (life_health_claims, property_casualty_claims, etc.)
         is_claims_persona = "claims" in persona.lower()
@@ -1078,27 +1346,40 @@ async def get_policies(persona: str = "underwriting"):
 @app.get("/api/policies/{policy_id}")
 async def get_policy_by_id(policy_id: str, persona: str = "underwriting"):
     """Get a specific policy by ID for the specified persona."""
-    from app.underwriting_policies import get_policy_by_id as get_uw_policy
-    from app.processing import load_policies as load_claims_policies
+    import json
+    from pathlib import Path
+    
+    # Mapping of personas to their policy files
+    PERSONA_POLICY_FILES = {
+        "underwriting": "data/life-health-underwriting-policies.json",
+        "life_health_claims": "data/life-health-claims-policies.json",
+        "automotive_claims": "data/automotive-claims-policies.json",
+        "property_casualty_claims": "data/property-casualty-claims-policies.json",
+    }
     
     try:
-        settings = load_settings()
+        # Get the policy file for this persona
+        policy_file = PERSONA_POLICY_FILES.get(persona.lower())
+        if not policy_file:
+            # Fall back to underwriting
+            policy_file = PERSONA_POLICY_FILES["underwriting"]
         
-        # Check if this is a claims persona
-        is_claims_persona = "claims" in persona.lower()
+        policy_path = Path(policy_file)
+        if not policy_path.exists():
+            raise HTTPException(status_code=404, detail=f"Policy file not found for persona: {persona}")
         
-        if is_claims_persona:
-            # Load claims policies and find by ID (plan name)
-            policies_data = load_claims_policies(settings.app.prompts_root)
-            if policy_id in policies_data:
-                return {"id": policy_id, "name": policy_id, **policies_data[policy_id]}
-            raise HTTPException(status_code=404, detail=f"Claims policy '{policy_id}' not found")
-        else:
-            # Load underwriting policy by ID
-            policy = get_uw_policy(settings.app.prompts_root, policy_id)
-            if not policy:
-                raise HTTPException(status_code=404, detail=f"Underwriting policy '{policy_id}' not found")
-            return policy
+        with open(policy_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        policies = data.get("policies", [])
+        
+        # Find the policy by ID
+        for policy in policies:
+            if policy.get("id") == policy_id:
+                return policy
+        
+        raise HTTPException(status_code=404, detail=f"Policy not found: {policy_id}")
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -1269,30 +1550,44 @@ async def chat_with_application(app_id: str, request: ChatRequest):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from app.openai_client import chat_completion
-    from app.underwriting_policies import format_all_policies_for_prompt
+    from app.underwriting_policies import format_all_policies_for_prompt, format_policies_for_persona
     
     try:
         settings = load_settings()
+        
+        # Determine persona - use from request or default to underwriting
+        persona = request.persona or "underwriting"
         
         # Load application data
         app_md = load_application(settings.app.storage_root, app_id)
         if not app_md:
             raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
         
+        # Build augmented RAG query with claim/application context for better retrieval
+        rag_query = request.message
+        if app_md.document_markdown:
+            # Extract first ~500 chars of document for context augmentation
+            doc_context = app_md.document_markdown[:500].replace('\n', ' ').strip()
+            rag_query = f"{request.message} Context: {doc_context}"
+        
         # Get policy context - use RAG if enabled, otherwise full policies
         rag_result = None
         rag_citations = []
+        
+        # Get persona-aware fallback context
+        fallback_context = format_policies_for_persona(settings.app.prompts_root, persona)
         
         if settings.rag.enabled:
             try:
                 from app.rag.service import get_rag_service
                 
-                rag_service = await get_rag_service(settings)
+                # Get persona-aware RAG service
+                rag_service = await get_rag_service(settings, persona=persona)
                 
-                # Use RAG to get relevant policy context based on user query
+                # Use RAG to get relevant policy context based on augmented query
                 rag_result = await rag_service.query_with_fallback(
-                    user_query=request.message,
-                    fallback_context=format_all_policies_for_prompt(settings.app.prompts_root),
+                    user_query=rag_query,
+                    fallback_context=fallback_context,
                     top_k=10,  # Get more chunks for chat context
                 )
                 
@@ -1300,7 +1595,8 @@ async def chat_with_application(app_id: str, request: ChatRequest):
                 rag_citations = rag_service.get_citations_for_response(rag_result)
                 
                 logger.info(
-                    "Chat: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    "Chat [%s]: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    persona,
                     rag_result.chunks_retrieved,
                     rag_result.tokens_used,
                     rag_result.total_latency_ms,
@@ -1308,12 +1604,12 @@ async def chat_with_application(app_id: str, request: ChatRequest):
                 )
                 
             except Exception as e:
-                logger.warning("Chat: RAG failed, falling back to full policies: %s", e)
-                policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+                logger.warning("Chat [%s]: RAG failed, falling back to full policies: %s", persona, e)
+                policies_context = fallback_context
         else:
-            # RAG disabled - use full policies
-            policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
-            logger.info("Chat: Loaded %d chars of policy context (RAG disabled)", len(policies_context))
+            # RAG disabled - use full policies for persona
+            policies_context = fallback_context
+            logger.info("Chat [%s]: Loaded %d chars of policy context (RAG disabled)", persona, len(policies_context))
         
         # Build context from application data
         app_context_parts = []
@@ -1345,89 +1641,13 @@ async def chat_with_application(app_id: str, request: ChatRequest):
             if analysis_summary:
                 app_context_parts.append("## Analysis Summary\n\n" + "\n".join(analysis_summary))
         
-        # Build system message
-        system_message = f"""You are an expert life insurance underwriter assistant. You have access to the following context:
-
-{policies_context}
-
-## Application Information (ID: {app_id})
-
-{chr(10).join(app_context_parts) if app_context_parts else "No application details available yet."}
-
----
-
-## Response Format Instructions:
-
-When appropriate, structure your response as JSON to enable rich UI rendering. Use these formats:
-
-### For risk factor summaries (when asked about risks, key factors, concerns):
-```json
-{{
-  "type": "risk_factors",
-  "summary": "Brief overall summary",
-  "factors": [
-    {{
-      "title": "Factor name",
-      "description": "Details about the factor",
-      "risk_level": "low|moderate|high",
-      "policy_id": "Optional policy ID like CVD-BP-001"
-    }}
-  ],
-  "overall_risk": "low|low-moderate|moderate|moderate-high|high"
-}}
-```
-
-### For policy citations (when explaining which policies apply):
-```json
-{{
-  "type": "policy_list",
-  "summary": "Brief intro",
-  "policies": [
-    {{
-      "policy_id": "CVD-BP-001",
-      "name": "Policy name",
-      "relevance": "Why this policy applies",
-      "finding": "What the policy evaluation found"
-    }}
-  ]
-}}
-```
-
-### For recommendations (when asked about approval, action, decision):
-```json
-{{
-  "type": "recommendation",
-  "decision": "approve|approve_with_conditions|defer|decline",
-  "confidence": "high|medium|low",
-  "summary": "Brief recommendation summary",
-  "conditions": ["List of conditions if applicable"],
-  "rationale": "Detailed reasoning",
-  "next_steps": ["Suggested next steps"]
-}}
-```
-
-### For comparisons or tables:
-```json
-{{
-  "type": "comparison",
-  "title": "Comparison title",
-  "columns": ["Column1", "Column2", "Column3"],
-  "rows": [
-    {{"label": "Row label", "values": ["val1", "val2", "val3"]}}
-  ]
-}}
-```
-
-For simple conversational responses or when structured format doesn't apply, respond with plain text.
-Always wrap JSON responses in ```json code blocks.
-
-## General Instructions:
-1. Answer questions about this specific application and the underwriting policies.
-2. When citing policies, always reference the policy ID (e.g., CVD-BP-001).
-3. Provide clear, actionable guidance for underwriting decisions.
-4. If you need more information to answer a question, ask for it.
-5. Use structured JSON formats when they enhance clarity; use plain text for simple answers.
-"""
+        # Build persona-aware system message
+        system_message = get_chat_system_prompt(
+            persona=persona,
+            policies_context=policies_context,
+            app_id=app_id,
+            app_context_parts=app_context_parts,
+        )
 
         # Build messages array
         messages = [{"role": "system", "content": system_message}]
@@ -1694,13 +1914,16 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from app.openai_client import chat_completion
-    from app.underwriting_policies import format_all_policies_for_prompt
+    from app.underwriting_policies import format_all_policies_for_prompt, format_policies_for_persona
     from datetime import datetime
     import uuid
     
     try:
         settings = load_settings()
         now = datetime.utcnow().isoformat() + "Z"
+        
+        # Determine persona - use from request or default to underwriting
+        persona = request.persona or "underwriting"
         
         # Load or create conversation
         if request.conversation_id:
@@ -1716,6 +1939,7 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
                 "created_at": now,
                 "updated_at": now,
                 "messages": [],
+                "persona": persona,  # Store persona with conversation
             }
         
         # Add user message
@@ -1732,20 +1956,31 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
         if not app_md:
             raise HTTPException(status_code=404, detail=f"Application {app_id} not found")
         
+        # Build augmented RAG query with claim/application context for better retrieval
+        rag_query = request.message
+        if app_md.document_markdown:
+            # Extract first ~500 chars of document for context augmentation
+            doc_context = app_md.document_markdown[:500].replace('\n', ' ').strip()
+            rag_query = f"{request.message} Context: {doc_context}"
+        
         # Get policy context - use RAG if enabled, otherwise full policies
         rag_result = None
         rag_citations = []
+        
+        # Get persona-aware fallback context
+        fallback_context = format_policies_for_persona(settings.app.prompts_root, persona)
         
         if settings.rag.enabled:
             try:
                 from app.rag.service import get_rag_service
                 
-                rag_service = await get_rag_service(settings)
+                # Get persona-aware RAG service
+                rag_service = await get_rag_service(settings, persona=persona)
                 
-                # Use RAG to get relevant policy context based on user query
+                # Use RAG to get relevant policy context based on augmented query
                 rag_result = await rag_service.query_with_fallback(
-                    user_query=request.message,
-                    fallback_context=format_all_policies_for_prompt(settings.app.prompts_root),
+                    user_query=rag_query,
+                    fallback_context=fallback_context,
                     top_k=10,
                 )
                 
@@ -1753,7 +1988,8 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
                 rag_citations = rag_service.get_citations_for_response(rag_result)
                 
                 logger.info(
-                    "Conversation: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    "Conversation [%s]: RAG retrieved %d chunks (%d tokens) in %.0fms%s",
+                    persona,
                     rag_result.chunks_retrieved,
                     rag_result.tokens_used,
                     rag_result.total_latency_ms,
@@ -1761,12 +1997,12 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
                 )
                 
             except Exception as e:
-                logger.warning("Conversation: RAG failed, falling back to full policies: %s", e)
-                policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
+                logger.warning("Conversation [%s]: RAG failed, falling back to full policies: %s", persona, e)
+                policies_context = fallback_context
         else:
-            # RAG disabled - use full policies
-            policies_context = format_all_policies_for_prompt(settings.app.prompts_root)
-            logger.info("Conversation: Loaded %d chars of policy context (RAG disabled)", len(policies_context))
+            # RAG disabled - use full policies for persona
+            policies_context = fallback_context
+            logger.info("Conversation [%s]: Loaded %d chars of policy context (RAG disabled)", persona, len(policies_context))
         
         # Build context from application data
         app_context_parts = []
@@ -1794,89 +2030,13 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
             if analysis_summary:
                 app_context_parts.append("## Analysis Summary\n\n" + "\n".join(analysis_summary))
         
-        # Build system message (same as before with JSON formatting instructions)
-        system_message = f"""You are an expert life insurance underwriter assistant. You have access to the following context:
-
-{policies_context}
-
-## Application Information (ID: {app_id})
-
-{chr(10).join(app_context_parts) if app_context_parts else "No application details available yet."}
-
----
-
-## Response Format Instructions:
-
-When appropriate, structure your response as JSON to enable rich UI rendering. Use these formats:
-
-### For risk factor summaries (when asked about risks, key factors, concerns):
-```json
-{{
-  "type": "risk_factors",
-  "summary": "Brief overall summary",
-  "factors": [
-    {{
-      "title": "Factor name",
-      "description": "Details about the factor",
-      "risk_level": "low|moderate|high",
-      "policy_id": "Optional policy ID like CVD-BP-001"
-    }}
-  ],
-  "overall_risk": "low|low-moderate|moderate|moderate-high|high"
-}}
-```
-
-### For policy citations (when explaining which policies apply):
-```json
-{{
-  "type": "policy_list",
-  "summary": "Brief intro",
-  "policies": [
-    {{
-      "policy_id": "CVD-BP-001",
-      "name": "Policy name",
-      "relevance": "Why this policy applies",
-      "finding": "What the policy evaluation found"
-    }}
-  ]
-}}
-```
-
-### For recommendations (when asked about approval, action, decision):
-```json
-{{
-  "type": "recommendation",
-  "decision": "approve|approve_with_conditions|defer|decline",
-  "confidence": "high|medium|low",
-  "summary": "Brief recommendation summary",
-  "conditions": ["List of conditions if applicable"],
-  "rationale": "Detailed reasoning",
-  "next_steps": ["Suggested next steps"]
-}}
-```
-
-### For comparisons or tables:
-```json
-{{
-  "type": "comparison",
-  "title": "Comparison title",
-  "columns": ["Column1", "Column2", "Column3"],
-  "rows": [
-    {{"label": "Row label", "values": ["val1", "val2", "val3"]}}
-  ]
-}}
-```
-
-For simple conversational responses or when structured format doesn't apply, respond with plain text.
-Always wrap JSON responses in ```json code blocks.
-
-## General Instructions:
-1. Answer questions about this specific application and the underwriting policies.
-2. When citing policies, always reference the policy ID (e.g., CVD-BP-001).
-3. Provide clear, actionable guidance for underwriting decisions.
-4. If you need more information to answer a question, ask for it.
-5. Use structured JSON formats when they enhance clarity; use plain text for simple answers.
-"""
+        # Build persona-aware system message
+        system_message = get_chat_system_prompt(
+            persona=persona,
+            policies_context=policies_context,
+            app_id=app_id,
+            app_context_parts=app_context_parts,
+        )
 
         # Build messages array with conversation history
         messages = [{"role": "system", "content": system_message}]
@@ -1991,12 +2151,21 @@ class ReindexResponse(BaseModel):
 
 
 @app.post("/api/admin/policies/reindex", response_model=ReindexResponse)
-async def reindex_all_policies(request: ReindexRequest = ReindexRequest()):
+async def reindex_all_policies(
+    request: ReindexRequest = ReindexRequest(),
+    persona: str = Query(default="underwriting", description="Persona to reindex policies for"),
+):
     """
-    Reindex all underwriting policies for RAG search.
+    Reindex all policies for a specific persona's RAG search.
+    
+    Supported personas:
+    - underwriting: Life & health underwriting policies
+    - life_health_claims: Health claims processing policies
+    - automotive_claims: Automotive claims policies
+    - property_casualty_claims: P&C claims policies
     
     This will:
-    1. Load all policies from the JSON file
+    1. Load all policies from the persona's JSON file
     2. Chunk them into searchable segments
     3. Generate embeddings via Azure OpenAI
     4. Store in PostgreSQL with pgvector
@@ -2013,9 +2182,15 @@ async def reindex_all_policies(request: ReindexRequest = ReindexRequest()):
         )
     
     try:
-        from app.rag.indexer import PolicyIndexer
+        from app.rag.persona_indexer import get_indexer_for_persona, persona_supports_rag
         
-        indexer = PolicyIndexer(settings=settings)
+        if not persona_supports_rag(persona):
+            return ReindexResponse(
+                status="error",
+                error=f"Persona '{persona}' does not support RAG indexing."
+            )
+        
+        indexer = await get_indexer_for_persona(persona, settings)
         metrics = await indexer.index_policies(force_reindex=request.force)
         
         return ReindexResponse(
@@ -2025,7 +2200,7 @@ async def reindex_all_policies(request: ReindexRequest = ReindexRequest()):
             total_time_seconds=metrics.get("total_time_seconds"),
         )
     except Exception as e:
-        logger.error("Failed to reindex policies: %s", e, exc_info=True)
+        logger.error("Failed to reindex policies for %s: %s", persona, e, exc_info=True)
         return ReindexResponse(status="error", error=str(e))
 
 
@@ -2068,23 +2243,62 @@ async def reindex_single_policy(policy_id: str):
 
 
 @app.get("/api/admin/policies/index-stats")
-async def get_index_stats():
-    """Get statistics about the current policy index."""
+async def get_index_stats(
+    persona: str = Query(default="underwriting", description="Persona to get index stats for"),
+):
+    """
+    Get statistics about the current policy index for a persona.
+    
+    Supported personas:
+    - underwriting: Life & health underwriting policies
+    - life_health_claims: Health claims processing policies
+    - automotive_claims: Automotive claims policies
+    - property_casualty_claims: P&C claims policies
+    """
     settings = load_settings()
     
     if settings.database.backend != "postgresql":
         return {"status": "skipped", "error": "PostgreSQL backend not configured."}
     
     try:
-        from app.rag.indexer import PolicyIndexer
+        from app.rag.persona_indexer import get_index_stats_for_persona, persona_supports_rag
         
-        indexer = PolicyIndexer(settings=settings)
-        stats = await indexer.get_index_stats()
+        if not persona_supports_rag(persona):
+            return {"status": "error", "error": f"Persona '{persona}' does not support RAG indexing."}
         
-        return {"status": "ok", **stats}
+        stats = await get_index_stats_for_persona(persona, settings)
+        return stats
     except Exception as e:
-        logger.error("Failed to get index stats: %s", e, exc_info=True)
+        logger.error("Failed to get index stats for %s: %s", persona, e, exc_info=True)
         return {"status": "error", "error": str(e)}
+
+
+# ============================================================================
+# Claims Policy Admin Endpoints (Deprecated - use /api/admin/policies/* with persona param)
+# ============================================================================
+
+@app.post("/api/admin/claims-policies/reindex", response_model=ReindexResponse)
+async def reindex_all_claims_policies(request: ReindexRequest = ReindexRequest()):
+    """
+    [DEPRECATED] Reindex automotive claims policies.
+    
+    Use POST /api/admin/policies/reindex?persona=automotive_claims instead.
+    This endpoint is maintained for backwards compatibility.
+    """
+    # Redirect to unified endpoint
+    return await reindex_all_policies(request, persona="automotive_claims")
+
+
+@app.get("/api/admin/claims-policies/index-stats")
+async def get_claims_index_stats():
+    """
+    [DEPRECATED] Get automotive claims policy index stats.
+    
+    Use GET /api/admin/policies/index-stats?persona=automotive_claims instead.
+    This endpoint is maintained for backwards compatibility.
+    """
+    # Redirect to unified endpoint
+    return await get_index_stats(persona="automotive_claims")
 
 
 # Entry point for running with uvicorn directly

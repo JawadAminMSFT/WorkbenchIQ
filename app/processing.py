@@ -11,6 +11,8 @@ from .config import Settings
 from .content_understanding_client import (
     analyze_document,
     analyze_document_with_confidence,
+    analyze_image,
+    analyze_video,
     extract_markdown_from_result,
     extract_fields_with_confidence,
     get_confidence_summary,
@@ -28,6 +30,27 @@ from .utils import setup_logging
 from .underwriting_policies import format_all_policies_for_prompt
 
 logger = setup_logging()
+
+
+# Media type detection based on file extension
+DOCUMENT_EXTENSIONS = {'.pdf', '.docx', '.doc', '.txt', '.rtf', '.xlsx', '.xls', '.pptx', '.ppt'}
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.heic'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.wmv', '.m4v'}
+
+
+def detect_media_type(filename: str) -> str:
+    """Detect media type from filename extension.
+    
+    Returns: 'document', 'image', 'video', or 'unknown'
+    """
+    ext = os.path.splitext(filename.lower())[1]
+    if ext in DOCUMENT_EXTENSIONS:
+        return 'document'
+    elif ext in IMAGE_EXTENSIONS:
+        return 'image'
+    elif ext in VIDEO_EXTENSIONS:
+        return 'video'
+    return 'unknown'
 
 
 def load_policies(prompts_root: str) -> Dict[str, Any]:
@@ -67,7 +90,14 @@ def run_content_understanding_for_files(
     app_md: ApplicationMetadata,
     use_confidence_scoring: bool = True,
 ) -> ApplicationMetadata:
-    """Run Content Understanding for each uploaded PDF and aggregate markdown.
+    """Run Content Understanding for each uploaded file and aggregate results.
+    
+    For automotive_claims persona, routes files to appropriate analyzers:
+    - Documents (.pdf, .docx) → autoClaimsDocAnalyzer
+    - Images (.jpg, .png) → autoClaimsImageAnalyzer
+    - Videos (.mp4, .mov) → autoClaimsVideoAnalyzer
+    
+    Other personas use the document analyzer for all files.
     
     Args:
         settings: Application settings
@@ -83,13 +113,23 @@ def run_content_understanding_for_files(
     all_fields: Dict[str, Any] = {}
     analyzer_used = None
 
-    # Get persona-specific analyzer ID
-    persona_analyzer_id = settings.content_understanding.custom_analyzer_id  # Default
+    # Get persona-specific analyzer IDs
+    doc_analyzer_id = settings.content_understanding.custom_analyzer_id  # Default
+    image_analyzer_id = None
+    video_analyzer_id = None
+    is_multimodal_persona = False
+    
     if app_md.persona:
         try:
             persona_config = get_persona_config(app_md.persona)
-            persona_analyzer_id = persona_config.custom_analyzer_id
-            logger.info("Using persona-specific analyzer: %s for persona: %s", persona_analyzer_id, app_md.persona)
+            doc_analyzer_id = persona_config.custom_analyzer_id
+            image_analyzer_id = getattr(persona_config, 'image_analyzer_id', None)
+            video_analyzer_id = getattr(persona_config, 'video_analyzer_id', None)
+            is_multimodal_persona = image_analyzer_id is not None or video_analyzer_id is not None
+            logger.info(
+                "Persona %s analyzers - doc: %s, image: %s, video: %s",
+                app_md.persona, doc_analyzer_id, image_analyzer_id, video_analyzer_id
+            )
         except ValueError as e:
             logger.warning("Failed to get persona config for %s: %s. Using default analyzer.", app_md.persona, e)
 
@@ -102,53 +142,144 @@ def run_content_understanding_for_files(
             logger.error("Failed to load file content for: %s", stored.path)
             continue
         
-        # Use confidence-enabled analyzer if enabled
-        if use_confidence_scoring and settings.content_understanding.enable_confidence_scores:
-            # Temporarily override the custom_analyzer_id in settings for this call
-            original_analyzer = settings.content_understanding.custom_analyzer_id
-            settings.content_understanding.custom_analyzer_id = persona_analyzer_id
-            try:
-                payload = analyze_document_with_confidence(
-                    settings.content_understanding, 
-                    stored.path,
-                    file_bytes=file_content
-                )
-                analyzer_used = persona_analyzer_id
-            finally:
-                settings.content_understanding.custom_analyzer_id = original_analyzer
-            
-            # Extract fields with confidence
-            fields = extract_fields_with_confidence(payload)
-            # Convert FieldConfidence objects to serializable dicts
-            for field_name, field_conf in fields.items():
-                all_fields[f"{stored.filename}:{field_name}"] = {
-                    "field_name": field_conf.field_name,
-                    "value": field_conf.value,
-                    "confidence": field_conf.confidence,
-                    "page_number": field_conf.page_number,
-                    "bounding_box": field_conf.bounding_box,
-                    "source_text": field_conf.source_text,
-                    "source_file": stored.filename,
-                }
-        else:
-            payload = analyze_document(settings.content_understanding, stored.path, file_bytes=file_content)
-            analyzer_used = settings.content_understanding.analyzer_id
+        # Detect media type for multimodal routing
+        media_type = detect_media_type(stored.filename)
+        logger.info("File %s detected as media type: %s", stored.filename, media_type)
         
-        cu_payloads.append((stored.path, payload))
+        # Route to appropriate analyzer based on media type (for multimodal personas)
+        if is_multimodal_persona and media_type == 'image' and image_analyzer_id:
+            # Process as image with image analyzer
+            try:
+                logger.info("Processing image with analyzer: %s", image_analyzer_id)
+                payload = analyze_image(
+                    settings.content_understanding,
+                    file_bytes=file_content,
+                    analyzer_id=image_analyzer_id,
+                )
+                analyzer_used = image_analyzer_id
+                
+                # Extract image-specific fields
+                if payload.get("result", {}).get("contents"):
+                    for content in payload["result"]["contents"]:
+                        if content.get("fields"):
+                            for field_name, field_data in content["fields"].items():
+                                all_fields[f"{stored.filename}:{field_name}"] = {
+                                    "field_name": field_name,
+                                    "value": field_data.get("value") or field_data.get("valueString"),
+                                    "confidence": field_data.get("confidence", 0.0),
+                                    "source_file": stored.filename,
+                                    "media_type": "image",
+                                }
+                
+                # Add image summary to markdown
+                damage_areas = payload.get("result", {}).get("contents", [{}])[0].get("fields", {}).get("DamageAreas", {})
+                severity = payload.get("result", {}).get("contents", [{}])[0].get("fields", {}).get("OverallDamageSeverity", {})
+                summary = f"# Image Analysis: {stored.filename}\n\n"
+                summary += f"**Overall Damage Severity:** {severity.get('valueString', 'Unknown')}\n\n"
+                if damage_areas.get("valueArray"):
+                    summary += "**Detected Damage Areas:**\n"
+                    for area in damage_areas["valueArray"]:
+                        props = area.get("valueObject", {})
+                        location = props.get("location", {}).get("valueString", "Unknown")
+                        damage_type = props.get("damageType", {}).get("valueString", "Unknown")
+                        sev = props.get("severity", {}).get("valueString", "Unknown")
+                        summary += f"- {location}: {damage_type} ({sev})\n"
+                all_markdown_parts.append(summary)
+                cu_payloads.append((stored.path, payload))
+                
+            except Exception as e:
+                logger.error("Image analysis failed for %s: %s", stored.filename, e)
+                # Fall back to document analyzer
+                logger.info("Falling back to document analyzer for image")
+                
+        elif is_multimodal_persona and media_type == 'video' and video_analyzer_id:
+            # Process as video with video analyzer
+            try:
+                logger.info("Processing video with analyzer: %s", video_analyzer_id)
+                payload = analyze_video(
+                    settings.content_understanding,
+                    file_bytes=file_content,
+                    analyzer_id=video_analyzer_id,
+                )
+                analyzer_used = video_analyzer_id
+                
+                # Extract video-specific fields
+                if payload.get("result", {}).get("contents"):
+                    for content in payload["result"]["contents"]:
+                        if content.get("fields"):
+                            for field_name, field_data in content["fields"].items():
+                                all_fields[f"{stored.filename}:{field_name}"] = {
+                                    "field_name": field_name,
+                                    "value": field_data.get("value") or field_data.get("valueString") or field_data.get("valueBoolean"),
+                                    "confidence": field_data.get("confidence", 0.0),
+                                    "source_file": stored.filename,
+                                    "media_type": "video",
+                                }
+                
+                # Add video summary to markdown
+                incident = payload.get("result", {}).get("contents", [{}])[0].get("fields", {}).get("IncidentDetected", {})
+                incident_type = payload.get("result", {}).get("contents", [{}])[0].get("fields", {}).get("IncidentType", {})
+                timestamp = payload.get("result", {}).get("contents", [{}])[0].get("fields", {}).get("IncidentTimestamp", {})
+                summary = f"# Video Analysis: {stored.filename}\n\n"
+                summary += f"**Incident Detected:** {incident.get('valueBoolean', 'Unknown')}\n"
+                summary += f"**Incident Type:** {incident_type.get('valueString', 'Unknown')}\n"
+                summary += f"**Timestamp:** {timestamp.get('valueString', 'Unknown')}\n"
+                all_markdown_parts.append(summary)
+                cu_payloads.append((stored.path, payload))
+                
+            except Exception as e:
+                logger.error("Video analysis failed for %s: %s", stored.filename, e)
+                # Skip video if it fails (don't try document analyzer on video)
+                continue
+        else:
+            # Process as document (default path)
+            if use_confidence_scoring and settings.content_understanding.enable_confidence_scores:
+                # Temporarily override the custom_analyzer_id in settings for this call
+                original_analyzer = settings.content_understanding.custom_analyzer_id
+                settings.content_understanding.custom_analyzer_id = doc_analyzer_id
+                try:
+                    payload = analyze_document_with_confidence(
+                        settings.content_understanding, 
+                        stored.path,
+                        file_bytes=file_content
+                    )
+                    analyzer_used = doc_analyzer_id
+                finally:
+                    settings.content_understanding.custom_analyzer_id = original_analyzer
+                
+                # Extract fields with confidence
+                fields = extract_fields_with_confidence(payload)
+                # Convert FieldConfidence objects to serializable dicts
+                for field_name, field_conf in fields.items():
+                    all_fields[f"{stored.filename}:{field_name}"] = {
+                        "field_name": field_conf.field_name,
+                        "value": field_conf.value,
+                        "confidence": field_conf.confidence,
+                        "page_number": field_conf.page_number,
+                        "bounding_box": field_conf.bounding_box,
+                        "source_text": field_conf.source_text,
+                        "source_file": stored.filename,
+                        "media_type": "document",
+                    }
+            else:
+                payload = analyze_document(settings.content_understanding, stored.path, file_bytes=file_content)
+                analyzer_used = settings.content_understanding.analyzer_id
+            
+            cu_payloads.append((stored.path, payload))
 
-        extracted = extract_markdown_from_result(payload)
-        pages = extracted["pages"]
-        # Prefix each page with filename so underwriters see the source.
-        for p in pages:
-            prefix = f"# File: {stored.filename} – Page {p['page_number']}\n\n"
-            all_pages.append(
-                {
-                    "file": stored.filename,
-                    "page_number": p["page_number"],
-                    "markdown": prefix + p["markdown"],
-                }
-            )
-            all_markdown_parts.append(prefix + p["markdown"])
+            extracted = extract_markdown_from_result(payload)
+            pages = extracted["pages"]
+            # Prefix each page with filename so underwriters see the source.
+            for p in pages:
+                prefix = f"# File: {stored.filename} – Page {p['page_number']}\n\n"
+                all_pages.append(
+                    {
+                        "file": stored.filename,
+                        "page_number": p["page_number"],
+                        "markdown": prefix + p["markdown"],
+                    }
+                )
+                all_markdown_parts.append(prefix + p["markdown"])
 
     combined_md = "\n\n---\n\n".join(all_markdown_parts)
 

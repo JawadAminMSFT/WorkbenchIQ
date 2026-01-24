@@ -676,7 +676,8 @@ export async function listAnalyzers(): Promise<{ analyzers: AnalyzerInfo[] }> {
 export async function createAnalyzer(
   analyzerId?: string,
   persona?: string,
-  description?: string
+  description?: string,
+  mediaType?: string
 ): Promise<{ message: string; analyzer_id: string; result: Record<string, unknown> }> {
   return apiFetch('/api/analyzer/create', {
     method: 'POST',
@@ -684,6 +685,7 @@ export async function createAnalyzer(
       analyzer_id: analyzerId,
       persona,
       description,
+      media_type: mediaType,
     }),
   });
 }
@@ -770,17 +772,23 @@ export interface ReindexResponse {
 export interface IndexStats {
   status: string;
   total_chunks?: number;
+  chunk_count?: number;  // Alternative field name used by some endpoints
   policy_count?: number;
   chunks_by_type?: Record<string, number>;
   chunks_by_category?: Record<string, number>;
+  table?: string;
+  last_updated?: string;
+  message?: string;
   error?: string;
 }
 
 /**
- * Reindex all policies for RAG search
+ * Reindex all policies for RAG search (persona-aware)
+ * @param persona - The persona to reindex policies for (underwriting, life_health_claims, automotive_claims, property_casualty_claims)
+ * @param force - Whether to force delete existing chunks before reindexing
  */
-export async function reindexAllPolicies(force: boolean = true): Promise<ReindexResponse> {
-  return apiFetch<ReindexResponse>('/api/admin/policies/reindex', {
+export async function reindexAllPolicies(force: boolean = true, persona: string = 'underwriting'): Promise<ReindexResponse> {
+  return apiFetch<ReindexResponse>(`/api/admin/policies/reindex?persona=${encodeURIComponent(persona)}`, {
     method: 'POST',
     body: JSON.stringify({ force }),
   });
@@ -796,8 +804,325 @@ export async function reindexPolicy(policyId: string): Promise<ReindexResponse> 
 }
 
 /**
- * Get RAG index statistics
+ * Get RAG index statistics (persona-aware)
+ * @param persona - The persona to get index stats for
  */
-export async function getIndexStats(): Promise<IndexStats> {
-  return apiFetch<IndexStats>('/api/admin/policies/index-stats');
+export async function getIndexStats(persona: string = 'underwriting'): Promise<IndexStats> {
+  return apiFetch<IndexStats>(`/api/admin/policies/index-stats?persona=${encodeURIComponent(persona)}`);
+}
+
+// ============================================================================
+// Claims Policy Admin APIs (Deprecated - use reindexAllPolicies/getIndexStats with persona param)
+// ============================================================================
+
+/**
+ * @deprecated Use reindexAllPolicies(force, 'automotive_claims') instead
+ */
+export async function reindexClaimsPolicies(force: boolean = true): Promise<ReindexResponse> {
+  return reindexAllPolicies(force, 'automotive_claims');
+}
+
+/**
+ * @deprecated Use getIndexStats('automotive_claims') instead
+ */
+export async function getClaimsIndexStats(): Promise<IndexStats> {
+  return getIndexStats('automotive_claims');
+}
+
+// ============================================================================
+// Automotive Claims API
+// ============================================================================
+
+/**
+ * Submit a new automotive claim
+ */
+export interface ClaimSubmitRequest {
+  claimant_name: string;
+  policy_number: string;
+  incident_date: string;
+  incident_description: string;
+  vehicle_info?: {
+    make?: string;
+    model?: string;
+    year?: number;
+    vin?: string;
+  };
+}
+
+export interface ClaimSubmitResponse {
+  claim_id: string;
+  status: string;
+  message: string;
+  created_at: string;
+}
+
+export async function submitClaim(data: ClaimSubmitRequest): Promise<ClaimSubmitResponse> {
+  return apiFetch<ClaimSubmitResponse>('/api/claims/submit', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Upload files to a claim
+ */
+export interface FileUploadResponse {
+  claim_id: string;
+  uploaded_files: Array<{
+    file_id: string;
+    filename: string;
+    content_type: string;
+    size: number;
+    status: string;
+  }>;
+  processing_status: string;
+}
+
+export async function uploadClaimFiles(claimId: string, files: File[]): Promise<FileUploadResponse> {
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const response = await fetch(`${baseUrl}/api/claims/${claimId}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new APIError(
+      response.status,
+      errorData.detail || `Upload failed: ${response.status}`,
+      errorData
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Get claim processing status
+ */
+export interface ProcessingStatusResponse {
+  claim_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  current_step?: string;
+  steps_completed: string[];
+  error?: string;
+}
+
+export async function getClaimProcessingStatus(claimId: string): Promise<ProcessingStatusResponse> {
+  return apiFetch<ProcessingStatusResponse>(`/api/claims/${claimId}/status`);
+}
+
+/**
+ * Get full claim assessment
+ */
+export interface DamageArea {
+  area_id: string;
+  location: string;
+  severity: 'minor' | 'moderate' | 'severe' | 'total_loss';
+  confidence: number;
+  estimated_cost: number;
+  description: string;
+  bounding_box?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  source_media_id?: string;
+}
+
+export interface LiabilityAssessment {
+  fault_determination: string;
+  fault_percentage: number;
+  contributing_factors: string[];
+  liability_notes: string;
+}
+
+export interface FraudIndicator {
+  indicator_type: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  confidence: number;
+}
+
+export interface PolicyCitationClaim {
+  policy_id: string;
+  policy_name: string;
+  section: string;
+  citation_text: string;
+  relevance_score: number;
+  supports_coverage: boolean;
+}
+
+export interface PayoutRecommendation {
+  recommended_amount: number;
+  min_amount: number;
+  max_amount: number;
+  breakdown: Record<string, number>;
+  adjustments: Array<{
+    reason: string;
+    amount: number;
+  }>;
+}
+
+export interface ClaimAssessmentResponse {
+  claim_id: string;
+  status: string;
+  overall_severity: 'minor' | 'moderate' | 'severe' | 'total_loss';
+  total_estimated_damage: number;
+  damage_areas: DamageArea[];
+  liability: LiabilityAssessment;
+  fraud_indicators: FraudIndicator[];
+  policy_citations: PolicyCitationClaim[];
+  payout_recommendation: PayoutRecommendation;
+  adjuster_decision?: {
+    decision: 'approve' | 'adjust' | 'deny' | 'investigate';
+    adjusted_amount?: number;
+    notes?: string;
+    decided_at?: string;
+    decided_by?: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getClaimAssessment(claimId: string): Promise<ClaimAssessmentResponse> {
+  return apiFetch<ClaimAssessmentResponse>(`/api/claims/${claimId}/assessment`);
+}
+
+/**
+ * Update adjuster decision
+ */
+export interface AdjusterDecisionRequest {
+  decision: 'approve' | 'adjust' | 'deny' | 'investigate';
+  adjusted_amount?: number;
+  notes?: string;
+}
+
+export interface AdjusterDecisionResponse {
+  claim_id: string;
+  decision: string;
+  adjusted_amount?: number;
+  notes?: string;
+  decided_at: string;
+  message: string;
+}
+
+export async function updateAdjusterDecision(
+  claimId: string,
+  decision: AdjusterDecisionRequest
+): Promise<AdjusterDecisionResponse> {
+  return apiFetch<AdjusterDecisionResponse>(`/api/claims/${claimId}/assessment/decision`, {
+    method: 'PUT',
+    body: JSON.stringify(decision),
+  });
+}
+
+/**
+ * Search claims policies
+ */
+export interface ClaimsPolicySearchRequest {
+  query: string;
+  category?: string;
+  limit?: number;
+}
+
+export interface ClaimsPolicySearchResult {
+  chunk_id: string;
+  policy_id: string;
+  policy_name: string;
+  category: string;
+  content: string;
+  similarity?: number;  // From backend
+  score?: number;       // Legacy/alias
+  severity?: string;
+  criteria_id?: string;
+}
+
+export interface ClaimsPolicySearchResponse {
+  query: string;
+  results: ClaimsPolicySearchResult[];
+  total_results: number;
+}
+
+export async function searchClaimsPolicies(
+  request: ClaimsPolicySearchRequest
+): Promise<ClaimsPolicySearchResponse> {
+  return apiFetch<ClaimsPolicySearchResponse>('/api/claims/policies/search', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Get claim media list
+ */
+export interface MediaItem {
+  media_id: string;
+  filename: string;
+  content_type: string;
+  media_type: 'image' | 'video' | 'document';
+  size: number;
+  thumbnail_url?: string;
+  url: string;
+  processed: boolean;
+  analysis_summary?: string;
+  uploaded_at: string;
+}
+
+export interface ClaimMediaListResponse {
+  claim_id: string;
+  media_items: MediaItem[];
+  total_count: number;
+}
+
+export async function getClaimMedia(claimId: string): Promise<ClaimMediaListResponse> {
+  return apiFetch<ClaimMediaListResponse>(`/api/claims/${claimId}/media`);
+}
+
+/**
+ * Get video keyframes
+ */
+export interface Keyframe {
+  keyframe_id: string;
+  timestamp: number;
+  timestamp_formatted: string;
+  thumbnail_url: string;
+  description?: string;
+  damage_detected: boolean;
+  damage_areas?: DamageArea[];
+  confidence: number;
+}
+
+export interface KeyframesResponse {
+  media_id: string;
+  duration: number;
+  keyframes: Keyframe[];
+  total_keyframes: number;
+}
+
+export async function getVideoKeyframes(claimId: string, mediaId: string): Promise<KeyframesResponse> {
+  return apiFetch<KeyframesResponse>(`/api/claims/${claimId}/media/${mediaId}/keyframes`);
+}
+
+/**
+ * Get damage areas for specific media
+ */
+export interface MediaDamageAreasResponse {
+  media_id: string;
+  damage_areas: DamageArea[];
+  total_estimated_cost: number;
+}
+
+export async function getMediaDamageAreas(
+  claimId: string,
+  mediaId: string
+): Promise<MediaDamageAreasResponse> {
+  return apiFetch<MediaDamageAreasResponse>(`/api/claims/${claimId}/media/${mediaId}/damage-areas`);
 }

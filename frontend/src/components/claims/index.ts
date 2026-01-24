@@ -3,3 +3,8 @@ export { default as MedicalRecordsPanel } from './MedicalRecordsPanel';
 export { default as EligibilityPanel } from './EligibilityPanel';
 export { default as LifeHealthClaimsOverview } from './LifeHealthClaimsOverview';
 export { default as PropertyCasualtyClaimsOverview } from './PropertyCasualtyClaimsOverview';
+export { default as AutomotiveClaimsOverview } from './AutomotiveClaimsOverview';
+export { default as EvidenceGallery } from './EvidenceGallery';
+export { default as DamageViewer } from './DamageViewer';
+export { default as VideoTimeline } from './VideoTimeline';
+export { default as PDFViewer } from './PDFViewer';
