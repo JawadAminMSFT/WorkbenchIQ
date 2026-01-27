@@ -286,7 +286,7 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
             
             apps.append(
                 {
-                    "id": data.get("id"),
+                    "id": data.get("id") or app_id,
                     "created_at": data.get("created_at"),
                     "external_reference": data.get("external_reference"),
                     "status": data.get("status", "unknown"),
@@ -325,7 +325,7 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
                 
             apps.append(
                 {
-                    "id": data.get("id"),
+                    "id": data.get("id") or app_dir.name,
                     "created_at": data.get("created_at"),
                     "external_reference": data.get("external_reference"),
                     "status": data.get("status", "unknown"),
