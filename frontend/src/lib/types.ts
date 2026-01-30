@@ -145,6 +145,14 @@ export interface RiskAnalysis {
   };
 }
 
+export interface BatchSummary {
+  batch_num: number;
+  page_start: number;
+  page_end: number;
+  page_count: number;
+  summary: string;
+}
+
 export interface ApplicationMetadata {
   id: string;
   created_at: string;
@@ -163,6 +171,17 @@ export interface ApplicationMetadata {
   // Background processing status
   processing_status?: 'extracting' | 'analyzing' | 'error' | null;
   processing_error?: string | null;
+  // Large document processing
+  processing_mode?: 'standard' | 'large_document';
+  condensed_context?: string;
+  document_stats?: {
+    size_bytes?: number;
+    size_kb?: number;
+    size_mb?: number;
+    page_count?: number;
+    estimated_tokens?: number;
+  };
+  batch_summaries?: BatchSummary[];
 }
 
 export interface ApplicationListItem {

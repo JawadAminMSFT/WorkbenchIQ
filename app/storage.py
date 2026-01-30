@@ -65,6 +65,11 @@ class ApplicationMetadata:
     # Background processing status tracking
     processing_status: Optional[str] = None  # idle, extracting, analyzing, error
     processing_error: Optional[str] = None  # Error message if processing failed
+    # Large document processing fields
+    processing_mode: Optional[str] = None  # 'standard' or 'large_document'
+    condensed_context: Optional[str] = None  # Summarized context for large docs
+    document_stats: Optional[Dict[str, Any]] = None  # Document size/page stats
+    batch_summaries: Optional[List[Dict[str, Any]]] = None  # Batch summaries for large docs UI
 
 
 # =============================================================================
@@ -219,6 +224,11 @@ def _dict_to_metadata(data: Dict[str, Any]) -> ApplicationMetadata:
         risk_analysis=data.get("risk_analysis"),
         processing_status=data.get("processing_status"),
         processing_error=data.get("processing_error"),
+        # Large document processing fields
+        processing_mode=data.get("processing_mode"),
+        condensed_context=data.get("condensed_context"),
+        document_stats=data.get("document_stats"),
+        batch_summaries=data.get("batch_summaries"),
     )
 
 
@@ -230,11 +240,16 @@ def save_application_metadata(root: str, metadata: ApplicationMetadata) -> None:
     if provider:
         provider.save_metadata(metadata.id, serializable)
     else:
-        # Legacy local storage
+        # Legacy local storage - use atomic write
+        import os
         app_dir = get_application_dir(root, metadata.id)
         meta_path = app_dir / "metadata.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
+        temp_path = app_dir / "metadata.json.tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        temp_path.replace(meta_path)
 
 
 def load_application(root: str, app_id: str) -> Optional[ApplicationMetadata]:

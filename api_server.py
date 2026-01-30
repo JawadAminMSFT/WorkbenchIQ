@@ -119,6 +119,7 @@ class ApplicationListItem(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     sections: Optional[List[str]] = None
+    processing_mode: Optional[str] = None  # 'auto', 'standard', or 'large_document'
 
 
 class ChatMessage(BaseModel):
@@ -227,6 +228,11 @@ def application_to_dict(app_md: ApplicationMetadata) -> dict:
         "risk_analysis": app_md.risk_analysis,
         "processing_status": app_md.processing_status,
         "processing_error": app_md.processing_error,
+        # Large document processing fields
+        "processing_mode": app_md.processing_mode,
+        "condensed_context": app_md.condensed_context,
+        "document_stats": app_md.document_stats,
+        "batch_summaries": app_md.batch_summaries,
     }
 
 
@@ -285,10 +291,10 @@ async def run_extraction_background(app_id: str):
             pass
 
 
-async def run_analysis_background(app_id: str, sections: Optional[List[str]] = None):
+async def run_analysis_background(app_id: str, sections: Optional[List[str]] = None, processing_mode: Optional[str] = None):
     """Run analysis in background and update status."""
     try:
-        logger.info("Starting background analysis for application %s", app_id)
+        logger.info("Starting background analysis for application %s (mode: %s)", app_id, processing_mode or "auto")
         settings = load_settings()
         app_md = load_application(settings.app.storage_root, app_id)
         if not app_md:
@@ -308,6 +314,7 @@ async def run_analysis_background(app_id: str, sections: Optional[List[str]] = N
             app_md,
             sections_to_run=sections,
             max_workers_per_section=4,
+            processing_mode_override=processing_mode,
         )
         
         # Update status and save
@@ -315,7 +322,7 @@ async def run_analysis_background(app_id: str, sections: Optional[List[str]] = N
         app_md.processing_error = None
         save_application_metadata(settings.app.storage_root, app_md)
         
-        logger.info("Background analysis completed for application %s", app_id)
+        logger.info("Background analysis completed for application %s (mode: %s)", app_id, app_md.processing_mode)
 
     except Exception as e:
         logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
@@ -330,16 +337,16 @@ async def run_analysis_background(app_id: str, sections: Optional[List[str]] = N
             pass
 
 
-async def run_extract_and_analyze_background(app_id: str):
+async def run_extract_and_analyze_background(app_id: str, processing_mode: Optional[str] = None):
     """Run both extraction and analysis in background."""
-    logger.info("Starting full background processing for application %s", app_id)
+    logger.info("Starting full background processing for application %s (mode: %s)", app_id, processing_mode or "auto")
     await run_extraction_background(app_id)
     
     # Check if extraction succeeded before continuing
     settings = load_settings()
     app_md = load_application(settings.app.storage_root, app_id)
     if app_md and app_md.processing_status != "error" and app_md.document_markdown:
-        await run_analysis_background(app_id)
+        await run_analysis_background(app_id, processing_mode=processing_mode)
     else:
         logger.warning("Skipping analysis for %s - extraction failed or no content", app_id)
 
@@ -751,6 +758,7 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None, backg
             )
 
         sections_to_run = request.sections if request else None
+        processing_mode = request.processing_mode if request else None
 
         if background:
             # Check if already processing
@@ -761,7 +769,7 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None, backg
                 )
             
             # Start background task and return immediately
-            task = asyncio.create_task(run_analysis_background(app_id, sections_to_run))
+            task = asyncio.create_task(run_analysis_background(app_id, sections_to_run, processing_mode))
             task.add_done_callback(_handle_task_exception)
             
             # Update status immediately so client sees it
@@ -783,6 +791,7 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None, backg
             app_md,
             sections_to_run=sections_to_run,
             max_workers_per_section=4,
+            processing_mode_override=processing_mode,
         )
 
         logger.info("Analysis completed for application %s", app_id)
@@ -795,13 +804,38 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None, backg
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/applications/{app_id}/reset-status")
+async def reset_application_status(app_id: str):
+    """Reset processing status to idle (use if stuck in processing state)."""
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        app_md.processing_status = None
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+        
+        logger.info("Reset processing status for application %s", app_id)
+        return {"message": "Processing status reset", "id": app_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/applications/{app_id}/process")
-async def process_application(app_id: str):
+async def process_application(app_id: str, processing_mode: Optional[str] = Query(None)):
     """Start full processing (extraction + analysis) in background.
     
     This is the recommended endpoint for new uploads. It starts both
     extraction and analysis as background tasks and returns immediately.
     Client should poll GET /api/applications/{app_id} to check status.
+    
+    Args:
+        app_id: Application ID
+        processing_mode: 'auto', 'standard', or 'large_document' (default: auto)
     
     The processing_status field will be:
     - 'extracting': Currently running content extraction
@@ -823,7 +857,7 @@ async def process_application(app_id: str):
             )
         
         # Start background task for full processing
-        task = asyncio.create_task(run_extract_and_analyze_background(app_id))
+        task = asyncio.create_task(run_extract_and_analyze_background(app_id, processing_mode))
         task.add_done_callback(_handle_task_exception)
         
         # Update status immediately so client sees it
@@ -831,7 +865,7 @@ async def process_application(app_id: str):
         app_md.processing_error = None
         save_application_metadata(settings.app.storage_root, app_md)
         
-        logger.info("Started background processing for application %s", app_id)
+        logger.info("Started background processing for application %s (mode: %s)", app_id, processing_mode or "auto")
         return {
             **application_to_dict(app_md),
             "message": "Processing started in background. Poll GET /api/applications/{app_id} for status."
@@ -1737,9 +1771,15 @@ async def chat_with_application(app_id: str, request: ChatRequest):
         # Build context from application data
         app_context_parts = []
         
-        # Add document markdown if available
-        if app_md.document_markdown:
-            # Truncate to avoid token limits
+        # Add document content - use condensed context for large documents in underwriting persona
+        if app_md.processing_mode == "large_document" and app_md.condensed_context and persona == "underwriting":
+            # For large documents in underwriting, use the condensed context (progressive summaries)
+            # This provides better coverage than truncating the full markdown
+            logger.info("Chat [%s]: Using condensed context for large document (%d chars)", 
+                       persona, len(app_md.condensed_context))
+            app_context_parts.append(f"## Application Documents (Summarized)\n\n{app_md.condensed_context}")
+        elif app_md.document_markdown:
+            # Standard mode: use truncated full markdown
             doc_preview = app_md.document_markdown[:8000]
             if len(app_md.document_markdown) > 8000:
                 doc_preview += "\n\n[Document truncated for chat context...]"
@@ -2132,7 +2172,13 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
         # Build context from application data
         app_context_parts = []
         
-        if app_md.document_markdown:
+        # Add document content - use condensed context for large documents in underwriting persona
+        if app_md.processing_mode == "large_document" and app_md.condensed_context and persona == "underwriting":
+            # For large documents in underwriting, use the condensed context (progressive summaries)
+            logger.info("Conversation [%s]: Using condensed context for large document (%d chars)", 
+                       persona, len(app_md.condensed_context))
+            app_context_parts.append(f"## Application Documents (Summarized)\n\n{app_md.condensed_context}")
+        elif app_md.document_markdown:
             doc_preview = app_md.document_markdown[:8000]
             if len(app_md.document_markdown) > 8000:
                 doc_preview += "\n\n[Document truncated for chat context...]"

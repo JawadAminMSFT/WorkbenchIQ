@@ -1,16 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileStack, Copy, Check } from 'lucide-react';
 import type { MarkdownPage } from '@/lib/types';
 
 interface SourcePagesPanelProps {
   pages: MarkdownPage[];
+  selectedPageNumber?: number; // 1-indexed page number to navigate to
 }
 
-export default function SourcePagesPanel({ pages }: SourcePagesPanelProps) {
+export default function SourcePagesPanel({ pages, selectedPageNumber }: SourcePagesPanelProps) {
   const [selectedPage, setSelectedPage] = useState<number>(0);
   const [copied, setCopied] = useState(false);
+
+  // Navigate to page when selectedPageNumber changes
+  useEffect(() => {
+    if (selectedPageNumber && pages.length > 0) {
+      // Find the index of the page with this page_number
+      const pageIndex = pages.findIndex(p => p.page_number === selectedPageNumber);
+      if (pageIndex >= 0) {
+        setSelectedPage(pageIndex);
+      }
+    }
+  }, [selectedPageNumber, pages]);
 
   if (!pages || pages.length === 0) {
     return (

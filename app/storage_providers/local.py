@@ -104,12 +104,40 @@ class LocalStorageProvider:
         return f"{self._public_base_url.rstrip('/')}/applications/{app_id}/files/{filename}"
     
     def save_metadata(self, app_id: str, metadata: Dict[str, Any]) -> None:
-        """Save application metadata."""
+        """Save application metadata atomically to prevent corruption."""
+        import os
+        import time
+        
         app_dir = self._get_application_dir(app_id)
         meta_path = app_dir / "metadata.json"
+        temp_path = app_dir / "metadata.json.tmp"
         
-        with open(meta_path, "w", encoding="utf-8") as f:
+        # Write to temp file first, then rename (atomic on most filesystems)
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())  # Ensure data is written to disk
+        
+        # Atomic rename with retry for Windows (file may be briefly locked)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                temp_path.replace(meta_path)
+                break
+            except PermissionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning("Retry %d/%d for metadata save (file locked): %s", 
+                                   attempt + 1, max_retries, e)
+                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                else:
+                    # Last resort: try shutil.move which handles cross-device moves
+                    import shutil
+                    try:
+                        if meta_path.exists():
+                            meta_path.unlink()
+                        shutil.move(str(temp_path), str(meta_path))
+                    except Exception:
+                        raise e  # Re-raise original error if this also fails
         
         logger.debug("Saved metadata for app %s", app_id)
     
