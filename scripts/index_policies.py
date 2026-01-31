@@ -45,8 +45,8 @@ Examples:
     
     parser.add_argument(
         "--policies",
-        default="data/life-health-underwriting-policies.json",
-        help="Path to policies JSON file (default: data/life-health-underwriting-policies.json)",
+        default="prompts/life-health-underwriting-policies.json",
+        help="Path to policies JSON file (default: prompts/life-health-underwriting-policies.json)",
     )
     
     parser.add_argument(

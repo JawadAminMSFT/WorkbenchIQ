@@ -572,11 +572,24 @@ For enhanced policy search with semantic retrieval, you can enable the RAG (Retr
 **Quick Setup:**
 
 ```bash
+# Start your Azure PostgreSQL server (if stopped)
+az postgres flexible-server start --resource-group workbenchiq-rg --name workbenchiq-db
+
 # Run the setup script to provision Azure PostgreSQL and create schema
 uv run python scripts/setup_postgresql_rag.py
 
 # Index existing policies
 uv run python scripts/index_policies.py
+```
+
+**Server Management:**
+
+```bash
+# Check server status
+az postgres flexible-server show --resource-group workbenchiq-rg --name workbenchiq-db --query "state"
+
+# Stop server (to save costs when not in use)
+az postgres flexible-server stop --resource-group workbenchiq-rg --name workbenchiq-db
 ```
 
 **Manual Configuration:**

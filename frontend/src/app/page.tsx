@@ -13,6 +13,7 @@ import OccupationPanel from '@/components/OccupationPanel';
 import ChronologicalOverview from '@/components/ChronologicalOverview';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import SourcePagesPanel from '@/components/SourcePagesPanel';
+import BatchSummariesPanel from '@/components/BatchSummariesPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import PolicySummaryPanel from '@/components/PolicySummaryPanel';
 import PolicyReportModal from '@/components/PolicyReportModal';
@@ -21,6 +22,7 @@ import { ClaimsSummary, MedicalRecordsPanel, EligibilityPanel } from '@/componen
 import LifeHealthClaimsOverview from '@/components/claims/LifeHealthClaimsOverview';
 import PropertyCasualtyClaimsOverview from '@/components/claims/PropertyCasualtyClaimsOverview';
 import AutomotiveClaimsOverview from '@/components/claims/AutomotiveClaimsOverview';
+import { MortgageWorkbench } from '@/components/mortgage';
 import { usePersona } from '@/lib/PersonaContext';
 import type { ApplicationMetadata, ApplicationListItem } from '@/lib/types';
 
@@ -34,6 +36,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState<ViewType>('overview');
   const [isPolicyReportOpen, setIsPolicyReportOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [sourcePageNumber, setSourcePageNumber] = useState<number | undefined>(undefined);
   const { currentPersona, personaConfig } = usePersona();
 
   // Load applications list - reload when persona changes
@@ -155,6 +158,35 @@ export default function Home() {
           </div>
         );
       case 'source':
+        // For underwriting persona with batch summaries, show enhanced view
+        const hasBatchSummaries = selectedApp.batch_summaries && selectedApp.batch_summaries.length > 0;
+        
+        // Show split view if batch summaries exist (for any persona that has them)
+        if (hasBatchSummaries) {
+          return (
+            <div className="flex-1 overflow-auto p-6 h-full">
+              <div className="grid grid-cols-2 gap-6 h-full">
+                {/* Left: Batch Summaries */}
+                <div className="h-full overflow-hidden">
+                  <BatchSummariesPanel 
+                    batchSummaries={selectedApp.batch_summaries!}
+                    onPageClick={(pageNum) => {
+                      setSourcePageNumber(pageNum);
+                    }}
+                  />
+                </div>
+                {/* Right: Source Pages */}
+                <div className="h-full overflow-hidden">
+                  <SourcePagesPanel 
+                    pages={selectedApp.markdown_pages || []} 
+                    selectedPageNumber={sourcePageNumber}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        }
+        // Standard source view when no batch summaries
         return (
           <div className="flex-1 overflow-auto p-6 h-full">
             <SourcePagesPanel pages={selectedApp.markdown_pages || []} />
@@ -203,30 +235,30 @@ export default function Home() {
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Top Section: AI Analysis + Chronological Overview side by side */}
-          <div className="flex gap-6 items-stretch">
-            {/* Left Column - AI Analysis */}
-            <div className="flex-1 flex flex-col gap-6">
-              {/* Patient Summary */}
-              <PatientSummary 
-                application={selectedApp} 
-                onPolicyClick={(policyId) => {
-                  setIsPolicyReportOpen(true);
-                }}
-              />
-              
-              {/* Policy Summary Panel (risk analysis) */}
-              <PolicySummaryPanel
-                application={selectedApp}
-                onViewFullReport={() => setIsPolicyReportOpen(true)}
-                onRiskAnalysisComplete={() => loadApplication(selectedApp.id)}
-              />
+          <div className="relative">
+            {/* Left Column - AI Analysis (determines the height) */}
+            <div className="pr-[340px]">
+              <div className="flex flex-col gap-6">
+                {/* Patient Summary */}
+                <PatientSummary 
+                  application={selectedApp} 
+                  onPolicyClick={(policyId) => {
+                    setIsPolicyReportOpen(true);
+                  }}
+                />
+                
+                {/* Policy Summary Panel (risk analysis) */}
+                <PolicySummaryPanel
+                  application={selectedApp}
+                  onViewFullReport={() => setIsPolicyReportOpen(true)}
+                  onRiskAnalysisComplete={() => loadApplication(selectedApp.id)}
+                />
+              </div>
             </div>
 
-            {/* Right Column - Chronological Overview (matches height of left column) */}
-            <div className="w-80 flex-shrink-0 flex flex-col">
-              <div className="flex-1 overflow-y-auto">
-                <ChronologicalOverview application={selectedApp} />
-              </div>
+            {/* Right Column - Chronological Overview (positioned to match left column height) */}
+            <div className="absolute top-0 right-0 bottom-0 w-80">
+              <ChronologicalOverview application={selectedApp} />
             </div>
           </div>
 
@@ -315,30 +347,21 @@ export default function Home() {
   };
 
   const renderMortgageOverview = () => {
-    return (
-      <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
-            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    if (!selectedApp) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-slate-500">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🏠</span>
             </div>
-            <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-              Mortgage Workbench
-            </h2>
-            <p className="text-slate-600 mb-6">
-              The Mortgage underwriting workbench is coming soon. This workspace will help you 
-              process loan applications, property documents, and borrower verification.
-            </p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
-              </span>
-              Coming Soon
-            </div>
+            <p className="text-lg font-medium">No mortgage application selected</p>
+            <p className="text-sm mt-2">Select an application from the dropdown to view details</p>
           </div>
         </div>
-      </div>
+      );
+    }
+    return (
+      <MortgageWorkbench applicationId={selectedApp.id} />
     );
   };
 

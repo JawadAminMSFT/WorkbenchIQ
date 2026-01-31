@@ -96,17 +96,44 @@ function getFieldData(
 }
 
 // Component to display value with confidence and citation
+// Helper to truncate and clean monetary values for display
+function formatMonetaryValue(value: string): string {
+  if (!value || value === 'N/A') return 'N/A';
+  
+  // If it starts with $ and contains only number/punctuation, it's a proper amount
+  if (/^\$[\d,]+\.?\d*$/.test(value.trim())) {
+    return value.trim();
+  }
+  
+  // Extract dollar amount if embedded in text
+  const dollarMatch = value.match(/\$[\d,]+\.?\d*/);
+  if (dollarMatch) {
+    return dollarMatch[0];
+  }
+  
+  // If it contains "Unknown" or verbose explanation, return "Pending"
+  if (value.toLowerCase().includes('unknown') || value.length > 20) {
+    return 'Pending';
+  }
+  
+  return value;
+}
+
 function FieldWithConfidence({ 
   data, 
-  className 
+  className,
+  formatAsMoney = false,
 }: { 
   data: { value: string; field?: ExtractedField }; 
   className?: string;
+  formatAsMoney?: boolean;
 }) {
+  const displayValue = formatAsMoney ? formatMonetaryValue(data.value) : data.value;
+  
   return (
     <div className="flex items-center gap-1.5">
       <CitableValue 
-        value={data.value} 
+        value={displayValue} 
         citation={data.field} 
         className={className} 
       />
@@ -187,25 +214,25 @@ function HeaderStrip({ application }: { application: ApplicationMetadata | null 
           <div className="text-center">
             <div className="text-xs text-indigo-200">Billed</div>
             <div className="flex justify-center">
-              <FieldWithConfidence data={billedAmountData} className="font-semibold" />
+              <FieldWithConfidence data={billedAmountData} className="font-semibold" formatAsMoney />
             </div>
           </div>
           <div className="text-center">
             <div className="text-xs text-indigo-200">Allowed</div>
             <div className="flex justify-center">
-              <FieldWithConfidence data={allowedAmountData} className="font-semibold" />
+              <FieldWithConfidence data={allowedAmountData} className="font-semibold" formatAsMoney />
             </div>
           </div>
           <div className="text-center">
             <div className="text-xs text-indigo-200">Plan Pays</div>
             <div className="flex justify-center">
-              <FieldWithConfidence data={planLiabilityData} className="font-semibold text-emerald-300" />
+              <FieldWithConfidence data={planLiabilityData} className="font-semibold text-emerald-300" formatAsMoney />
             </div>
           </div>
           <div className="text-center">
             <div className="text-xs text-indigo-200">Member OOP</div>
             <div className="flex justify-center">
-              <FieldWithConfidence data={memberOOPData} className="font-semibold" />
+              <FieldWithConfidence data={memberOOPData} className="font-semibold" formatAsMoney />
             </div>
           </div>
           <span className="px-2.5 py-1 bg-rose-500 rounded-full text-xs font-medium">High</span>

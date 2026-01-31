@@ -37,13 +37,16 @@ export default function TopNav({
   
   const hasDocuments = selectedApp?.files && selectedApp.files.length > 0;
   const hasSourcePages = selectedApp?.markdown_pages && selectedApp.markdown_pages.length > 0;
+  
+  // Automotive claims has its own overview with inline documents/timeline - hide these tabs
+  const isAutomotiveClaims = personaConfig.id === 'automotive_claims';
 
   const navItems = [
     { id: 'overview' as const, label: 'Overview', icon: LayoutDashboard, enabled: true },
-    { id: 'timeline' as const, label: 'Timeline', icon: Clock, enabled: true },
-    { id: 'documents' as const, label: 'Documents', icon: FileText, enabled: hasDocuments, count: selectedApp?.files?.length },
+    { id: 'timeline' as const, label: 'Timeline', icon: Clock, enabled: true, hidden: isAutomotiveClaims },
+    { id: 'documents' as const, label: 'Documents', icon: FileText, enabled: hasDocuments, count: selectedApp?.files?.length, hidden: isAutomotiveClaims },
     { id: 'source' as const, label: 'Source Pages', icon: FileStack, enabled: hasSourcePages, count: selectedApp?.markdown_pages?.length },
-  ];
+  ].filter(item => !item.hidden);
 
   const selectedApplication = applications.find(a => a.id === selectedAppId);
 

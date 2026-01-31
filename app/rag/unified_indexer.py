@@ -32,24 +32,40 @@ class IndexingError(Exception):
 # Persona configuration mapping
 PERSONA_CONFIG = {
     "underwriting": {
-        "policies_path": "data/life-health-underwriting-policies.json",
+        "policies_path": "prompts/life-health-underwriting-policies.json",
+        "policy_file": "prompts/life-health-underwriting-policies.json",
         "table_name": "policy_chunks",
         "display_name": "Underwriting",
     },
     "life_health_claims": {
-        "policies_path": "data/life-health-claims-policies.json",
+        "policies_path": "prompts/life-health-claims-policies.json",
+        "policy_file": "prompts/life-health-claims-policies.json",
         "table_name": "health_claims_policy_chunks",
         "display_name": "Life & Health Claims",
     },
     "automotive_claims": {
-        "policies_path": "data/automotive-claims-policies.json",
+        "policies_path": "prompts/automotive-claims-policies.json",
+        "policy_file": "prompts/automotive-claims-policies.json",
         "table_name": "claim_policy_chunks",
         "display_name": "Automotive Claims",
     },
     "property_casualty_claims": {
-        "policies_path": "data/property-casualty-claims-policies.json",
+        "policies_path": "prompts/property-casualty-claims-policies.json",
+        "policy_file": "prompts/property-casualty-claims-policies.json",
         "table_name": "pc_claims_policy_chunks",
         "display_name": "Property & Casualty Claims",
+    },
+    "mortgage_underwriting": {
+        "policies_path": "prompts/mortgage-underwriting-policies.json",
+        "policy_file": "prompts/mortgage-underwriting-policies.json",
+        "table_name": "mortgage_policy_chunks",
+        "display_name": "Mortgage Underwriting",
+    },
+    "mortgage": {
+        "policies_path": "prompts/mortgage-underwriting-policies.json",
+        "policy_file": "prompts/mortgage-underwriting-policies.json",
+        "table_name": "mortgage_policy_chunks",
+        "display_name": "Mortgage Underwriting",
     },
 }
 
@@ -428,18 +444,140 @@ class UnifiedPolicyIndexer:
         return await self.index_policies(force_reindex=True)
     
     def _load_policies(self) -> list[dict[str, Any]]:
-        """Load policies from JSON file."""
+        """Load policies from JSON file.
+        
+        Handles both:
+        1. Standard policy format: {"policies": [...]}
+        2. Unified format with plan benefits: {"plan_benefits": {...}, "policies": [...]}
+        
+        Plan benefits are converted into indexable policy format.
+        """
         if not self.policies_path.exists():
             raise IndexingError(f"Policies file not found: {self.policies_path}")
         
         with open(self.policies_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
+        all_policies = []
+        
+        # Load standard processing policies
         policies = data.get("policies", [])
-        if not policies:
+        all_policies.extend(policies)
+        
+        # Convert plan benefits to indexable format (for life_health_claims)
+        plan_benefits = data.get("plan_benefits", {})
+        if plan_benefits:
+            logger.info(f"   Converting {len(plan_benefits)} plan benefits to policy format...")
+            for plan_name, plan_data in plan_benefits.items():
+                plan_policy = self._convert_plan_to_policy(plan_name, plan_data)
+                all_policies.append(plan_policy)
+        
+        if not all_policies:
             logger.warning(f"No policies found in {self.policies_path}")
         
-        return policies
+        return all_policies
+    
+    def _convert_plan_to_policy(self, plan_name: str, plan_data: dict) -> dict[str, Any]:
+        """Convert a plan benefit definition into indexable policy format.
+        
+        Transforms plan data (copays, deductibles, etc.) into the standard
+        policy structure with criteria that can be chunked and indexed.
+        """
+        plan_type = plan_data.get("plan_type", "Unknown")
+        plan_id = f"PLAN-{plan_name.replace(' ', '-').upper()}"
+        
+        # Build criteria from plan details
+        criteria = []
+        
+        # Deductible criteria
+        deductible = plan_data.get("deductible", {})
+        if deductible:
+            criteria.append({
+                "id": f"{plan_id}-DED",
+                "condition": "Deductible applies to claim",
+                "action": f"Apply individual deductible of {deductible.get('individual', 'N/A')} or family deductible of {deductible.get('family', 'N/A')}",
+                "rationale": "Deductible must be met before plan pays coinsurance"
+            })
+        
+        # OOP Max criteria
+        oop_max = plan_data.get("oop_max", {})
+        if oop_max:
+            criteria.append({
+                "id": f"{plan_id}-OOP",
+                "condition": "Out-of-pocket maximum tracking",
+                "action": f"Track accumulation toward individual max of {oop_max.get('individual', 'N/A')} or family max of {oop_max.get('family', 'N/A')}",
+                "rationale": "Plan pays 100% after OOP max is reached"
+            })
+        
+        # Copay criteria
+        copays = plan_data.get("copays", {})
+        if copays:
+            for visit_type, amount in copays.items():
+                criteria.append({
+                    "id": f"{plan_id}-COP-{visit_type.upper()}",
+                    "condition": f"{visit_type.replace('_', ' ').title()} visit",
+                    "action": f"Apply {amount} copay",
+                    "rationale": f"Standard {plan_type} copay for {visit_type.replace('_', ' ')}"
+                })
+        
+        # Coinsurance criteria
+        coinsurance = plan_data.get("coinsurance")
+        if coinsurance:
+            criteria.append({
+                "id": f"{plan_id}-COINS",
+                "condition": "Coinsurance applies after deductible",
+                "action": f"Apply {coinsurance}",
+                "rationale": "Member cost sharing after deductible is met"
+            })
+        
+        # Preventive care criteria
+        preventive = plan_data.get("preventive_care")
+        if preventive:
+            criteria.append({
+                "id": f"{plan_id}-PREV",
+                "condition": "Preventive care service",
+                "action": preventive,
+                "rationale": "ACA-compliant preventive care coverage"
+            })
+        
+        # Fee schedule criteria
+        fee_schedule = plan_data.get("fee_schedule", {})
+        if fee_schedule:
+            fee_list = ", ".join([f"{code}: {rate}" for code, rate in fee_schedule.items()])
+            criteria.append({
+                "id": f"{plan_id}-FEE",
+                "condition": "Procedure code has contracted rate",
+                "action": f"Apply contracted fee schedule rates: {fee_list}",
+                "rationale": "Contracted rates for common procedures"
+            })
+        
+        # Build modifying factors from exclusions and network
+        modifying_factors = []
+        
+        network = plan_data.get("network")
+        if network:
+            modifying_factors.append({
+                "factor": "Network status",
+                "impact": network
+            })
+        
+        exclusions = plan_data.get("exclusions", [])
+        for exclusion in exclusions:
+            modifying_factors.append({
+                "factor": f"Exclusion: {exclusion}",
+                "impact": "Service not covered - member responsible"
+            })
+        
+        return {
+            "id": plan_id,
+            "category": "plan_benefits",
+            "subcategory": plan_type.lower(),
+            "name": f"{plan_name} - Plan Benefits",
+            "description": f"Benefit structure and cost sharing rules for {plan_name} ({plan_type} plan). Network: {network}",
+            "criteria": criteria,
+            "modifying_factors": modifying_factors,
+            "references": ["Plan Summary of Benefits", "Member Handbook"]
+        }
     
     async def _ensure_pool(self):
         """Ensure database connection pool is initialized."""

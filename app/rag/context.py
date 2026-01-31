@@ -94,6 +94,8 @@ class RAGContextBuilder:
         "life_health_claims": "CLAIMS PROCESSING POLICIES",
         "automotive_claims": "AUTO CLAIMS POLICIES",
         "property_casualty_claims": "PROPERTY & CASUALTY POLICIES",
+        "mortgage": "MORTGAGE UNDERWRITING POLICIES (OSFI B-20)",
+        "mortgage_underwriting": "MORTGAGE UNDERWRITING POLICIES (OSFI B-20)",
     }
     
     def __init__(

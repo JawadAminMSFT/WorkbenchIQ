@@ -42,6 +42,16 @@ PERSONA_SEARCH_CONFIG = {
         "service_type": "pc_claims",
         "description": "Property & casualty claims policies",
     },
+    "mortgage": {
+        "table": "mortgage_policy_chunks",
+        "service_type": "mortgage",
+        "description": "Canadian mortgage underwriting policies (OSFI B-20)",
+    },
+    "mortgage_underwriting": {
+        "table": "mortgage_policy_chunks",
+        "service_type": "mortgage",
+        "description": "Canadian mortgage underwriting policies (OSFI B-20)",
+    },
 }
 
 
@@ -83,6 +93,19 @@ class PCClaimsPolicySearchService(PolicySearchService):
         super().__init__(settings, schema)
         # Override table to use P&C claims chunks
         self.table = f"{schema}.pc_claims_policy_chunks"
+
+
+class MortgagePolicySearchService(PolicySearchService):
+    """
+    Search service for Canadian mortgage underwriting policies (OSFI B-20).
+    
+    Uses the mortgage_policy_chunks table for vector search.
+    """
+    
+    def __init__(self, settings: Settings, schema: str = "workbenchiq"):
+        super().__init__(settings, schema)
+        # Override table to use mortgage policy chunks
+        self.table = f"{schema}.mortgage_policy_chunks"
 
 
 class ClaimsPolicySearchServiceAdapter:
@@ -198,6 +221,9 @@ def get_search_service_for_persona(
     
     elif service_type == "pc_claims":
         return PCClaimsPolicySearchService(settings, schema)
+    
+    elif service_type == "mortgage":
+        return MortgagePolicySearchService(settings, schema)
     
     else:
         # Fallback to underwriting

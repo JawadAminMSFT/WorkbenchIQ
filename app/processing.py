@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Settings
 from .content_understanding_client import (
@@ -17,6 +18,11 @@ from .content_understanding_client import (
     extract_fields_with_confidence,
     get_confidence_summary,
 )
+from .large_document_processor import (
+    detect_processing_mode,
+    build_condensed_context,
+    get_document_stats,
+)
 from .openai_client import chat_completion
 from .prompts import load_prompts
 from .storage import (
@@ -27,10 +33,9 @@ from .storage import (
 )
 from .personas import get_persona_config
 from .utils import setup_logging
-from .underwriting_policies import format_all_policies_for_prompt
+from .underwriting_policies import format_all_policies_for_prompt, format_policies_for_persona
 
 logger = setup_logging()
-
 
 # Media type detection based on file extension
 DOCUMENT_EXTENSIONS = {'.pdf', '.docx', '.doc', '.txt', '.rtf', '.xlsx', '.xls', '.pptx', '.ppt'}
@@ -53,13 +58,30 @@ def detect_media_type(filename: str) -> str:
     return 'unknown'
 
 
-def load_policies(prompts_root: str) -> Dict[str, Any]:
-    """Load policy definitions from JSON file.
+def load_policies(prompts_root: str, persona: str = None) -> Dict[str, Any]:
+    """Load plan benefit definitions for claims processing.
+    
+    For claims personas, loads from the unified claims policy file which
+    contains both plan_benefits and processing policies.
     
     Args:
-        prompts_root: Path to the prompts directory containing policies.json
+        prompts_root: Path to the prompts directory
+        persona: Optional persona to load persona-specific plan benefits
+        
+    Returns:
+        Dictionary of plan benefit definitions (plan_name -> plan_data)
     """
     try:
+        # For life_health_claims, load from the unified policy file
+        if persona == "life_health_claims":
+            policy_path = os.path.join(prompts_root, "life-health-claims-policies.json")
+            if os.path.exists(policy_path):
+                with open(policy_path, "r") as f:
+                    data = json.load(f)
+                    # Return plan_benefits section from unified file
+                    return data.get("plan_benefits", {})
+        
+        # Fallback: try legacy policies.json (will be removed)
         policy_path = os.path.join(prompts_root, "policies.json")
         if os.path.exists(policy_path):
             with open(policy_path, "r") as f:
@@ -82,6 +104,26 @@ def load_underwriting_policies(prompts_root: str) -> str:
         return format_all_policies_for_prompt(prompts_root)
     except Exception as e:
         logger.warning(f"Failed to load underwriting policies: {e}")
+        return ""
+
+
+def load_policies_for_persona_prompts(prompts_root: str, persona: str) -> str:
+    """Load and format persona-specific policies for prompt injection.
+    
+    For claims personas, this loads claims processing rules.
+    For underwriting persona, this loads underwriting policies.
+    
+    Args:
+        prompts_root: Path to the prompts directory
+        persona: The persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Formatted string of policies suitable for prompt injection
+    """
+    try:
+        return format_policies_for_persona(prompts_root, persona)
+    except Exception as e:
+        logger.warning(f"Failed to load {persona} policies: {e}")
         return ""
 
 
@@ -418,9 +460,13 @@ def _run_section_prompts(
     logger.info("Running %d prompts for section '%s'", len(work_items), section)
     section_results: Dict[str, Any] = {}
     
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(work_items))) as executor:
-        futures = {
-            executor.submit(
+    # Run prompts in parallel with limited concurrency
+    effective_workers = min(max_workers, len(work_items), 4)
+    
+    with ThreadPoolExecutor(max_workers=effective_workers) as executor:
+        futures = {}
+        for subsection, template in work_items:
+            future = executor.submit(
                 _run_single_prompt,
                 settings,
                 section,
@@ -429,9 +475,8 @@ def _run_section_prompts(
                 document_markdown,
                 additional_context,
                 underwriting_policies,
-            ): subsection
-            for subsection, template in work_items
-        }
+            )
+            futures[future] = subsection
         
         for fut in as_completed(futures):
             subsection = futures[fut]
@@ -461,12 +506,17 @@ def run_underwriting_prompts(
     subsections_to_run: List[Tuple[str, str]] | None = None,
     max_workers_per_section: int = 4,
     on_section_complete: Any | None = None,
+    cu_result: Optional[Dict[str, Any]] = None,
+    processing_mode_override: Optional[str] = None,
 ) -> ApplicationMetadata:
     """Execute prompts section by section to avoid overwhelming the service.
     
     Each section (e.g., application_summary, medical_summary, requirements) is run
     sequentially, but prompts within a section are run in parallel with limited
     concurrency.
+    
+    For large documents (>100KB), automatically switches to condensed context mode
+    to avoid rate limit errors.
     
     Args:
         settings: Application settings
@@ -476,6 +526,8 @@ def run_underwriting_prompts(
         subsections_to_run: Optional list of (section, subsection) tuples to run
         max_workers_per_section: Max parallel prompts per section (default: 4)
         on_section_complete: Optional callback(section_name, results) called after each section
+        cu_result: Optional CU result with extracted fields (for large doc mode)
+        processing_mode_override: 'auto', 'standard', or 'large_document' (default: auto)
     
     Returns:
         Updated ApplicationMetadata with LLM outputs
@@ -483,8 +535,58 @@ def run_underwriting_prompts(
     if not app_md.document_markdown:
         raise ValueError("ApplicationMarkdown is empty; run Content Understanding first.")
 
-    # Load persona-specific prompts from prompts_root
+    # Get persona for processing decisions
     persona = app_md.persona or "underwriting"
+    
+    # Large document mode only applies to underwriting persona (life & health)
+    # Other personas (claims, mortgage, etc.) use standard processing
+    large_doc_eligible_personas = ["underwriting"]
+    
+    # Detect or use override processing mode
+    if persona not in large_doc_eligible_personas:
+        # Non-underwriting personas always use standard mode
+        mode = 'standard'
+        logger.info("Persona '%s' not eligible for large doc mode, using standard", persona)
+    elif processing_mode_override and processing_mode_override != 'auto':
+        mode = processing_mode_override
+    elif settings.processing.auto_detect_mode:
+        mode = detect_processing_mode(
+            app_md.document_markdown,
+            settings.processing.large_doc_threshold_kb
+        )
+    else:
+        mode = 'standard'
+    
+    doc_size_kb = len(app_md.document_markdown.encode('utf-8')) / 1024
+    logger.info(
+        "Processing mode: %s (doc size: %.1f KB, threshold: %d KB, persona: %s)",
+        mode, doc_size_kb, settings.processing.large_doc_threshold_kb, persona
+    )
+    
+    # Build appropriate context for prompts
+    if mode == "large_document":
+        logger.info("Using large document mode - building condensed context...")
+        document_context, batch_summaries = build_condensed_context(
+            settings,
+            app_md.document_markdown,
+            cu_result,
+        )
+        app_md.processing_mode = "large_document"
+        app_md.condensed_context = document_context
+        app_md.document_stats = get_document_stats(app_md.document_markdown)
+        app_md.batch_summaries = batch_summaries  # Store batch summaries for UI
+        logger.info(
+            "Condensed context ready: %d chars (~%d tokens), %d batch summaries",
+            len(document_context), len(document_context) // 4,
+            len(batch_summaries) if batch_summaries else 0
+        )
+    else:
+        document_context = app_md.document_markdown
+        app_md.processing_mode = "standard"
+        app_md.document_stats = get_document_stats(app_md.document_markdown)
+        app_md.batch_summaries = None  # No batch summaries for standard mode
+
+    # Load persona-specific prompts from prompts_root
     prompts = prompts_override or load_prompts(settings.app.prompts_root, persona)
 
     # Normalize prompts structure - convert single prompts to subsection format
@@ -538,7 +640,7 @@ def run_underwriting_prompts(
     )
 
     # Load policies and determine context
-    policies = load_policies(settings.app.prompts_root)
+    policies = load_policies(settings.app.prompts_root, persona=app_md.persona)
     policy_context = ""
     
     if policies:
@@ -569,11 +671,23 @@ def run_underwriting_prompts(
             # If no plan name found, provide all as reference
             policy_context = f"\n\n---\n\nAVAILABLE PLANS REFERENCE (Use if plan name matches):\n{json.dumps(policies, indent=2)}\n"
 
-    # NOTE: Underwriting policies are NOT injected during standard extraction/analysis.
-    # Risk analysis with policy citations is a separate operation triggered by the user.
-    # This keeps extraction prompts focused and avoids context bloat.
+    # Load persona-specific policies for claims personas
+    # Claims personas need claims processing rules injected during analysis
+    # Underwriting policies are only injected during explicit risk analysis
+    persona_policies = ""
+    if app_md.persona and app_md.persona in ["life_health_claims", "automotive_claims", "property_casualty_claims"]:
+        persona_policies = load_policies_for_persona_prompts(settings.app.prompts_root, app_md.persona)
+        if persona_policies:
+            logger.info("Loaded %d chars of %s claims policies for prompt injection", 
+                       len(persona_policies), app_md.persona)
+            # Append claims policies to the policy context
+            policy_context += f"\n\n---\n\nCLAIMS PROCESSING POLICIES (Use for claim decisions):\n{persona_policies}\n"
+        else:
+            logger.warning("No claims policies found for persona %s", app_md.persona)
+    else:
+        logger.info("Standard analysis - underwriting policies injected separately during risk analysis")
+    
     underwriting_policies = ""
-    logger.info("Standard analysis - skipping underwriting policy injection")
 
     results: Dict[str, Dict[str, Any]] = {}
 
@@ -585,7 +699,7 @@ def run_underwriting_prompts(
             settings=settings,
             section=section,
             subsections=subs,
-            document_markdown=app_md.document_markdown,
+            document_markdown=document_context,  # Use condensed context for large docs
             subsections_to_run=subsections_to_run,
             max_workers=max_workers_per_section,
             additional_context=policy_context,
@@ -605,7 +719,7 @@ def run_underwriting_prompts(
     app_md.llm_outputs = results
     app_md.status = "completed"
     save_application_metadata(settings.app.storage_root, app_md)
-    logger.info("Underwriting prompts completed for application %s", app_md.id)
+    logger.info("Underwriting prompts completed for application %s (mode: %s)", app_md.id, mode)
     return app_md
 
 

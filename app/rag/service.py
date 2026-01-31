@@ -291,6 +291,8 @@ class RAGService:
         "life_health_claims": "Relevant Claims Processing Policies",
         "automotive_claims": "Relevant Auto Claims Policies",
         "property_casualty_claims": "Relevant Property & Casualty Policies",
+        "mortgage": "Relevant Mortgage Underwriting Policies (OSFI B-20)",
+        "mortgage_underwriting": "Relevant Mortgage Underwriting Policies (OSFI B-20)",
     }
     
     def format_context_for_prompt(

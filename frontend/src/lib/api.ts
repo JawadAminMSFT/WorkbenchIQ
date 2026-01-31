@@ -163,9 +163,13 @@ export async function runUnderwritingAnalysis(
 /**
  * Start full processing (extraction + analysis) in background.
  * Returns immediately. Client should poll getApplication() for status updates.
+ * @param processingMode - 'auto', 'large_document', or 'standard'
  */
-export async function startProcessing(appId: string): Promise<ApplicationMetadata> {
-  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/process`, {
+export async function startProcessing(appId: string, processingMode?: string): Promise<ApplicationMetadata> {
+  const url = processingMode 
+    ? `/api/applications/${appId}/process?processing_mode=${processingMode}`
+    : `/api/applications/${appId}/process`;
+  return apiFetch<ApplicationMetadata>(url, {
     method: 'POST',
   });
 }

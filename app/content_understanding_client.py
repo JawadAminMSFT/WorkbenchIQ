@@ -21,7 +21,7 @@ except ImportError:
 logger = setup_logging()
 
 # Polling timeout in seconds for long-running operations
-POLL_TIMEOUT_SECONDS = 180
+POLL_TIMEOUT_SECONDS = 900
 
 # Cache for Azure AD credential to avoid recreating on every request
 _credential_cache: Optional[Any] = None
@@ -619,13 +619,27 @@ def extract_markdown_from_result(payload: Dict[str, Any]) -> Dict[str, Any]:
                 start_page = content.get("startPageNumber", 1)
                 end_page = content.get("endPageNumber", start_page)
                 
-                # If we have page-level data, split accordingly
+                # If we have page-level data with spans, split markdown by page
                 if pages_data:
                     for page_info in pages_data:
                         page_num = page_info.get("pageNumber", len(pages) + 1)
+                        
+                        # Extract page-specific markdown using spans
+                        page_markdown = ""
+                        spans = page_info.get("spans", [])
+                        if spans:
+                            # Combine all spans for this page
+                            for span in spans:
+                                offset = span.get("offset", 0)
+                                length = span.get("length", 0)
+                                page_markdown += markdown[offset:offset + length]
+                        else:
+                            # No spans available, can't split - use placeholder
+                            page_markdown = f"[Page {page_num} content - see full document]"
+                        
                         pages.append({
                             "page_number": page_num,
-                            "markdown": markdown,  # Full markdown for now
+                            "markdown": page_markdown.strip(),
                             "width": page_info.get("width"),
                             "height": page_info.get("height"),
                         })

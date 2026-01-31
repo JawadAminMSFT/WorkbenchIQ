@@ -35,7 +35,7 @@ async def main():
     parser.add_argument(
         "--policies-path",
         type=str,
-        default="data/automotive-claims-policies.json",
+        default="prompts/automotive-claims-policies.json",
         help="Path to claims policies JSON file",
     )
     parser.add_argument(

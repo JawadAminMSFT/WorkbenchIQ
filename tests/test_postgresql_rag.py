@@ -200,7 +200,7 @@ async def index_policies(conn, openai_client, limit: int = 2):
     print("=" * 60)
     
     # Load policies
-    policies_path = "data/life-health-underwriting-policies.json"
+    policies_path = "prompts/life-health-underwriting-policies.json"
     print(f"⏳ Loading policies from {policies_path}...")
     
     with open(policies_path) as f:
@@ -460,7 +460,7 @@ async def main():
 
         # Step 2: Index policies
         # Also collect test policy IDs for cleanup
-        policies_path = "data/life-health-underwriting-policies.json"
+        policies_path = "prompts/life-health-underwriting-policies.json"
         with open(policies_path) as f:
             data = json.load(f)
         test_policy_ids = [p["id"] for p in data["policies"][:2]]

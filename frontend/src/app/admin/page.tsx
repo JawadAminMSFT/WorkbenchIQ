@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [externalRef, setExternalRef] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [useLargeDocMode, setUseLargeDocMode] = useState<'auto' | 'on' | 'off'>('auto');
   
   // Track which app is being polled to avoid duplicate polling
   const pollingAppIdRef = useRef<string | null>(null);
@@ -123,6 +124,9 @@ export default function AdminPage() {
   
   // Helper to check if automotive claims persona (supports multimodal uploads)
   const isAutomotiveClaimsPersona = currentPersona === 'automotive_claims';
+  
+  // Helper to check if underwriting persona (supports large document mode)
+  const isUnderwritingPersona = currentPersona === 'underwriting';
   
   // Accepted file types based on persona
   const getAcceptedFileTypes = () => {
@@ -418,7 +422,11 @@ export default function AdminPage() {
       setExternalRef('');
       
       // Step 2: Start background processing (extraction + analysis)
-      await startProcessing(app.id);
+      // Map toggle to processing mode value
+      const processingMode = useLargeDocMode === 'on' ? 'large_document' 
+                           : useLargeDocMode === 'off' ? 'standard' 
+                           : undefined; // 'auto' = let backend decide
+      await startProcessing(app.id, processingMode);
       
       // Step 3: Start polling for completion
       pollForProcessingCompletion(app.id);
@@ -920,6 +928,62 @@ export default function AdminPage() {
               disabled={isProcessing}
             />
           </div>
+
+          {/* Large Document Processing Mode - Only for underwriting persona */}
+          {isUnderwritingPersona && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Large Document Mode
+            </label>
+            <div className="flex gap-3">
+              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                useLargeDocMode === 'auto' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
+              }`}>
+                <input
+                  type="radio"
+                  name="largeDocMode"
+                  value="auto"
+                  checked={useLargeDocMode === 'auto'}
+                  onChange={() => setUseLargeDocMode('auto')}
+                  className="sr-only"
+                  disabled={isProcessing}
+                />
+                <span className="text-sm">Auto</span>
+              </label>
+              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                useLargeDocMode === 'on' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
+              }`}>
+                <input
+                  type="radio"
+                  name="largeDocMode"
+                  value="on"
+                  checked={useLargeDocMode === 'on'}
+                  onChange={() => setUseLargeDocMode('on')}
+                  className="sr-only"
+                  disabled={isProcessing}
+                />
+                <span className="text-sm">On</span>
+              </label>
+              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                useLargeDocMode === 'off' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
+              }`}>
+                <input
+                  type="radio"
+                  name="largeDocMode"
+                  value="off"
+                  checked={useLargeDocMode === 'off'}
+                  onChange={() => setUseLargeDocMode('off')}
+                  className="sr-only"
+                  disabled={isProcessing}
+                />
+                <span className="text-sm">Off</span>
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Auto: Uses condensed analysis for documents &gt;1.5MB. On: Always use condensed mode. Off: Always use full document.
+            </p>
+          </div>
+          )}
 
           {/* Submit Button */}
           <button

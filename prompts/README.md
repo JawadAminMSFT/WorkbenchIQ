@@ -10,6 +10,20 @@ Contains the LLM prompts used for document analysis and extraction. These are or
 ### risk-analysis-prompts.json
 Contains prompts specifically for risk analysis operations that apply underwriting policies to extracted application data.
 
+### large-document-prompts.json
+Contains prompts for progressive summarization of large documents (>1.5MB). This includes:
+- **summarize_pages**: Prompt for summarizing individual pages
+- **summarize_batch**: Prompt for batch summarization during progressive processing
+- **consolidation**: Prompt for consolidating batch summaries into final context
+
+Key underwriting priorities embedded in these prompts:
+- Medical history capture with chronological ordering
+- Accurate medical terminology (no hallucinations)
+- Critical information handling (no omissions)
+- Handwriting interpretation
+- Referral and follow-up tracking
+- High-quality summarization without over-condensation
+
 ### life-health-underwriting-policies.json
 Contains the life and health underwriting policy manual with risk assessment guidelines. These policies are used to:
 - Evaluate applicant risk levels based on medical conditions

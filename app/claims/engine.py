@@ -12,7 +12,7 @@ Usage:
     from app.claims.engine import ClaimsPolicyEngine
 
     loader = ClaimsPolicyLoader()
-    loader.load_policies("data/automotive-claims-policies.json")
+    loader.load_policies("prompts/automotive-claims-policies.json")
 
     engine = ClaimsPolicyEngine(loader)
     assessment = engine.evaluate_claim(claim_data)
