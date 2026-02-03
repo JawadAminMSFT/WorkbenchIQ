@@ -272,6 +272,42 @@ def load_application(root: str, app_id: str) -> Optional[ApplicationMetadata]:
         return _dict_to_metadata(data)
 
 
+def delete_application(root: str, app_id: str) -> bool:
+    """Delete an application and all its files.
+    
+    Args:
+        root: Storage root path
+        app_id: Application ID to delete
+        
+    Returns:
+        True if deleted, False if not found
+    """
+    import shutil
+    
+    provider = _get_provider()
+    
+    if provider:
+        # Use storage provider delete if available
+        if hasattr(provider, 'delete_application'):
+            return provider.delete_application(app_id)
+        else:
+            logger.warning("Storage provider does not support delete_application")
+            return False
+    else:
+        # Legacy local storage
+        app_dir = Path(root) / "applications" / app_id
+        if not app_dir.exists():
+            return False
+        
+        try:
+            shutil.rmtree(app_dir)
+            logger.info("Deleted application directory: %s", app_dir)
+            return True
+        except Exception as e:
+            logger.error("Failed to delete application %s: %s", app_id, e)
+            return False
+
+
 def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str, Any]]:
     """Return lightweight list of available applications, optionally filtered by persona."""
     from app.personas import normalize_persona_id

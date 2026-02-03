@@ -579,6 +579,37 @@ async def get_application(app_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/applications/{app_id}")
+async def delete_application_endpoint(app_id: str):
+    """Delete an application and all its associated files.
+    
+    This permanently removes the application, uploaded files, and all
+    processing results. This action cannot be undone.
+    """
+    from app.storage import delete_application
+    
+    try:
+        settings = load_settings()
+        
+        # Check if application exists first
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Delete the application
+        success = delete_application(settings.app.storage_root, app_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete application")
+        
+        logger.info("Deleted application: %s", app_id)
+        return {"message": "Application deleted", "id": app_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to delete application %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/applications/{app_id}/files/{filename:path}")
 async def get_application_file(app_id: str, filename: str):
     """Serve a file from an application's files directory."""
