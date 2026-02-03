@@ -13,6 +13,7 @@ import type { ApplicationListItem, ApplicationMetadata } from '@/lib/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import PersonaSelector from './PersonaSelector';
+import GlossaryDropdown from './GlossaryDropdown';
 import { usePersona } from '@/lib/PersonaContext';
 
 interface TopNavProps {
@@ -134,7 +135,10 @@ export default function TopNav({
         </div>
 
         {/* Right Side Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Glossary Dropdown */}
+          <GlossaryDropdown />
+          
           <Link
             href="/admin"
             className="flex items-center gap-2 px-3 py-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"

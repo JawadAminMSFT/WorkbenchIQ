@@ -34,6 +34,7 @@ from .storage import (
 from .personas import get_persona_config
 from .utils import setup_logging
 from .underwriting_policies import format_all_policies_for_prompt, format_policies_for_persona
+from .glossary import format_glossary_for_prompt
 
 logger = setup_logging()
 
@@ -124,6 +125,35 @@ def load_policies_for_persona_prompts(prompts_root: str, persona: str) -> str:
         return format_policies_for_persona(prompts_root, persona)
     except Exception as e:
         logger.warning(f"Failed to load {persona} policies: {e}")
+        return ""
+
+
+def load_glossary_for_prompt(prompts_root: str, persona: str, max_terms: int = 100) -> str:
+    """Load and format persona-specific glossary for prompt injection.
+    
+    This provides domain terminology reference to the LLM to help it
+    understand medical abbreviations, financial terms, and industry jargon.
+    
+    Args:
+        prompts_root: Path to the prompts directory
+        persona: The persona type (underwriting, life_health_claims, etc.)
+        max_terms: Maximum number of terms to include
+        
+    Returns:
+        Formatted string of glossary terms suitable for prompt injection
+    """
+    try:
+        glossary_text = format_glossary_for_prompt(
+            prompts_root, 
+            persona, 
+            max_terms=max_terms,
+            format_type="markdown"
+        )
+        if glossary_text:
+            logger.info("Loaded glossary for %s: %d chars", persona, len(glossary_text))
+        return glossary_text
+    except Exception as e:
+        logger.warning(f"Failed to load glossary for {persona}: {e}")
         return ""
 
 
@@ -687,6 +717,15 @@ def run_underwriting_prompts(
     else:
         logger.info("Standard analysis - underwriting policies injected separately during risk analysis")
     
+    # Load glossary for the current persona to help LLM understand domain terminology
+    glossary_context = ""
+    if app_md.persona:
+        glossary_text = load_glossary_for_prompt(settings.app.prompts_root, app_md.persona, max_terms=100)
+        if glossary_text:
+            glossary_context = f"\n\n---\n\n{glossary_text}\n"
+            policy_context += glossary_context
+            logger.info("Injected glossary for persona %s", app_md.persona)
+    
     underwriting_policies = ""
 
     results: Dict[str, Dict[str, Any]] = {}
@@ -757,6 +796,12 @@ def run_risk_analysis(
     underwriting_policies = load_underwriting_policies(settings.app.prompts_root)
     if not underwriting_policies:
         raise ValueError("No underwriting policies found")
+    
+    # Load glossary for underwriting persona to help LLM understand medical terminology
+    glossary_text = load_glossary_for_prompt(settings.app.prompts_root, "underwriting", max_terms=100)
+    if glossary_text:
+        underwriting_policies = f"{glossary_text}\n\n---\n\n{underwriting_policies}"
+        logger.info("Injected glossary into risk analysis prompt")
     
     logger.info("Running risk analysis for application %s with %d chars of policies", 
                 app_md.id, len(underwriting_policies))
