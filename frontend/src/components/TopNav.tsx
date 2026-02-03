@@ -75,18 +75,18 @@ export default function TopNav({
             <div className="relative">
               <button
                 onClick={() => setAppDropdownOpen(!appDropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
               >
-                <span className="text-sm font-medium text-slate-700">
+                <span className="text-slate-700">
                   {selectedApplication?.summary_title || selectedApplication?.id?.substring(0, 8) || 'Select Application'}
                 </span>
-                <ChevronDown className={clsx('w-4 h-4 text-slate-500 transition-transform', appDropdownOpen && 'rotate-180')} />
+                <ChevronDown className={clsx('w-4 h-4 text-slate-400 transition-transform', appDropdownOpen && 'rotate-180')} />
               </button>
 
               {appDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setAppDropdownOpen(false)} />
-                  <div className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-slate-200 z-20 max-h-96 overflow-y-auto flex flex-col">
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-slate-200 z-20 max-h-96 overflow-y-auto flex flex-col">
                     <div className="py-1 overflow-y-auto">
                       {applications.map((app) => (
                         <button
@@ -141,10 +141,10 @@ export default function TopNav({
           
           <Link
             href="/admin"
-            className="flex items-center gap-2 px-3 py-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
           >
             <Settings className="w-4 h-4" />
-            <span className="text-sm">Admin</span>
+            <span>Admin</span>
           </Link>
         </div>
       </div>

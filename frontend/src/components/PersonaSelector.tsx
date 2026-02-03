@@ -95,16 +95,16 @@ export default function PersonaSelector() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Selector Button - matches Application Selector styling */}
+      {/* Selector Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+        className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
       >
-        <IconComponent className="w-4 h-4 text-slate-600" />
-        <span className="text-sm font-medium text-slate-700">{currentUILabel}</span>
+        <IconComponent className="w-4 h-4 text-indigo-600" />
+        <span className="text-slate-700">{currentUILabel}</span>
         <ChevronDown 
           className={clsx(
-            'w-4 h-4 text-slate-500 transition-transform',
+            'w-4 h-4 text-slate-400 transition-transform',
             isOpen && 'rotate-180'
           )} 
         />
@@ -114,7 +114,7 @@ export default function PersonaSelector() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-20">
+          <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-20">
             {visibleGroups.map((group, groupIndex) => {
               const GroupIcon = group.icon;
               return (
