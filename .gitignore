@@ -6,7 +6,6 @@
 # Project-specific
 # ============================================================================
 .specify/
-.github/
 
 # ============================================================================
 # Python
@@ -371,3 +370,6 @@ content-understanding-samples/
 
 # Include frontend lib folder (not Python's lib/)
 !frontend/src/lib/
+
+# Include infra bash library folder
+!infra/lib/

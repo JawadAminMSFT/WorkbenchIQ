@@ -293,7 +293,23 @@ npm install
 cd ..
 ```
 
-### 2. Configure Azure Services
+### 2. Deploy Azure Infrastructure (Optional)
+
+If you need to deploy the Azure AI Foundry infrastructure:
+
+```bash
+# Using bash (Linux/macOS)
+cd infra
+./deploy.sh --location westus
+
+# Using PowerShell (Windows)
+cd infra
+.\deploy.ps1 -Location westus
+```
+
+See [infra/README.md](infra/README.md) for detailed deployment instructions.
+
+### 3. Configure Azure Services
 
 Create a `.env` file in the project root:
 
@@ -321,7 +337,7 @@ AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4-1
 | **Azure AD** (Recommended) | Production, CI/CD | Set `AZURE_CONTENT_UNDERSTANDING_USE_AZURE_AD=true` and run `az login` |
 | **API Key** | Local development | Set `USE_AZURE_AD=false` and provide `AZURE_CONTENT_UNDERSTANDING_API_KEY` |
 
-### 3. Run the Application
+### 4. Run the Application
 
 **Option 1: Run both servers together**
 
@@ -344,7 +360,7 @@ cd frontend
 npm run dev
 ```
 
-### 4. Access the Application
+### 5. Access the Application
 
 | Service | URL |
 |---------|-----|
