@@ -23,6 +23,7 @@ interface TopNavProps {
   activeView: 'overview' | 'timeline' | 'documents' | 'source';
   onSelectApp: (appId: string) => void;
   onChangeView: (view: 'overview' | 'timeline' | 'documents' | 'source') => void;
+  showWorkbenchControls?: boolean; // Show application selector and glossary (only in workbench view)
 }
 
 export default function TopNav({
@@ -32,6 +33,7 @@ export default function TopNav({
   activeView,
   onSelectApp,
   onChangeView,
+  showWorkbenchControls = false,
 }: TopNavProps) {
   const [appDropdownOpen, setAppDropdownOpen] = useState(false);
   const { personaConfig } = usePersona();
@@ -70,8 +72,8 @@ export default function TopNav({
           {/* Persona Selector */}
           <PersonaSelector />
 
-          {/* Application Selector */}
-          {applications.length > 0 && (
+          {/* Application Selector - Only in workbench view */}
+          {showWorkbenchControls && applications.length > 0 && (
             <div className="relative">
               <button
                 onClick={() => setAppDropdownOpen(!appDropdownOpen)}
@@ -136,8 +138,8 @@ export default function TopNav({
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-3">
-          {/* Glossary Dropdown */}
-          <GlossaryDropdown />
+          {/* Glossary Dropdown - Only in workbench view */}
+          {showWorkbenchControls && <GlossaryDropdown />}
           
           <Link
             href="/admin"

@@ -192,28 +192,28 @@ export default function AdminPage() {
         if (status.processing_status === 'extracting') {
           setProcessing({
             step: 'extracting',
-            message: 'Running document extraction...',
+            message: 'Data Agent extracting documents...',
             appId,
           });
           setTimeout(poll, pollInterval);
         } else if (status.processing_status === 'analyzing') {
           setProcessing({
             step: 'analyzing',
-            message: 'Running analysis...',
+            message: 'Risk Agent analyzing case...',
             appId,
           });
           setTimeout(poll, pollInterval);
         } else if (status.processing_status === 'error') {
           setProcessing({
             step: 'error',
-            message: status.processing_error || 'Processing failed',
+            message: status.processing_error || 'Agent encountered an error',
             appId,
           });
           pollingAppIdRef.current = null;
           await loadApplications();
         } else if (!status.processing_status) {
           // Complete
-          setProcessing({ step: 'complete', message: 'Processing complete!', appId });
+          setProcessing({ step: 'complete', message: 'All agents complete!', appId });
           pollingAppIdRef.current = null;
           await loadApplications();
           setTimeout(() => {
@@ -229,7 +229,7 @@ export default function AdminPage() {
     // Set initial status and start polling
     setProcessing({
       step: 'extracting',
-      message: 'Resuming progress tracking...',
+      message: 'Reconnecting to agents...',
       appId,
     });
     setTimeout(poll, pollInterval);
@@ -447,21 +447,21 @@ export default function AdminPage() {
         // Full reprocess: extraction + analysis
         setProcessing({
           step: 'extracting',
-          message: 'Starting full reprocessing...',
+          message: 'Data Agent starting extraction...',
           appId,
         });
         await startProcessing(appId); // This does both extract + analyze
       } else if (step === 'prompts-only') {
         setProcessing({
           step: 'analyzing',
-          message: sections?.length ? `Re-running prompts for: ${sections.join(', ')}...` : 'Re-running all prompts...',
+          message: sections?.length ? `Analysis Agent running: ${sections.join(', ')}...` : 'Analysis Agents running all skills...',
           appId,
         });
         await runUnderwritingAnalysis(appId, sections, true); // background=true
       } else {
         setProcessing({
           step: 'analyzing',
-          message: 'Starting analysis...',
+          message: 'Risk Agent starting analysis...',
           appId,
         });
         await runUnderwritingAnalysis(appId, undefined, true); // background=true
@@ -930,58 +930,60 @@ export default function AdminPage() {
             />
           </div>
 
-          {/* Large Document Processing Mode - Only for underwriting persona */}
+          {/* Condense Context Mode - Only for underwriting persona */}
           {isUnderwritingPersona && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Large Document Mode
-            </label>
-            <div className="flex gap-3">
-              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                useLargeDocMode === 'auto' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
-              }`}>
-                <input
-                  type="radio"
-                  name="largeDocMode"
-                  value="auto"
-                  checked={useLargeDocMode === 'auto'}
-                  onChange={() => setUseLargeDocMode('auto')}
-                  className="sr-only"
-                  disabled={isProcessing}
-                />
-                <span className="text-sm">Auto</span>
-              </label>
-              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                useLargeDocMode === 'on' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
-              }`}>
-                <input
-                  type="radio"
-                  name="largeDocMode"
-                  value="on"
-                  checked={useLargeDocMode === 'on'}
-                  onChange={() => setUseLargeDocMode('on')}
-                  className="sr-only"
-                  disabled={isProcessing}
-                />
-                <span className="text-sm">On</span>
-              </label>
-              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                useLargeDocMode === 'off' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 hover:border-slate-400'
-              }`}>
-                <input
-                  type="radio"
-                  name="largeDocMode"
-                  value="off"
-                  checked={useLargeDocMode === 'off'}
-                  onChange={() => setUseLargeDocMode('off')}
-                  className="sr-only"
-                  disabled={isProcessing}
-                />
-                <span className="text-sm">Off</span>
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <label className="text-sm font-medium text-slate-700">
+                Condense Context
               </label>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Auto: Uses condensed analysis for documents &gt;1.5MB. On: Always use condensed mode. Off: Always use full document.
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('auto')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'auto' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Auto
+                {useLargeDocMode === 'auto' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('on')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'on' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Always
+                {useLargeDocMode === 'on' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('off')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'off' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Never
+                {useLargeDocMode === 'off' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Summarizes large documents to fit within AI context limits. Auto enables for docs &gt;1.5MB.
             </p>
           </div>
           )}
@@ -1037,8 +1039,8 @@ export default function AdminPage() {
                         {app.processing_status ? (
                           <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 flex items-center gap-1">
                             <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                            {app.processing_status === 'extracting' ? 'Extracting...' : 
-                             app.processing_status === 'analyzing' ? 'Analyzing...' : 
+                            {app.processing_status === 'extracting' ? 'Data Agent...' : 
+                             app.processing_status === 'analyzing' ? 'Risk Agent...' : 
                              app.processing_status}
                           </span>
                         ) : (
@@ -1199,12 +1201,12 @@ export default function AdminPage() {
   // Render Prompts Tab content
   const renderPromptsTab = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      {/* Prompt Selector */}
+      {/* Skill Selector */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-semibold mb-4 text-slate-900">Prompt Catalog</h2>
+        <h2 className="text-xl font-semibold mb-4 text-slate-900">Agent Skills</h2>
         
         {promptsLoading ? (
-          <div className="text-center py-8 text-slate-500">Loading prompts...</div>
+          <div className="text-center py-8 text-slate-500">Loading agent skills...</div>
         ) : promptsData ? (
           <div className="space-y-4">
             {/* Section Selector */}
@@ -2406,7 +2408,7 @@ export default function AdminPage() {
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               }`}
             >
-              Prompt Catalog
+              Agent Skills
             </button>
             <button
               onClick={() => setActiveTab('policies')}
