@@ -37,10 +37,11 @@ import {
 import type { ApplicationListItem, PromptsData, AnalyzerStatus, AnalyzerInfo, FieldSchema, UnderwritingPolicy, PolicyCriteriaItem } from '@/lib/types';
 import type { IndexStats } from '@/lib/api';
 import PersonaSelector from '@/components/PersonaSelector';
+import GlossaryManager from '@/components/GlossaryManager';
 import { usePersona } from '@/lib/PersonaContext';
 
 type ProcessingStep = 'idle' | 'uploading' | 'extracting' | 'analyzing' | 'complete' | 'error';
-type AdminTab = 'documents' | 'prompts' | 'policies' | 'analyzer';
+type AdminTab = 'documents' | 'prompts' | 'policies' | 'analyzer' | 'glossary';
 
 interface ProcessingState {
   step: ProcessingStep;
@@ -2427,6 +2428,16 @@ export default function AdminPage() {
             >
               Analyzer Management
             </button>
+            <button
+              onClick={() => setActiveTab('glossary')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'glossary'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              Glossary
+            </button>
           </nav>
         </div>
       </div>
@@ -2436,6 +2447,12 @@ export default function AdminPage() {
         {activeTab === 'prompts' && renderPromptsTab()}
         {activeTab === 'policies' && renderPoliciesTab()}
         {activeTab === 'analyzer' && renderAnalyzerTab()}
+        {activeTab === 'glossary' && (
+          <GlossaryManager 
+            persona={currentPersona} 
+            personaName={personaConfig.name} 
+          />
+        )}
       </main>
     </div>
   );

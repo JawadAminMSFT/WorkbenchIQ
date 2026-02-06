@@ -1,0 +1,475 @@
+{
+  "version": "1.0",
+  "effective_date": "2026-02-03",
+  "last_updated": "2026-02-03",
+  "description": "WorkbenchIQ Persona Glossaries - Domain-specific terminology for each industry persona",
+  "personas": {
+    "underwriting": {
+      "name": "Life & Health Underwriting",
+      "description": "Medical and insurance terminology for life/health underwriting",
+      "categories": [
+        {
+          "id": "general",
+          "name": "General",
+          "terms": [
+            {"abbreviation": "Hx", "meaning": "History", "context": "Medical context"},
+            {"abbreviation": "PMHx", "meaning": "Past medical history", "context": "Patient's prior medical conditions"},
+            {"abbreviation": "FHx", "meaning": "Family history", "context": "Medical history of patient's relatives"},
+            {"abbreviation": "SHx", "meaning": "Social history", "context": "Lifestyle factors - occupation, habits, living situation"},
+            {"abbreviation": "ROS", "meaning": "Review of systems", "context": "Systematic review of body systems"},
+            {"abbreviation": "PE", "meaning": "Physical exam", "context": "Clinical examination findings"},
+            {"abbreviation": "CC", "meaning": "Chief complaint", "context": "Primary reason for visit"},
+            {"abbreviation": "Dx", "meaning": "Diagnosis", "context": "Medical diagnosis"},
+            {"abbreviation": "Tx", "meaning": "Treatment", "context": "Medical treatment plan"},
+            {"abbreviation": "Rx", "meaning": "Prescription", "context": "Medication prescribed"},
+            {"abbreviation": "Sx", "meaning": "Symptoms", "context": "Patient-reported symptoms"},
+            {"abbreviation": "FU", "meaning": "Follow-up", "context": "Follow-up appointment or care"},
+            {"abbreviation": "F/U", "meaning": "Follow-up", "context": "Follow-up appointment or care"},
+            {"abbreviation": "PRN", "meaning": "As needed", "context": "Pro re nata - medication taken when necessary"},
+            {"abbreviation": "WNL", "meaning": "Within normal limits", "context": "Test results or exam findings normal"},
+            {"abbreviation": "NAD", "meaning": "No acute distress", "context": "Patient appears comfortable"},
+            {"abbreviation": "r/o", "meaning": "Rule out", "context": "Exclude a diagnosis"},
+            {"abbreviation": "s/p", "meaning": "Status post", "context": "After a procedure or event"}
+          ]
+        },
+        {
+          "id": "vitals",
+          "name": "Vitals",
+          "terms": [
+            {"abbreviation": "BP", "meaning": "Blood pressure", "context": "Measured in mmHg"},
+            {"abbreviation": "HR", "meaning": "Heart rate", "context": "Beats per minute"},
+            {"abbreviation": "RR", "meaning": "Respiratory rate", "context": "Breaths per minute"},
+            {"abbreviation": "BMI", "meaning": "Body mass index", "context": "Weight/height ratio"},
+            {"abbreviation": "SpO2", "meaning": "Oxygen saturation", "context": "Peripheral oxygen saturation percentage"}
+          ]
+        },
+        {
+          "id": "cardiac",
+          "name": "Cardiac",
+          "terms": [
+            {"abbreviation": "HTN", "meaning": "Hypertension", "context": "High blood pressure"},
+            {"abbreviation": "HLD", "meaning": "Hyperlipidemia", "context": "High cholesterol/lipids"},
+            {"abbreviation": "CAD", "meaning": "Coronary artery disease", "context": "Atherosclerosis of coronary arteries"},
+            {"abbreviation": "MI", "meaning": "Myocardial infarction", "context": "Heart attack"},
+            {"abbreviation": "CHF", "meaning": "Congestive heart failure", "context": "Heart failure with congestion"},
+            {"abbreviation": "AF", "meaning": "Atrial fibrillation", "context": "Irregular heart rhythm"},
+            {"abbreviation": "Afib", "meaning": "Atrial fibrillation", "context": "Irregular heart rhythm"},
+            {"abbreviation": "EKG", "meaning": "Electrocardiogram", "context": "Heart electrical activity test"},
+            {"abbreviation": "ECG", "meaning": "Electrocardiogram", "context": "Heart electrical activity test"},
+            {"abbreviation": "Echo", "meaning": "Echocardiogram", "context": "Heart ultrasound"},
+            {"abbreviation": "CABG", "meaning": "Coronary artery bypass graft", "context": "Heart bypass surgery"},
+            {"abbreviation": "SOB", "meaning": "Shortness of breath", "context": "Dyspnea"}
+          ]
+        },
+        {
+          "id": "endocrine",
+          "name": "Endocrine",
+          "terms": [
+            {"abbreviation": "DM", "meaning": "Diabetes mellitus", "context": "Diabetes"},
+            {"abbreviation": "T1DM", "meaning": "Type 1 diabetes mellitus", "context": "Insulin-dependent diabetes"},
+            {"abbreviation": "T2DM", "meaning": "Type 2 diabetes mellitus", "context": "Non-insulin-dependent diabetes"},
+            {"abbreviation": "A1C", "meaning": "Hemoglobin A1c", "context": "3-month average blood sugar"},
+            {"abbreviation": "HbA1c", "meaning": "Hemoglobin A1c", "context": "3-month average blood sugar"},
+            {"abbreviation": "TSH", "meaning": "Thyroid-stimulating hormone", "context": "Thyroid function test"}
+          ]
+        },
+        {
+          "id": "respiratory",
+          "name": "Respiratory",
+          "terms": [
+            {"abbreviation": "COPD", "meaning": "Chronic obstructive pulmonary disease", "context": "Chronic lung disease"},
+            {"abbreviation": "OSA", "meaning": "Obstructive sleep apnea", "context": "Sleep-disordered breathing"},
+            {"abbreviation": "CPAP", "meaning": "Continuous positive airway pressure", "context": "Sleep apnea treatment device"},
+            {"abbreviation": "PFT", "meaning": "Pulmonary function test", "context": "Lung capacity testing"}
+          ]
+        },
+        {
+          "id": "neuro_mh",
+          "name": "Neuro / Mental Health",
+          "terms": [
+            {"abbreviation": "CVA", "meaning": "Cerebrovascular accident (Stroke)", "context": "Brain blood vessel event"},
+            {"abbreviation": "TIA", "meaning": "Transient ischemic attack", "context": "Mini-stroke"},
+            {"abbreviation": "Sz", "meaning": "Seizure", "context": "Epileptic event"},
+            {"abbreviation": "MDD", "meaning": "Major depressive disorder", "context": "Clinical depression"},
+            {"abbreviation": "GAD", "meaning": "Generalized anxiety disorder", "context": "Chronic anxiety condition"},
+            {"abbreviation": "PTSD", "meaning": "Post-traumatic stress disorder", "context": "Trauma-related disorder"},
+            {"abbreviation": "SI", "meaning": "Suicidal ideation", "context": "Thoughts of self-harm"},
+            {"abbreviation": "HI", "meaning": "Homicidal ideation", "context": "Thoughts of harming others"}
+          ]
+        },
+        {
+          "id": "msk",
+          "name": "Musculoskeletal",
+          "terms": [
+            {"abbreviation": "OA", "meaning": "Osteoarthritis", "context": "Degenerative joint disease"},
+            {"abbreviation": "RA", "meaning": "Rheumatoid arthritis", "context": "Autoimmune joint disease"},
+            {"abbreviation": "DJD", "meaning": "Degenerative joint disease", "context": "Osteoarthritis"},
+            {"abbreviation": "LBP", "meaning": "Low back pain", "context": "Lumbar spine pain"},
+            {"abbreviation": "ROM", "meaning": "Range of motion", "context": "Joint mobility measurement"}
+          ]
+        },
+        {
+          "id": "gi_renal",
+          "name": "GI / Renal",
+          "terms": [
+            {"abbreviation": "GERD", "meaning": "Gastroesophageal reflux disease", "context": "Acid reflux"},
+            {"abbreviation": "IBS", "meaning": "Irritable bowel syndrome", "context": "Functional GI disorder"},
+            {"abbreviation": "NAFLD", "meaning": "Non-alcoholic fatty liver disease", "context": "Fatty liver without alcohol"},
+            {"abbreviation": "LFTs", "meaning": "Liver function tests", "context": "Hepatic panel"},
+            {"abbreviation": "Cr", "meaning": "Creatinine", "context": "Kidney function marker"},
+            {"abbreviation": "eGFR", "meaning": "Estimated glomerular filtration rate", "context": "Kidney function measure"}
+          ]
+        },
+        {
+          "id": "oncology",
+          "name": "Oncology",
+          "terms": [
+            {"abbreviation": "CA", "meaning": "Cancer", "context": "Malignancy"},
+            {"abbreviation": "bx", "meaning": "Biopsy", "context": "Tissue sample for diagnosis"},
+            {"abbreviation": "Mets", "meaning": "Metastases", "context": "Cancer spread to other sites"},
+            {"abbreviation": "NED", "meaning": "No evidence of disease", "context": "Cancer remission status"},
+            {"abbreviation": "Stage I-IV", "meaning": "Cancer staging", "context": "Extent of cancer spread"}
+          ]
+        },
+        {
+          "id": "meds",
+          "name": "Medications",
+          "terms": [
+            {"abbreviation": "ACEi", "meaning": "ACE inhibitor", "context": "Blood pressure medication"},
+            {"abbreviation": "ARB", "meaning": "Angiotensin receptor blocker", "context": "Blood pressure medication"},
+            {"abbreviation": "BB", "meaning": "Beta blocker", "context": "Heart rate/BP medication"},
+            {"abbreviation": "CCB", "meaning": "Calcium channel blocker", "context": "Blood pressure medication"},
+            {"abbreviation": "SSRI", "meaning": "Selective serotonin reuptake inhibitor", "context": "Antidepressant"},
+            {"abbreviation": "NSAID", "meaning": "Non-steroidal anti-inflammatory drug", "context": "Pain/inflammation medication"}
+          ]
+        },
+        {
+          "id": "social",
+          "name": "Social History",
+          "terms": [
+            {"abbreviation": "ETOH", "meaning": "Alcohol", "context": "Ethanol consumption"},
+            {"abbreviation": "tob", "meaning": "Tobacco", "context": "Tobacco use"},
+            {"abbreviation": "ppd", "meaning": "Packs per day", "context": "Cigarette consumption measure"},
+            {"abbreviation": "denies", "meaning": "Patient denies", "context": "Patient states they do not have"}
+          ]
+        }
+      ]
+    },
+    "life_health_claims": {
+      "name": "Life & Health Claims",
+      "description": "Medical and claims terminology for life/health claims processing",
+      "categories": [
+        {
+          "id": "general",
+          "name": "General",
+          "terms": [
+            {"abbreviation": "Hx", "meaning": "History", "context": "Medical context"},
+            {"abbreviation": "PMHx", "meaning": "Past medical history", "context": "Patient's prior medical conditions"},
+            {"abbreviation": "FHx", "meaning": "Family history", "context": "Medical history of patient's relatives"},
+            {"abbreviation": "SHx", "meaning": "Social history", "context": "Lifestyle factors"},
+            {"abbreviation": "ROS", "meaning": "Review of systems", "context": "Systematic review of body systems"},
+            {"abbreviation": "PE", "meaning": "Physical exam", "context": "Clinical examination findings"},
+            {"abbreviation": "CC", "meaning": "Chief complaint", "context": "Primary reason for visit"},
+            {"abbreviation": "Dx", "meaning": "Diagnosis", "context": "Medical diagnosis"},
+            {"abbreviation": "Tx", "meaning": "Treatment", "context": "Medical treatment plan"},
+            {"abbreviation": "Rx", "meaning": "Prescription", "context": "Medication prescribed"},
+            {"abbreviation": "Sx", "meaning": "Symptoms", "context": "Patient-reported symptoms"},
+            {"abbreviation": "FU", "meaning": "Follow-up", "context": "Follow-up appointment"},
+            {"abbreviation": "PRN", "meaning": "As needed", "context": "Pro re nata"},
+            {"abbreviation": "WNL", "meaning": "Within normal limits", "context": "Normal findings"},
+            {"abbreviation": "NAD", "meaning": "No acute distress", "context": "Patient appears comfortable"},
+            {"abbreviation": "r/o", "meaning": "Rule out", "context": "Exclude a diagnosis"},
+            {"abbreviation": "s/p", "meaning": "Status post", "context": "After a procedure"}
+          ]
+        },
+        {
+          "id": "vitals",
+          "name": "Vitals",
+          "terms": [
+            {"abbreviation": "BP", "meaning": "Blood pressure", "context": "Measured in mmHg"},
+            {"abbreviation": "HR", "meaning": "Heart rate", "context": "Beats per minute"},
+            {"abbreviation": "RR", "meaning": "Respiratory rate", "context": "Breaths per minute"},
+            {"abbreviation": "BMI", "meaning": "Body mass index", "context": "Weight/height ratio"},
+            {"abbreviation": "SpO2", "meaning": "Oxygen saturation", "context": "Peripheral oxygen saturation"}
+          ]
+        },
+        {
+          "id": "cardiac",
+          "name": "Cardiac",
+          "terms": [
+            {"abbreviation": "HTN", "meaning": "Hypertension", "context": "High blood pressure"},
+            {"abbreviation": "HLD", "meaning": "Hyperlipidemia", "context": "High cholesterol"},
+            {"abbreviation": "CAD", "meaning": "Coronary artery disease", "context": "Heart disease"},
+            {"abbreviation": "MI", "meaning": "Myocardial infarction", "context": "Heart attack"},
+            {"abbreviation": "CHF", "meaning": "Congestive heart failure", "context": "Heart failure"},
+            {"abbreviation": "AF", "meaning": "Atrial fibrillation", "context": "Irregular heart rhythm"},
+            {"abbreviation": "EKG", "meaning": "Electrocardiogram", "context": "Heart test"},
+            {"abbreviation": "Echo", "meaning": "Echocardiogram", "context": "Heart ultrasound"},
+            {"abbreviation": "CABG", "meaning": "Coronary artery bypass graft", "context": "Heart surgery"},
+            {"abbreviation": "SOB", "meaning": "Shortness of breath", "context": "Dyspnea"}
+          ]
+        },
+        {
+          "id": "endocrine",
+          "name": "Endocrine",
+          "terms": [
+            {"abbreviation": "DM", "meaning": "Diabetes mellitus", "context": "Diabetes"},
+            {"abbreviation": "T1DM", "meaning": "Type 1 diabetes mellitus", "context": "Insulin-dependent"},
+            {"abbreviation": "T2DM", "meaning": "Type 2 diabetes mellitus", "context": "Non-insulin-dependent"},
+            {"abbreviation": "A1C", "meaning": "Hemoglobin A1c", "context": "Blood sugar average"},
+            {"abbreviation": "TSH", "meaning": "Thyroid-stimulating hormone", "context": "Thyroid test"}
+          ]
+        },
+        {
+          "id": "claims",
+          "name": "Claims Processing",
+          "terms": [
+            {"abbreviation": "EOB", "meaning": "Explanation of Benefits", "context": "Insurance statement"},
+            {"abbreviation": "COB", "meaning": "Coordination of Benefits", "context": "Multiple insurance coordination"},
+            {"abbreviation": "PA", "meaning": "Prior Authorization", "context": "Pre-approval required"},
+            {"abbreviation": "ADL", "meaning": "Activities of Daily Living", "context": "Functional capacity"},
+            {"abbreviation": "LTD", "meaning": "Long-term Disability", "context": "Extended disability coverage"},
+            {"abbreviation": "STD", "meaning": "Short-term Disability", "context": "Temporary disability coverage"},
+            {"abbreviation": "DOL", "meaning": "Date of Loss", "context": "When incident occurred"},
+            {"abbreviation": "DOS", "meaning": "Date of Service", "context": "When treatment provided"}
+          ]
+        }
+      ]
+    },
+    "mortgage": {
+      "name": "Mortgage Underwriting",
+      "description": "Financial and regulatory terminology for Canadian mortgage underwriting",
+      "categories": [
+        {
+          "id": "regulatory",
+          "name": "Regulatory",
+          "terms": [
+            {"abbreviation": "OSFI", "meaning": "Office of the Superintendent of Financial Institutions", "context": "Canadian federal financial regulator"},
+            {"abbreviation": "B-20", "meaning": "OSFI Guideline B-20", "context": "Residential Mortgage Underwriting Practices and Procedures"},
+            {"abbreviation": "CMHC", "meaning": "Canada Mortgage and Housing Corporation", "context": "Federal housing agency and mortgage insurer"},
+            {"abbreviation": "FINTRAC", "meaning": "Financial Transactions and Reports Analysis Centre", "context": "Anti-money laundering regulator"},
+            {"abbreviation": "AML", "meaning": "Anti-Money Laundering", "context": "Financial crime prevention"},
+            {"abbreviation": "KYC", "meaning": "Know Your Customer", "context": "Customer verification requirements"},
+            {"abbreviation": "FCAC", "meaning": "Financial Consumer Agency of Canada", "context": "Consumer protection regulator"},
+            {"abbreviation": "PIPEDA", "meaning": "Personal Information Protection and Electronic Documents Act", "context": "Privacy legislation"}
+          ]
+        },
+        {
+          "id": "ratios",
+          "name": "Ratios & Calculations",
+          "terms": [
+            {"abbreviation": "GDS", "meaning": "Gross Debt Service (ratio)", "context": "Housing costs / gross income - max 39%"},
+            {"abbreviation": "TDS", "meaning": "Total Debt Service (ratio)", "context": "All debts / gross income - max 44%"},
+            {"abbreviation": "LTV", "meaning": "Loan-to-Value (ratio)", "context": "Mortgage amount / property value"},
+            {"abbreviation": "PITH", "meaning": "Principal, Interest, Taxes, Heating", "context": "Monthly housing costs"},
+            {"abbreviation": "MQR", "meaning": "Mortgage Qualifying Rate", "context": "Stress test rate - higher of contract+2% or floor"},
+            {"abbreviation": "DSR", "meaning": "Debt Service Ratio", "context": "General term for GDS/TDS"},
+            {"abbreviation": "PTI", "meaning": "Payment-to-Income", "context": "Alternative debt ratio measure"},
+            {"abbreviation": "DTI", "meaning": "Debt-to-Income", "context": "Total debt relative to income"}
+          ]
+        },
+        {
+          "id": "income",
+          "name": "Income & Tax",
+          "terms": [
+            {"abbreviation": "NOA", "meaning": "Notice of Assessment", "context": "CRA tax assessment document"},
+            {"abbreviation": "T4", "meaning": "Statement of Remuneration Paid", "context": "Employment income slip"},
+            {"abbreviation": "T1", "meaning": "Individual Income Tax Return", "context": "Personal tax return"},
+            {"abbreviation": "T2", "meaning": "Corporate Income Tax Return", "context": "Business tax return"},
+            {"abbreviation": "T4A", "meaning": "Statement of Pension, Retirement, Annuity", "context": "Other income slip"},
+            {"abbreviation": "YTD", "meaning": "Year-to-Date", "context": "Cumulative from Jan 1"},
+            {"abbreviation": "LOE", "meaning": "Letter of Employment", "context": "Employment verification letter"},
+            {"abbreviation": "POI", "meaning": "Proof of Income", "context": "Income documentation"}
+          ]
+        },
+        {
+          "id": "savings",
+          "name": "Savings & Investments",
+          "terms": [
+            {"abbreviation": "GIC", "meaning": "Guaranteed Investment Certificate", "context": "Fixed-term deposit"},
+            {"abbreviation": "RRSP", "meaning": "Registered Retirement Savings Plan", "context": "Tax-deferred retirement account"},
+            {"abbreviation": "TFSA", "meaning": "Tax-Free Savings Account", "context": "Tax-free investment account"},
+            {"abbreviation": "FHSA", "meaning": "First Home Savings Account", "context": "First-time buyer savings account"},
+            {"abbreviation": "HBP", "meaning": "Home Buyers' Plan", "context": "RRSP withdrawal for home purchase"},
+            {"abbreviation": "POF", "meaning": "Proof of Funds", "context": "Documentation of available funds"},
+            {"abbreviation": "SOF", "meaning": "Source of Funds", "context": "Origin of down payment funds"}
+          ]
+        },
+        {
+          "id": "property",
+          "name": "Property",
+          "terms": [
+            {"abbreviation": "APS", "meaning": "Agreement of Purchase and Sale", "context": "Property purchase contract"},
+            {"abbreviation": "MLS", "meaning": "Multiple Listing Service", "context": "Real estate listing system"},
+            {"abbreviation": "GFA", "meaning": "Gross Floor Area", "context": "Total building area"},
+            {"abbreviation": "SFH", "meaning": "Single Family Home", "context": "Detached house"},
+            {"abbreviation": "SFD", "meaning": "Single Family Dwelling", "context": "Detached house"},
+            {"abbreviation": "PUD", "meaning": "Planned Unit Development", "context": "Mixed-use development"},
+            {"abbreviation": "ARV", "meaning": "After Repair Value", "context": "Value after renovations"},
+            {"abbreviation": "BPO", "meaning": "Broker Price Opinion", "context": "Real estate valuation"},
+            {"abbreviation": "CMA", "meaning": "Comparative Market Analysis", "context": "Property value estimate"},
+            {"abbreviation": "MPAC", "meaning": "Municipal Property Assessment Corporation", "context": "Ontario property assessment"}
+          ]
+        },
+        {
+          "id": "loan",
+          "name": "Loan & Mortgage",
+          "terms": [
+            {"abbreviation": "ARM", "meaning": "Adjustable Rate Mortgage", "context": "Variable interest rate"},
+            {"abbreviation": "VRM", "meaning": "Variable Rate Mortgage", "context": "Rate fluctuates with prime"},
+            {"abbreviation": "FRM", "meaning": "Fixed Rate Mortgage", "context": "Rate locked for term"},
+            {"abbreviation": "LOC", "meaning": "Line of Credit", "context": "Revolving credit facility"},
+            {"abbreviation": "HELOC", "meaning": "Home Equity Line of Credit", "context": "LOC secured by home equity"},
+            {"abbreviation": "MTG", "meaning": "Mortgage", "context": "Home loan"},
+            {"abbreviation": "P&I", "meaning": "Principal and Interest", "context": "Loan payment components"},
+            {"abbreviation": "ITF", "meaning": "In Trust For", "context": "Funds held for another party"},
+            {"abbreviation": "COF", "meaning": "Closing of Funds", "context": "Disbursement at closing"}
+          ]
+        },
+        {
+          "id": "credit",
+          "name": "Credit",
+          "terms": [
+            {"abbreviation": "FICO", "meaning": "Fair Isaac Corporation score", "context": "Credit score model"},
+            {"abbreviation": "Beacon", "meaning": "Equifax credit score (Canada)", "context": "Canadian credit score"},
+            {"abbreviation": "TU", "meaning": "TransUnion", "context": "Credit bureau"},
+            {"abbreviation": "EFX", "meaning": "Equifax", "context": "Credit bureau"},
+            {"abbreviation": "UTL", "meaning": "Utilization", "context": "Credit usage percentage"},
+            {"abbreviation": "CCJ", "meaning": "County Court Judgment", "context": "Legal judgment against borrower"},
+            {"abbreviation": "R1-R9", "meaning": "Credit rating scale", "context": "R1=current to R9=bad debt"}
+          ]
+        },
+        {
+          "id": "status",
+          "name": "Decision Status",
+          "terms": [
+            {"abbreviation": "A/C", "meaning": "Approved with Conditions", "context": "Conditional approval"},
+            {"abbreviation": "DTC", "meaning": "Decline to Credit", "context": "Application rejected"},
+            {"abbreviation": "TBD", "meaning": "To Be Determined", "context": "Pending decision"},
+            {"abbreviation": "UW", "meaning": "Underwriter / Underwriting", "context": "Risk assessment"},
+            {"abbreviation": "COE", "meaning": "Close of Escrow", "context": "Transaction completion"},
+            {"abbreviation": "COI", "meaning": "Certificate of Insurance", "context": "Insurance proof"},
+            {"abbreviation": "CTC", "meaning": "Clear to Close", "context": "Final approval for closing"}
+          ]
+        }
+      ]
+    },
+    "automotive_claims": {
+      "name": "Automotive Claims",
+      "description": "Auto industry and claims terminology for automotive claims processing",
+      "categories": [
+        {
+          "id": "damage",
+          "name": "Damage Assessment",
+          "terms": [
+            {"abbreviation": "PDR", "meaning": "Paintless Dent Repair", "context": "Minor dent repair without painting"},
+            {"abbreviation": "TL", "meaning": "Total Loss", "context": "Vehicle not economically repairable"},
+            {"abbreviation": "RTV", "meaning": "Repair to Value", "context": "Repair cost vs vehicle value"},
+            {"abbreviation": "AOI", "meaning": "Area of Impact", "context": "Primary damage zone"},
+            {"abbreviation": "POI", "meaning": "Point of Impact", "context": "Initial contact point"},
+            {"abbreviation": "DOL", "meaning": "Direction of Loss", "context": "Direction of damage force"},
+            {"abbreviation": "PD", "meaning": "Prior Damage", "context": "Pre-existing vehicle damage"},
+            {"abbreviation": "UD", "meaning": "Unrelated Damage", "context": "Damage not from this claim"}
+          ]
+        },
+        {
+          "id": "parts",
+          "name": "Parts & Components",
+          "terms": [
+            {"abbreviation": "OEM", "meaning": "Original Equipment Manufacturer", "context": "Factory original parts"},
+            {"abbreviation": "A/M", "meaning": "Aftermarket", "context": "Non-OEM replacement parts"},
+            {"abbreviation": "LKQ", "meaning": "Like Kind and Quality", "context": "Used parts of similar quality"},
+            {"abbreviation": "R&I", "meaning": "Remove and Install", "context": "Remove for access, reinstall same part"},
+            {"abbreviation": "R&R", "meaning": "Remove and Replace", "context": "Remove and install new part"},
+            {"abbreviation": "ADAS", "meaning": "Advanced Driver Assistance Systems", "context": "Safety/driving aid technology"},
+            {"abbreviation": "ECU", "meaning": "Electronic Control Unit", "context": "Vehicle computer module"},
+            {"abbreviation": "SRS", "meaning": "Supplemental Restraint System", "context": "Airbag system"},
+            {"abbreviation": "ABS", "meaning": "Anti-lock Braking System", "context": "Brake safety system"},
+            {"abbreviation": "A/C", "meaning": "Air Conditioning", "context": "Climate control system"},
+            {"abbreviation": "TPMS", "meaning": "Tire Pressure Monitoring System", "context": "Tire pressure sensors"}
+          ]
+        },
+        {
+          "id": "estimate",
+          "name": "Estimating",
+          "terms": [
+            {"abbreviation": "RO", "meaning": "Repair Order", "context": "Shop work order"},
+            {"abbreviation": "LBR", "meaning": "Labor", "context": "Work time costs"},
+            {"abbreviation": "PNT", "meaning": "Paint", "context": "Refinish work"},
+            {"abbreviation": "MATL", "meaning": "Materials", "context": "Paint and supplies"},
+            {"abbreviation": "BT", "meaning": "Blend Time", "context": "Paint blending labor"},
+            {"abbreviation": "CT", "meaning": "Clear Time", "context": "Clear coat application"},
+            {"abbreviation": "FRT", "meaning": "Flat Rate Time", "context": "Standard labor time"},
+            {"abbreviation": "PDL", "meaning": "Paint/Damage Line", "context": "Repair vs replace threshold"},
+            {"abbreviation": "S/A", "meaning": "Sublet Amount", "context": "Outsourced work cost"},
+            {"abbreviation": "REF", "meaning": "Refinish", "context": "Paint and body finish"}
+          ]
+        },
+        {
+          "id": "vehicle",
+          "name": "Vehicle",
+          "terms": [
+            {"abbreviation": "VIN", "meaning": "Vehicle Identification Number", "context": "Unique vehicle identifier"},
+            {"abbreviation": "YMM", "meaning": "Year, Make, Model", "context": "Vehicle identification"},
+            {"abbreviation": "ODO", "meaning": "Odometer", "context": "Mileage reading"},
+            {"abbreviation": "EV", "meaning": "Electric Vehicle", "context": "Battery-powered vehicle"},
+            {"abbreviation": "HEV", "meaning": "Hybrid Electric Vehicle", "context": "Gas-electric hybrid"},
+            {"abbreviation": "PHEV", "meaning": "Plug-in Hybrid Electric Vehicle", "context": "Rechargeable hybrid"},
+            {"abbreviation": "ICE", "meaning": "Internal Combustion Engine", "context": "Traditional gas/diesel engine"},
+            {"abbreviation": "AWD", "meaning": "All-Wheel Drive", "context": "Four-wheel traction system"},
+            {"abbreviation": "FWD", "meaning": "Front-Wheel Drive", "context": "Front wheels powered"},
+            {"abbreviation": "RWD", "meaning": "Rear-Wheel Drive", "context": "Rear wheels powered"},
+            {"abbreviation": "4WD", "meaning": "Four-Wheel Drive", "context": "Selectable 4-wheel drive"}
+          ]
+        },
+        {
+          "id": "valuation",
+          "name": "Valuation",
+          "terms": [
+            {"abbreviation": "ACV", "meaning": "Actual Cash Value", "context": "Fair market value minus depreciation"},
+            {"abbreviation": "FMV", "meaning": "Fair Market Value", "context": "Current market price"},
+            {"abbreviation": "NADA", "meaning": "National Automobile Dealers Association", "context": "Vehicle valuation guide"},
+            {"abbreviation": "KBB", "meaning": "Kelley Blue Book", "context": "Vehicle valuation guide"},
+            {"abbreviation": "CCC", "meaning": "CCC Intelligent Solutions", "context": "Estimating and valuation platform"},
+            {"abbreviation": "Mitchell", "meaning": "Mitchell International", "context": "Estimating platform"},
+            {"abbreviation": "Audatex", "meaning": "Audatex estimating system", "context": "Estimating platform"},
+            {"abbreviation": "SV", "meaning": "Salvage Value", "context": "Value of totaled vehicle"}
+          ]
+        },
+        {
+          "id": "liability",
+          "name": "Liability & Coverage",
+          "terms": [
+            {"abbreviation": "COL", "meaning": "Collision", "context": "Coverage for vehicle-to-vehicle/object"},
+            {"abbreviation": "COMP", "meaning": "Comprehensive", "context": "Non-collision coverage"},
+            {"abbreviation": "BI", "meaning": "Bodily Injury", "context": "Injury liability coverage"},
+            {"abbreviation": "PD", "meaning": "Property Damage", "context": "Damage to others' property"},
+            {"abbreviation": "UM", "meaning": "Uninsured Motorist", "context": "Coverage for uninsured drivers"},
+            {"abbreviation": "UIM", "meaning": "Underinsured Motorist", "context": "Coverage for underinsured drivers"},
+            {"abbreviation": "PIP", "meaning": "Personal Injury Protection", "context": "No-fault injury coverage"},
+            {"abbreviation": "MP", "meaning": "Medical Payments", "context": "Medical expense coverage"},
+            {"abbreviation": "DCPD", "meaning": "Direct Compensation Property Damage", "context": "Ontario no-fault coverage"},
+            {"abbreviation": "AB", "meaning": "Accident Benefits", "context": "Ontario no-fault benefits"}
+          ]
+        },
+        {
+          "id": "process",
+          "name": "Claims Process",
+          "terms": [
+            {"abbreviation": "IA", "meaning": "Independent Adjuster", "context": "Third-party claims adjuster"},
+            {"abbreviation": "DRP", "meaning": "Direct Repair Program", "context": "Network repair shop"},
+            {"abbreviation": "SIU", "meaning": "Special Investigations Unit", "context": "Fraud investigation team"},
+            {"abbreviation": "FNOL", "meaning": "First Notice of Loss", "context": "Initial claim report"},
+            {"abbreviation": "POL", "meaning": "Proof of Loss", "context": "Sworn claim statement"},
+            {"abbreviation": "RV", "meaning": "Rental Vehicle", "context": "Temporary transportation"},
+            {"abbreviation": "LOE", "meaning": "Loss of Earnings", "context": "Income loss claim"},
+            {"abbreviation": "SB", "meaning": "Subrogation", "context": "Recovery from at-fault party"},
+            {"abbreviation": "ARB", "meaning": "Arbitration", "context": "Dispute resolution process"},
+            {"abbreviation": "EUO", "meaning": "Examination Under Oath", "context": "Formal recorded statement"},
+            {"abbreviation": "IME", "meaning": "Independent Medical Examination", "context": "Third-party medical review"}
+          ]
+        }
+      ]
+    }
+  }
+}

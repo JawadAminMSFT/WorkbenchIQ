@@ -834,6 +834,200 @@ export async function getClaimsIndexStats(): Promise<IndexStats> {
 }
 
 // ============================================================================
+// Glossary APIs
+// ============================================================================
+
+/**
+ * Glossary term structure
+ */
+export interface GlossaryTerm {
+  abbreviation: string;
+  meaning: string;
+  context?: string;
+  examples?: string[];
+  category?: string;
+  category_id?: string;
+}
+
+/**
+ * Glossary category structure
+ */
+export interface GlossaryCategory {
+  id: string;
+  name: string;
+  terms: GlossaryTerm[];
+}
+
+/**
+ * Persona glossary structure
+ */
+export interface PersonaGlossary {
+  persona: string;
+  name: string;
+  description: string;
+  categories: GlossaryCategory[];
+  total_terms: number;
+}
+
+/**
+ * Glossary summary for listing
+ */
+export interface GlossarySummary {
+  persona: string;
+  name: string;
+  description: string;
+  term_count: number;
+  category_count: number;
+}
+
+/**
+ * List all available glossaries
+ */
+export async function listGlossaries(): Promise<{ glossaries: GlossarySummary[] }> {
+  return apiFetch<{ glossaries: GlossarySummary[] }>('/api/glossary');
+}
+
+/**
+ * Get the full glossary for a specific persona
+ */
+export async function getGlossary(persona: string): Promise<PersonaGlossary> {
+  return apiFetch<PersonaGlossary>(`/api/glossary/${persona}`);
+}
+
+/**
+ * Search for terms in a glossary
+ */
+export async function searchGlossary(
+  persona: string,
+  query: string,
+  category?: string
+): Promise<{ results: GlossaryTerm[]; count: number }> {
+  const params = new URLSearchParams({ q: query });
+  if (category) params.append('category', category);
+  return apiFetch<{ results: GlossaryTerm[]; count: number }>(
+    `/api/glossary/${persona}/search?${params.toString()}`
+  );
+}
+
+/**
+ * Create a new glossary category
+ */
+export async function createGlossaryCategory(
+  persona: string,
+  id: string,
+  name: string
+): Promise<{ category: GlossaryCategory; message: string }> {
+  return apiFetch<{ category: GlossaryCategory; message: string }>(
+    `/api/glossary/${persona}/categories`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ id, name }),
+    }
+  );
+}
+
+/**
+ * Update a glossary category
+ */
+export async function updateGlossaryCategory(
+  persona: string,
+  categoryId: string,
+  name: string
+): Promise<{ category: GlossaryCategory; message: string }> {
+  return apiFetch<{ category: GlossaryCategory; message: string }>(
+    `/api/glossary/${persona}/categories/${categoryId}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }
+  );
+}
+
+/**
+ * Delete a glossary category (must be empty)
+ */
+export async function deleteGlossaryCategory(
+  persona: string,
+  categoryId: string
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    `/api/glossary/${persona}/categories/${categoryId}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * Create a new glossary term
+ */
+export async function createGlossaryTerm(
+  persona: string,
+  categoryId: string,
+  term: Omit<GlossaryTerm, 'category' | 'category_id'>
+): Promise<{ term: GlossaryTerm; message: string }> {
+  return apiFetch<{ term: GlossaryTerm; message: string }>(
+    `/api/glossary/${persona}/terms/${categoryId}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(term),
+    }
+  );
+}
+
+/**
+ * Update an existing glossary term
+ */
+export async function updateGlossaryTerm(
+  persona: string,
+  abbreviation: string,
+  updates: Partial<GlossaryTerm>
+): Promise<{ term: GlossaryTerm; message: string }> {
+  return apiFetch<{ term: GlossaryTerm; message: string }>(
+    `/api/glossary/${persona}/terms/${encodeURIComponent(abbreviation)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }
+  );
+}
+
+/**
+ * Delete a glossary term
+ */
+export async function deleteGlossaryTerm(
+  persona: string,
+  abbreviation: string
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    `/api/glossary/${persona}/terms/${encodeURIComponent(abbreviation)}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * Get formatted glossary for prompt injection
+ */
+export async function getFormattedGlossary(
+  persona: string,
+  options?: {
+    maxTerms?: number;
+    categories?: string[];
+    formatType?: 'markdown' | 'list';
+    includeHeaders?: boolean;
+  }
+): Promise<{ formatted: string }> {
+  const params = new URLSearchParams();
+  if (options?.maxTerms) params.append('max_terms', options.maxTerms.toString());
+  if (options?.categories) params.append('categories', options.categories.join(','));
+  if (options?.formatType) params.append('format_type', options.formatType);
+  if (options?.includeHeaders !== undefined) params.append('include_headers', options.includeHeaders.toString());
+  
+  const queryString = params.toString();
+  return apiFetch<{ formatted: string }>(
+    `/api/glossary/${persona}/formatted${queryString ? `?${queryString}` : ''}`
+  );
+}
+
+// ============================================================================
 // Automotive Claims API
 // ============================================================================
 

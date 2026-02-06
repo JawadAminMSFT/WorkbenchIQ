@@ -399,6 +399,7 @@ def get_chat_system_prompt(
     policies_context: str,
     app_id: str,
     app_context_parts: list[str],
+    glossary_context: str = "",
 ) -> str:
     """
     Generate a persona-aware system prompt for Ask IQ chat.
@@ -408,14 +409,29 @@ def get_chat_system_prompt(
         policies_context: RAG-retrieved or fallback policy context
         app_id: The application/claim ID
         app_context_parts: Parts of the application context to include
+        glossary_context: Optional glossary terminology reference
         
     Returns:
         System prompt string for the LLM
     """
     config = PERSONA_CHAT_CONFIG.get(persona, PERSONA_CHAT_CONFIG["underwriting"])
     
-    return f"""You are an {config['role']}. You have access to the following context:
+    # Build glossary section if provided
+    glossary_section = ""
+    if glossary_context:
+        glossary_section = f"""
+## Domain Terminology Reference
+The following abbreviations and terms are commonly used in this domain:
 
+{glossary_context}
+
+Use this glossary to understand medical, financial, or industry-specific terminology in the documents and conversation.
+
+---
+"""
+    
+    return f"""You are an {config['role']}. You have access to the following context:
+{glossary_section}
 {policies_context}
 
 ## {config['item_type'].title()} Information (ID: {app_id})
@@ -576,6 +592,37 @@ async def get_application(app_id: str):
         raise
     except Exception as e:
         logger.error("Failed to load application %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/applications/{app_id}")
+async def delete_application_endpoint(app_id: str):
+    """Delete an application and all its associated files.
+    
+    This permanently removes the application, uploaded files, and all
+    processing results. This action cannot be undone.
+    """
+    from app.storage import delete_application
+    
+    try:
+        settings = load_settings()
+        
+        # Check if application exists first
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Delete the application
+        success = delete_application(settings.app.storage_root, app_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete application")
+        
+        logger.info("Deleted application: %s", app_id)
+        return {"message": "Application deleted", "id": app_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to delete application %s: %s", app_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1099,6 +1146,240 @@ async def create_prompt(section: str, subsection: str, request: PromptUpdateRequ
         raise
     except Exception as e:
         logger.error("Failed to create prompt %s/%s: %s", section, subsection, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Glossary APIs
+# ============================================================================
+
+from app.glossary import (
+    list_glossaries,
+    get_glossary_for_persona,
+    search_glossary,
+    add_term,
+    update_term,
+    delete_term,
+    add_category,
+    update_category,
+    delete_category,
+    format_glossary_for_prompt,
+)
+
+
+class GlossaryTermRequest(BaseModel):
+    """Request model for adding/updating a glossary term."""
+    abbreviation: str
+    meaning: str
+    context: Optional[str] = None
+    examples: Optional[List[str]] = None
+    category_id: Optional[str] = None  # For updates - move to different category
+
+
+class GlossaryCategoryRequest(BaseModel):
+    """Request model for adding/updating a category."""
+    id: str
+    name: str
+
+
+class GlossaryCategoryUpdateRequest(BaseModel):
+    """Request model for updating a category name."""
+    name: str
+
+
+@app.get("/api/glossary")
+async def list_all_glossaries():
+    """List all available glossaries with summary info."""
+    try:
+        settings = load_settings()
+        glossaries = list_glossaries(settings.app.prompts_root)
+        return {"glossaries": glossaries}
+    except Exception as e:
+        logger.error("Failed to list glossaries: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/glossary/{persona}")
+async def get_persona_glossary(persona: str):
+    """Get the full glossary for a specific persona."""
+    try:
+        settings = load_settings()
+        glossary = get_glossary_for_persona(settings.app.prompts_root, persona)
+        return glossary
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to get glossary for persona %s: %s", persona, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/glossary/{persona}/search")
+async def search_persona_glossary(
+    persona: str,
+    q: str = Query(..., description="Search query"),
+    category: Optional[str] = Query(None, description="Filter by category ID")
+):
+    """Search for terms matching a query."""
+    try:
+        settings = load_settings()
+        results = search_glossary(settings.app.prompts_root, persona, q, category)
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        logger.error("Failed to search glossary: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/glossary/{persona}/categories")
+async def create_glossary_category(persona: str, request: GlossaryCategoryRequest):
+    """Add a new category to a persona's glossary."""
+    try:
+        settings = load_settings()
+        category = add_category(
+            settings.app.prompts_root,
+            persona,
+            {"id": request.id, "name": request.name}
+        )
+        return {"category": category, "message": "Category created successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to add category: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/glossary/{persona}/categories/{category_id}")
+async def update_glossary_category(
+    persona: str,
+    category_id: str,
+    request: GlossaryCategoryUpdateRequest
+):
+    """Update a category name."""
+    try:
+        settings = load_settings()
+        category = update_category(
+            settings.app.prompts_root,
+            persona,
+            category_id,
+            {"name": request.name}
+        )
+        return {"category": category, "message": "Category updated successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to update category: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/glossary/{persona}/categories/{category_id}")
+async def delete_glossary_category(persona: str, category_id: str):
+    """Delete a category (must be empty)."""
+    try:
+        settings = load_settings()
+        delete_category(settings.app.prompts_root, persona, category_id)
+        return {"message": "Category deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to delete category: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/glossary/{persona}/terms/{category_id}")
+async def create_glossary_term(
+    persona: str,
+    category_id: str,
+    request: GlossaryTermRequest
+):
+    """Add a new term to a category."""
+    try:
+        settings = load_settings()
+        term = add_term(
+            settings.app.prompts_root,
+            persona,
+            category_id,
+            {
+                "abbreviation": request.abbreviation,
+                "meaning": request.meaning,
+                "context": request.context,
+                "examples": request.examples
+            }
+        )
+        return {"term": term, "message": "Term created successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to add term: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/glossary/{persona}/terms/{abbreviation}")
+async def update_glossary_term(
+    persona: str,
+    abbreviation: str,
+    request: GlossaryTermRequest
+):
+    """Update an existing term."""
+    try:
+        settings = load_settings()
+        updates = {"meaning": request.meaning}
+        if request.context is not None:
+            updates["context"] = request.context
+        if request.examples is not None:
+            updates["examples"] = request.examples
+        if request.category_id is not None:
+            updates["category_id"] = request.category_id
+        
+        term = update_term(
+            settings.app.prompts_root,
+            persona,
+            abbreviation,
+            updates
+        )
+        return {"term": term, "message": "Term updated successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to update term: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/glossary/{persona}/terms/{abbreviation}")
+async def delete_glossary_term(persona: str, abbreviation: str):
+    """Delete a term from the glossary."""
+    try:
+        settings = load_settings()
+        delete_term(settings.app.prompts_root, persona, abbreviation)
+        return {"message": "Term deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to delete term: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/glossary/{persona}/formatted")
+async def get_formatted_glossary(
+    persona: str,
+    max_terms: int = Query(100, ge=1, le=500),
+    categories: Optional[str] = Query(None, description="Comma-separated category IDs"),
+    format_type: str = Query("markdown", regex="^(markdown|list)$"),
+    include_headers: bool = Query(False)
+):
+    """Get glossary formatted for prompt injection."""
+    try:
+        settings = load_settings()
+        category_list = categories.split(",") if categories else None
+        formatted = format_glossary_for_prompt(
+            settings.app.prompts_root,
+            persona,
+            max_terms=max_terms,
+            categories=category_list,
+            format_type=format_type,
+            include_category_headers=include_headers
+        )
+        return {"formatted": formatted}
+    except Exception as e:
+        logger.error("Failed to format glossary: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1804,12 +2085,27 @@ async def chat_with_application(app_id: str, request: ChatRequest):
             if analysis_summary:
                 app_context_parts.append("## Analysis Summary\n\n" + "\n".join(analysis_summary))
         
+        # Load glossary for the persona to help understand domain terminology
+        glossary_context = ""
+        try:
+            glossary_context = format_glossary_for_prompt(
+                settings.app.prompts_root, 
+                persona, 
+                max_terms=50,  # Smaller for chat context
+                format_type="list"  # More compact format for chat
+            )
+            if glossary_context:
+                logger.info("Chat [%s]: Loaded glossary (%d chars)", persona, len(glossary_context))
+        except Exception as e:
+            logger.warning("Failed to load glossary for chat: %s", e)
+        
         # Build persona-aware system message
         system_message = get_chat_system_prompt(
             persona=persona,
             policies_context=policies_context,
             app_id=app_id,
             app_context_parts=app_context_parts,
+            glossary_context=glossary_context,
         )
 
         # Build messages array
@@ -2201,12 +2497,27 @@ async def create_or_continue_conversation(app_id: str, request: ChatRequest):
             if analysis_summary:
                 app_context_parts.append("## Analysis Summary\n\n" + "\n".join(analysis_summary))
         
+        # Load glossary for the persona to help understand domain terminology
+        glossary_context = ""
+        try:
+            glossary_context = format_glossary_for_prompt(
+                settings.app.prompts_root, 
+                persona, 
+                max_terms=50,  # Smaller for chat context
+                format_type="list"  # More compact format for chat
+            )
+            if glossary_context:
+                logger.info("Conversation [%s]: Loaded glossary (%d chars)", persona, len(glossary_context))
+        except Exception as e:
+            logger.warning("Failed to load glossary for conversation: %s", e)
+        
         # Build persona-aware system message
         system_message = get_chat_system_prompt(
             persona=persona,
             policies_context=policies_context,
             app_id=app_id,
             app_context_parts=app_context_parts,
+            glossary_context=glossary_context,
         )
 
         # Build messages array with conversation history
