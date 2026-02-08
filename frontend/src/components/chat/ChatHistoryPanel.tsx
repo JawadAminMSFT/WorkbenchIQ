@@ -60,8 +60,8 @@ export default function ChatHistoryPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${backendUrl}/api/applications/${applicationId}/conversations`);
+        // Use relative path to go through Next.js proxy
+        const response = await fetch(`/api/applications/${applicationId}/conversations`);
         if (!response.ok) throw new Error('Failed to load conversations');
         const data = await response.json();
         setAppConversations(data.conversations || []);
@@ -84,8 +84,8 @@ export default function ChatHistoryPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${backendUrl}/api/conversations?limit=50`);
+        // Use relative path to go through Next.js proxy
+        const response = await fetch(`/api/conversations?limit=50`);
         if (!response.ok) throw new Error('Failed to load all conversations');
         const data = await response.json();
         setAllConversations(data.conversations || []);
@@ -103,15 +103,15 @@ export default function ChatHistoryPanel({
   // Refresh conversations when a new one might be created
   const refreshConversations = async () => {
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/api/applications/${applicationId}/conversations`);
+      // Use relative path to go through Next.js proxy
+      const response = await fetch(`/api/applications/${applicationId}/conversations`);
       if (response.ok) {
         const data = await response.json();
         setAppConversations(data.conversations || []);
       }
       // Also refresh all conversations if on that tab
       if (activeTab === 'all') {
-        const allResponse = await fetch(`${backendUrl}/api/conversations?limit=50`);
+        const allResponse = await fetch(`/api/conversations?limit=50`);
         if (allResponse.ok) {
           const allData = await allResponse.json();
           setAllConversations(allData.conversations || []);
@@ -138,9 +138,9 @@ export default function ChatHistoryPanel({
     
     setDeletingId(conversationId);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      // Use relative path to go through Next.js proxy
       const response = await fetch(
-        `${backendUrl}/api/applications/${targetAppId}/conversations/${conversationId}`,
+        `/api/applications/${targetAppId}/conversations/${conversationId}`,
         { method: 'DELETE' }
       );
       

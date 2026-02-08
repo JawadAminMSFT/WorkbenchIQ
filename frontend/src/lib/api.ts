@@ -25,8 +25,8 @@ import type {
   PolicyResponse,
 } from './types';
 
-// Backend API base URL - can be configured via environment variable
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Backend API base URL - uses relative paths to go through Next.js proxy rewrites
+const API_BASE_URL = '';
 
 /**
  * Custom error class for API errors
@@ -1082,8 +1082,8 @@ export async function uploadClaimFiles(claimId: string, files: File[]): Promise<
     formData.append('files', file);
   });
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  const response = await fetch(`${baseUrl}/api/claims/${claimId}/upload`, {
+  // Use relative path to go through Next.js proxy
+  const response = await fetch(`/api/claims/${claimId}/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -1241,6 +1241,7 @@ export interface ClaimsPolicySearchResult {
   score?: number;       // Legacy/alias
   severity?: string;
   criteria_id?: string;
+  section?: string;     // Legacy field for old components
 }
 
 export interface ClaimsPolicySearchResponse {
