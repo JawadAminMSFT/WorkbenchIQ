@@ -51,8 +51,8 @@ const PolicyDetailModal: React.FC<PolicyDetailModalProps> = ({ policyId, onClose
       try {
         setLoading(true);
         setError(null);
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${backendUrl}/api/policies/${policyId}?persona=${persona}`);
+        // Use relative path to go through Next.js proxy
+        const response = await fetch(`/api/policies/${policyId}?persona=${persona}`);
         
         if (!response.ok) {
           throw new Error(`Policy not found: ${policyId}`);

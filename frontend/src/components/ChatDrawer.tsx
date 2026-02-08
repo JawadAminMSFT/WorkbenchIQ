@@ -321,9 +321,9 @@ export default function ChatDrawer({
 
     setIsLoadingConversation(true);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      // Use relative path to go through Next.js proxy
       const response = await fetch(
-        `${backendUrl}/api/applications/${applicationId}/conversations/${convId}`
+        `/api/applications/${applicationId}/conversations/${convId}`
       );
       
       if (response.ok) {
@@ -388,9 +388,9 @@ export default function ChatDrawer({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      // Use relative path to go through Next.js proxy
       const response = await fetch(
-        `${backendUrl}/api/applications/${applicationId}/conversations`,
+        `/api/applications/${applicationId}/conversations`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Use standalone output for Azure Web App deployment
+  output: 'standalone',
+  
   // Extend timeout for API proxy (default is 30s, increase to 120s for LLM calls)
   httpAgentOptions: {
     keepAlive: true,
@@ -16,17 +19,8 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || '',
   },
   
-  // Rewrites to proxy API calls to backend
-  // Uses API_URL env var in production, falls back to localhost for local dev
-  async rewrites() {
-    const backendUrl = process.env.API_URL || 'http://localhost:8000';
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
-      },
-    ];
-  },
+  // API proxying is handled by API routes in src/app/api/[...path]/route.ts
+  // This avoids build-time URL baking issues with rewrites
 };
 
 module.exports = nextConfig;
