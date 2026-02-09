@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Play, Pause, SkipBack, SkipForward, AlertTriangle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Keyframe, DamageArea } from '@/lib/api';
+import { Keyframe, DamageArea, getMediaUrl } from '@/lib/api';
 
 interface VideoTimelineProps {
   videoUrl?: string;
@@ -38,7 +38,7 @@ const KeyframeThumbnail: React.FC<KeyframeThumbnailProps> = ({
       <div className="relative aspect-video bg-gray-100">
         {keyframe.thumbnail_url ? (
           <img
-            src={keyframe.thumbnail_url}
+            src={getMediaUrl(keyframe.thumbnail_url)}
             alt={`Frame at ${keyframe.timestamp_formatted}`}
             className="w-full h-full object-cover"
           />
@@ -280,7 +280,7 @@ const VideoTimeline: React.FC<VideoTimelineProps> = ({
         <div className="relative bg-black rounded-xl overflow-hidden">
           <video
             ref={videoRef}
-            src={videoUrl}
+            src={getMediaUrl(videoUrl || '')}
             className="w-full aspect-video"
             onTimeUpdate={handleTimeUpdate}
             onPlay={() => setIsPlaying(true)}

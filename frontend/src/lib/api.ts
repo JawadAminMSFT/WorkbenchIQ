@@ -29,6 +29,19 @@ import type {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
+ * Get the full direct URL for a media file (image, video, PDF).
+ * Bypasses the Next.js proxy so browsers receive proper Content-Length
+ * and Accept-Ranges headers needed for video/image rendering.
+ */
+export function getMediaUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+/**
  * Custom error class for API errors
  */
 export class APIError extends Error {

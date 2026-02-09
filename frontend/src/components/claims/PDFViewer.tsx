@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, ZoomIn, ZoomOut, Download, ExternalLink, FileText, AlertTriangle } from 'lucide-react';
+import { getMediaUrl } from '@/lib/api';
 
 interface PDFViewerProps {
   url: string;
@@ -20,8 +21,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ url, filename, onClose }) => {
   const handleZoomIn = () => setZoom(Math.min(zoom + 25, 200));
   const handleZoomOut = () => setZoom(Math.max(zoom - 25, 50));
 
-  // Construct a full URL if it's a relative path
-  const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+  // Construct full URL pointing directly to the API backend
+  const fullUrl = getMediaUrl(url);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">

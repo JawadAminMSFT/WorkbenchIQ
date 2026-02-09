@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Image, Video, FileText, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { MediaItem, DamageArea } from '@/lib/api';
+import { MediaItem, DamageArea, getMediaUrl } from '@/lib/api';
 
 interface EvidenceGalleryProps {
   mediaItems: MediaItem[];
@@ -48,7 +48,7 @@ const MediaThumbnail: React.FC<MediaThumbnailProps> = ({
       <div className="aspect-video bg-gray-100 flex items-center justify-center">
         {media.thumbnail_url ? (
           <img
-            src={media.thumbnail_url}
+            src={getMediaUrl(media.thumbnail_url)}
             alt={media.filename}
             className="w-full h-full object-cover"
           />
@@ -161,7 +161,7 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({
         {media.media_type === 'image' ? (
           <div className="relative">
             <img
-              src={media.url}
+              src={getMediaUrl(media.url)}
               alt={media.filename}
               className="max-w-full max-h-[80vh] object-contain"
             />
@@ -188,7 +188,7 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({
           </div>
         ) : media.media_type === 'video' ? (
           <video
-            src={media.url}
+            src={getMediaUrl(media.url)}
             controls
             className="max-w-full max-h-[80vh]"
             autoPlay
@@ -198,7 +198,7 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-center text-gray-600">{media.filename}</p>
             <a
-              href={media.url}
+              href={getMediaUrl(media.url)}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-4 block text-center text-blue-600 hover:underline"
