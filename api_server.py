@@ -23,6 +23,7 @@ from app.database.pool import init_pool
 from app.storage import (
     list_applications,
     load_application,
+    load_file,
     new_metadata,
     save_uploaded_files,
     save_application_metadata,
@@ -629,22 +630,23 @@ async def delete_application_endpoint(app_id: str):
 @app.get("/api/applications/{app_id}/files/{filename:path}")
 async def get_application_file(app_id: str, filename: str):
     """Serve a file from an application's files directory."""
+    from fastapi.responses import Response
+    
     try:
         settings = load_settings()
-        app_dir = Path(settings.app.storage_root) / "applications" / app_id / "files"
-        file_path = app_dir / filename
         
-        # Security: ensure the file is within the application directory
-        try:
-            file_path.resolve().relative_to(app_dir.resolve())
-        except ValueError:
+        # Security: prevent path traversal
+        if ".." in filename or filename.startswith("/"):
             raise HTTPException(status_code=403, detail="Access denied")
         
-        if not file_path.exists():
+        # Load file using storage provider (supports both local and Azure Blob)
+        file_content = load_file(settings.app.storage_root, app_id, filename)
+        
+        if file_content is None:
             raise HTTPException(status_code=404, detail="File not found")
         
-        # Determine media type
-        suffix = file_path.suffix.lower()
+        # Determine media type from filename
+        suffix = Path(filename).suffix.lower()
         media_types = {
             ".pdf": "application/pdf",
             ".png": "image/png",
@@ -668,10 +670,9 @@ async def get_application_file(app_id: str, filename: str):
             headers["Content-Disposition"] = f"inline; filename=\"{filename}\""
             headers["X-Content-Type-Options"] = "nosniff"
         
-        return FileResponse(
-            path=str(file_path),
+        return Response(
+            content=file_content,
             media_type=media_type,
-            filename=filename,
             headers=headers if headers else None,
         )
     except HTTPException:

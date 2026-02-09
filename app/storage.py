@@ -116,6 +116,32 @@ def load_file_content(stored_file: StoredFile) -> Optional[bytes]:
         return path.read_bytes()
 
 
+def load_file(root: str, app_id: str, filename: str) -> Optional[bytes]:
+    """Load a file from an application's files directory.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
+    
+    Args:
+        root: Storage root path (used for legacy local storage).
+        app_id: Application ID.
+        filename: Name of the file to load.
+        
+    Returns:
+        File content as bytes, or None if file not found.
+    """
+    provider = _get_provider()
+    
+    if provider:
+        return provider.load_file(app_id, filename)
+    else:
+        # Legacy local storage
+        file_path = Path(root) / "applications" / app_id / "files" / filename
+        if not file_path.exists():
+            logger.warning("File not found on filesystem: %s", file_path)
+            return None
+        return file_path.read_bytes()
+
+
 # =============================================================================
 # Legacy Local Storage Helpers
 # =============================================================================
