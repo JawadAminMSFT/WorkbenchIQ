@@ -3,12 +3,60 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Application List Cache (Performance Optimization)
+# =============================================================================
+
+class ApplicationCache:
+    """Thread-safe in-memory cache for application listings."""
+    
+    def __init__(self, ttl_seconds: int = 30):
+        self._cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+        self._lock = threading.Lock()
+        self._ttl = ttl_seconds
+    
+    def get(self, key: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached value if not expired."""
+        with self._lock:
+            if key in self._cache:
+                timestamp, data = self._cache[key]
+                if time.time() - timestamp < self._ttl:
+                    logger.debug("Cache hit for key: %s", key)
+                    return data
+                else:
+                    del self._cache[key]
+            return None
+    
+    def set(self, key: str, data: List[Dict[str, Any]]) -> None:
+        """Store value in cache."""
+        with self._lock:
+            self._cache[key] = (time.time(), data)
+            logger.debug("Cached data for key: %s", key)
+    
+    def invalidate(self, key: Optional[str] = None) -> None:
+        """Invalidate cache entry or all entries."""
+        with self._lock:
+            if key is None:
+                self._cache.clear()
+                logger.debug("Invalidated entire cache")
+            elif key in self._cache:
+                del self._cache[key]
+                logger.debug("Invalidated cache key: %s", key)
+
+
+# Global cache instance (30 second TTL)
+_applications_cache = ApplicationCache(ttl_seconds=30)
 
 
 @dataclass
@@ -295,6 +343,9 @@ def save_application_metadata(root: str, metadata: ApplicationMetadata) -> None:
             f.flush()
             os.fsync(f.fileno())
         temp_path.replace(meta_path)
+    
+    # Invalidate cache when metadata changes
+    invalidate_applications_cache()
 
 
 def load_application(root: str, app_id: str) -> Optional[ApplicationMetadata]:
@@ -330,11 +381,12 @@ def delete_application(root: str, app_id: str) -> bool:
     import shutil
     
     provider = _get_provider()
+    deleted = False
     
     if provider:
         # Use storage provider delete if available
         if hasattr(provider, 'delete_application'):
-            return provider.delete_application(app_id)
+            deleted = provider.delete_application(app_id)
         else:
             logger.warning("Storage provider does not support delete_application")
             return False
@@ -347,54 +399,80 @@ def delete_application(root: str, app_id: str) -> bool:
         try:
             shutil.rmtree(app_dir)
             logger.info("Deleted application directory: %s", app_dir)
-            return True
+            deleted = True
         except Exception as e:
             logger.error("Failed to delete application %s: %s", app_id, e)
             return False
+    
+    # Invalidate cache when application is deleted
+    if deleted:
+        invalidate_applications_cache()
+    
+    return deleted
 
 
 def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Return lightweight list of available applications, optionally filtered by persona."""
-    from app.personas import normalize_persona_id
+    """Return lightweight list of available applications, optionally filtered by persona.
     
-    provider = _get_provider()
+    Uses caching and parallel loading for improved performance with cloud storage.
+    """
+    from app.personas import normalize_persona_id
     
     # Normalize the filter persona (handles legacy 'claims' -> 'life_health_claims')
     if persona is not None:
         persona = normalize_persona_id(persona)
-
+    
+    # Check cache first
+    cache_key = f"apps:{persona or 'all'}"
+    cached = _applications_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    
+    provider = _get_provider()
     apps: List[Dict[str, Any]] = []
     
     if provider:
-        # Use storage provider
+        # Use storage provider with parallel metadata loading
         app_ids = provider.list_applications()
-        for app_id in app_ids:
+        
+        def load_app_metadata(app_id: str) -> Optional[Dict[str, Any]]:
+            """Load and format metadata for a single application."""
             data = provider.load_metadata(app_id)
             if data is None:
-                continue
+                return None
             
             # Filter by persona if specified
             app_persona = data.get("persona") or "underwriting"
             app_persona = normalize_persona_id(app_persona)
             
             if persona is not None and app_persona != persona:
-                continue
+                return None
             
-            apps.append(
-                {
-                    "id": data.get("id") or app_id,
-                    "created_at": data.get("created_at"),
-                    "external_reference": data.get("external_reference"),
-                    "status": data.get("status", "unknown"),
-                    "persona": app_persona,
-                    "processing_status": data.get("processing_status"),
-                    "summary_title": data.get("llm_outputs", {})
-                    .get("application_summary", {})
-                    .get("customer_profile", {})
-                    .get("summary", "")
-                    or "",
-                }
-            )
+            return {
+                "id": data.get("id") or app_id,
+                "created_at": data.get("created_at"),
+                "external_reference": data.get("external_reference"),
+                "status": data.get("status", "unknown"),
+                "persona": app_persona,
+                "processing_status": data.get("processing_status"),
+                "summary_title": data.get("llm_outputs", {})
+                .get("application_summary", {})
+                .get("customer_profile", {})
+                .get("summary", "")
+                or "",
+            }
+        
+        # Load metadata in parallel (up to 10 concurrent requests)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(load_app_metadata, app_id): app_id for app_id in app_ids}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result is not None:
+                        apps.append(result)
+                except Exception as e:
+                    app_id = futures[future]
+                    logger.warning("Failed to load metadata for %s: %s", app_id, e)
     else:
         # Legacy local storage
         base = get_storage_root(root) / "applications"
@@ -437,7 +515,19 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
     
     # Sort by created_at descending
     apps.sort(key=lambda a: a.get("created_at") or "", reverse=True)
+    
+    # Cache the result
+    _applications_cache.set(cache_key, apps)
+    
     return apps
+
+
+def invalidate_applications_cache() -> None:
+    """Invalidate the applications list cache.
+    
+    Call this when applications are created, updated, or deleted.
+    """
+    _applications_cache.invalidate()
 
 
 def new_metadata(

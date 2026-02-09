@@ -557,13 +557,29 @@ async def get_persona(persona_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/applications", response_model=List[ApplicationListItem])
-async def get_applications(persona: Optional[str] = None):
-    """List all applications, optionally filtered by persona."""
+@app.get("/api/applications")
+async def get_applications(
+    persona: Optional[str] = None,
+    page: Optional[int] = None,
+    limit: Optional[int] = None,
+):
+    """List all applications, optionally filtered by persona.
+    
+    Supports optional pagination:
+    - Without page/limit: Returns all applications (backward compatible)
+    - With page/limit: Returns paginated response with metadata
+    
+    Query Parameters:
+        persona: Filter by persona ID
+        page: Page number (1-indexed, requires limit)
+        limit: Items per page (requires page)
+    """
     try:
         settings = load_settings()
         apps = list_applications(settings.app.storage_root, persona=persona)
-        return [
+        
+        # Convert to response items
+        items = [
             ApplicationListItem(
                 id=a["id"],
                 created_at=a.get("created_at"),
@@ -575,6 +591,29 @@ async def get_applications(persona: Optional[str] = None):
             )
             for a in apps
         ]
+        
+        # If pagination params provided, return paginated response
+        if page is not None and limit is not None:
+            if page < 1:
+                page = 1
+            if limit < 1:
+                limit = 10
+            
+            total = len(items)
+            start = (page - 1) * limit
+            end = start + limit
+            paginated_items = items[start:end]
+            
+            return {
+                "items": paginated_items,
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "hasMore": end < total,
+            }
+        
+        # No pagination - return full list (backward compatible)
+        return items
     except Exception as e:
         logger.error("Failed to list applications: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
