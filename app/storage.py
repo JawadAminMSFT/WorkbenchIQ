@@ -197,6 +197,25 @@ def save_cu_raw_result(root: str, app_id: str, payload: Dict[str, Any]) -> str:
         return str(cu_path)
 
 
+def load_cu_result(root: str, app_id: str) -> Optional[Dict[str, Any]]:
+    """Load Content Understanding result JSON.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
+    """
+    provider = _get_provider()
+    
+    if provider:
+        return provider.load_cu_result(app_id)
+    else:
+        # Legacy local storage
+        app_dir = get_application_dir(root, app_id)
+        cu_path = app_dir / "content_understanding.json"
+        if not cu_path.exists():
+            return None
+        with open(cu_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
 def _metadata_to_dict(metadata: ApplicationMetadata) -> Dict[str, Any]:
     """Convert ApplicationMetadata to a serializable dictionary."""
     serializable = asdict(metadata)
