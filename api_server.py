@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
@@ -60,11 +60,19 @@ allowed_origins = [
     "http://127.0.0.1:3000",
 ]
 
-# Add Azure frontend URL from environment variable if configured
+# Add Azure frontend URL(s) from environment variable if configured
 import os
 azure_frontend_url = os.getenv("FRONTEND_URL")
 if azure_frontend_url:
     allowed_origins.append(azure_frontend_url)
+
+# Support CORS_ORIGINS env var (comma-separated list of allowed origins)
+cors_origins = os.getenv("CORS_ORIGINS")
+if cors_origins:
+    for origin in cors_origins.split(","):
+        origin = origin.strip()
+        if origin and origin not in allowed_origins:
+            allowed_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -667,8 +675,11 @@ async def delete_application_endpoint(app_id: str):
 
 
 @app.get("/api/applications/{app_id}/files/{filename:path}")
-async def get_application_file(app_id: str, filename: str):
-    """Serve a file from an application's files directory."""
+async def get_application_file(app_id: str, filename: str, request: Request):
+    """Serve a file from an application's files directory.
+    
+    Supports HTTP Range requests for video/audio streaming.
+    """
     from fastapi.responses import Response
     
     try:
@@ -702,17 +713,46 @@ async def get_application_file(app_id: str, filename: str):
             ".webm": "video/webm",
         }
         media_type = media_types.get(suffix, "application/octet-stream")
+        total_size = len(file_content)
         
-        # For PDFs, allow inline viewing in iframes/object tags
-        headers = {}
+        # Base headers for all file types
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(total_size),
+        }
+        
         if suffix == ".pdf":
             headers["Content-Disposition"] = f"inline; filename=\"{filename}\""
             headers["X-Content-Type-Options"] = "nosniff"
         
+        # Handle Range requests (required for video/audio streaming)
+        range_header = request.headers.get("range")
+        if range_header:
+            try:
+                range_spec = range_header.replace("bytes=", "").split("-")
+                start = int(range_spec[0]) if range_spec[0] else 0
+                end = int(range_spec[1]) if range_spec[1] else total_size - 1
+                end = min(end, total_size - 1)
+                
+                if start >= total_size:
+                    raise HTTPException(status_code=416, detail="Range not satisfiable")
+                
+                headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+                headers["Content-Length"] = str(end - start + 1)
+                
+                return Response(
+                    content=file_content[start:end + 1],
+                    status_code=206,
+                    media_type=media_type,
+                    headers=headers,
+                )
+            except (ValueError, IndexError):
+                pass  # Invalid range, fall through to full response
+        
         return Response(
             content=file_content,
             media_type=media_type,
-            headers=headers if headers else None,
+            headers=headers,
         )
     except HTTPException:
         raise

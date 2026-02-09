@@ -40,6 +40,7 @@ import {
   uploadClaimFiles,
   searchClaimsPolicies,
   ClaimsPolicySearchResult,
+  getMediaUrl,
 } from '@/lib/api';
 
 interface AutomotiveClaimsOverviewProps {
@@ -456,7 +457,7 @@ export function AutomotiveClaimsOverview({
                         onClick={() => setSelectedImage(img)}
                       >
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
-                          <img src={img.url} alt={img.filename} className="w-full h-full object-cover" />
+                          <img src={getMediaUrl(img.url)} alt={img.filename} className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-900 truncate">{img.filename}</p>
@@ -490,7 +491,7 @@ export function AutomotiveClaimsOverview({
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0 relative">
                           {/* Video thumbnail - use first keyframe or placeholder */}
                           {keyframes.length > 0 && keyframes[0].thumbnail_url ? (
-                            <img src={keyframes[0].thumbnail_url} alt="Video thumbnail" className="w-full h-full object-cover" />
+                            <img src={getMediaUrl(keyframes[0].thumbnail_url)} alt="Video thumbnail" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
                               <Play className="w-4 h-4 text-white" />
@@ -728,7 +729,7 @@ export function AutomotiveClaimsOverview({
           <button onClick={() => setSelectedImage(null)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <XCircle className="w-6 h-6 text-white" />
           </button>
-          <img src={selectedImage.url} alt={selectedImage.filename} className="max-w-[90vw] max-h-[90vh] object-contain" />
+          <img src={getMediaUrl(selectedImage.url)} alt={selectedImage.filename} className="max-w-[90vw] max-h-[90vh] object-contain" />
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-lg">
             {selectedImage.filename}
           </div>
@@ -741,7 +742,7 @@ export function AutomotiveClaimsOverview({
           <button onClick={() => setShowVideoModal(false)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <XCircle className="w-6 h-6 text-white" />
           </button>
-          <video src={selectedVideo.url} controls autoPlay className="max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()} />
+          <video src={getMediaUrl(selectedVideo.url)} controls autoPlay className="max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
 
