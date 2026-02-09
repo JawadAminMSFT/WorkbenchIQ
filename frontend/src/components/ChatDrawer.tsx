@@ -37,9 +37,9 @@ interface ChatMessage {
 type LoadingPhase = 'retrieving' | 'analyzing' | 'formulating' | null;
 
 const loadingMessages: Record<Exclude<LoadingPhase, null>, string> = {
-  retrieving: 'Retrieving policy details...',
-  analyzing: 'Reviewing application data...',
-  formulating: 'Formulating response...',
+  retrieving: 'Policy Agent retrieving documents...',
+  analyzing: 'Analysis Agent reviewing application...',
+  formulating: 'Response Agent formulating answer...',
 };
 
 // RAG Stats Tooltip Component
@@ -472,12 +472,12 @@ export default function ChatDrawer({
       {/* Floating Button - visible when drawer is closed */}
       <button
         onClick={onOpen}
-        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 hover:shadow-xl transition-all duration-300 group ${
+        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 hover:shadow-xl transition-all duration-300 group whitespace-nowrap ${
           isOpen ? 'opacity-0 pointer-events-none translate-x-4' : 'opacity-100 translate-x-0'
         }`}
-        title="Ask IQ - Chat with AI Assistant"
+        title="Ask IQ Agent"
       >
-        <MessageSquare className="w-5 h-5" />
+        <MessageSquare className="w-5 h-5 flex-shrink-0" />
         <span className="font-medium text-sm">Ask IQ</span>
       </button>
 

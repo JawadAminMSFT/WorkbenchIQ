@@ -34,7 +34,7 @@ from ..multimodal import (
     detect_media_type,
 )
 from ..multimodal.aggregator import aggregate_claim_results
-from ..storage import get_application_dir
+from ..storage import load_application, load_cu_result
 import json
 from pathlib import Path
 
@@ -50,22 +50,30 @@ router = APIRouter(prefix="/api/claims", tags=["Automotive Claims"])
 
 def _get_assessment_from_files(claim_id: str) -> Optional[dict]:
     """
-    Generate assessment data from file-based metadata.json with LLM outputs.
+    Generate assessment data from metadata.json with LLM outputs.
     This provides backward compatibility for claims created through the
     traditional application flow.
     Returns data matching ClaimAssessmentResponse structure.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
     """
     settings = load_settings()
     root = settings.app.storage_root
-    app_dir = get_application_dir(root, claim_id)
-    meta_path = app_dir / "metadata.json"
     
-    if not meta_path.exists():
+    # Use storage provider to load metadata (supports both local and blob storage)
+    app_metadata = load_application(root, claim_id)
+    
+    if not app_metadata:
         return None
     
     try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
+        # Convert ApplicationMetadata to dict for processing
+        metadata = {
+            "id": app_metadata.id,
+            "persona": app_metadata.persona,
+            "llm_outputs": app_metadata.llm_outputs or {},
+            "created_at": app_metadata.created_at,
+        }
         
         # Get LLM outputs from metadata
         llm_outputs = metadata.get("llm_outputs", {})
@@ -245,16 +253,17 @@ def _extract_damage_areas(fields: dict) -> List[str]:
 
 def _get_media_from_files(claim_id: str) -> List[dict]:
     """
-    Generate media list from file-based storage.
+    Generate media list from storage (supports both local and Azure Blob storage).
     """
     settings = load_settings()
     root = settings.app.storage_root
-    app_dir = get_application_dir(root, claim_id)
-    files_dir = app_dir / "files"
+    
+    # Use storage provider to load metadata (supports both local and blob storage)
+    app_metadata = load_application(root, claim_id)
     
     media_list = []
     
-    if not files_dir.exists():
+    if not app_metadata or not app_metadata.files:
         return media_list
     
     # Content type mapping
@@ -274,38 +283,32 @@ def _get_media_from_files(claim_id: str) -> List[dict]:
         ".webm": "video/webm",
     }
     
-    for file_path in files_dir.iterdir():
-        if file_path.is_file():
-            ext = file_path.suffix.lower()
-            if ext in content_types:
-                # Determine media type from extension
-                if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]:
-                    media_type = "video"
-                elif ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"]:
-                    media_type = "image"
-                else:
-                    media_type = "document"
-                
-                # Get file size
-                try:
-                    file_size = file_path.stat().st_size
-                except:
-                    file_size = 0
-                
-                url = f"/api/applications/{claim_id}/files/{file_path.name}"
-                
-                media_list.append({
-                    "media_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, str(file_path))),
-                    "filename": file_path.name,
-                    "content_type": content_types.get(ext, "application/octet-stream"),
-                    "media_type": media_type,
-                    "size": file_size,
-                    "thumbnail_url": url if media_type == "image" else None,
-                    "url": url,
-                    "processed": True,
-                    "analysis_summary": None,
-                    "uploaded_at": datetime.now(UTC).isoformat(),
-                })
+    for stored_file in app_metadata.files:
+        filename = stored_file.filename
+        ext = Path(filename).suffix.lower()
+        if ext in content_types:
+            # Determine media type from extension
+            if ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]:
+                media_type = "video"
+            elif ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"]:
+                media_type = "image"
+            else:
+                media_type = "document"
+            
+            url = stored_file.url or f"/api/applications/{claim_id}/files/{filename}"
+            
+            media_list.append({
+                "media_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{claim_id}/{filename}")),
+                "filename": filename,
+                "content_type": content_types.get(ext, "application/octet-stream"),
+                "media_type": media_type,
+                "size": 0,  # Size not available from metadata
+                "thumbnail_url": url if media_type == "image" else None,
+                "url": url,
+                "processed": True,
+                "analysis_summary": None,
+                "uploaded_at": datetime.now(UTC).isoformat(),
+            })
     
     return media_list
 
@@ -314,26 +317,26 @@ def _get_keyframes_from_files(claim_id: str, media_id: str) -> tuple[List[dict],
     """
     Generate synthetic keyframes for video files based on video analysis data.
     Returns tuple of (keyframes list, video duration in seconds).
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
     """
     settings = load_settings()
     root = settings.app.storage_root
-    app_dir = get_application_dir(root, claim_id)
-    metadata_path = app_dir / "metadata.json"
     
     keyframes = []
     video_duration = 30.0  # Default duration in seconds
     
-    if not metadata_path.exists():
+    # Use storage provider to load metadata (supports both local and blob storage)
+    app_metadata = load_application(root, claim_id)
+    
+    if not app_metadata:
         return keyframes, video_duration
     
     try:
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-        
         # Find video file info
         video_filename = None
-        for file_info in metadata.get("files", []):
-            filename = file_info.get("filename", "")
+        for file_info in app_metadata.files or []:
+            filename = file_info.filename
             if filename.lower().endswith(('.mp4', '.mov', '.avi', '.webm')):
                 video_filename = filename
                 break
@@ -343,7 +346,7 @@ def _get_keyframes_from_files(claim_id: str, media_id: str) -> tuple[List[dict],
         
         # Extract video analysis fields from metadata
         # extracted_fields can be either a dict (key = "filename:fieldname") or a list
-        extracted_fields = metadata.get("extracted_fields", {})
+        extracted_fields = app_metadata.extracted_fields or {}
         video_fields = {}
         
         if isinstance(extracted_fields, dict):
@@ -444,19 +447,19 @@ def _get_keyframes_from_files(claim_id: str, media_id: str) -> tuple[List[dict],
 def _get_damage_areas_from_files(claim_id: str, media_id: str) -> List[dict]:
     """
     Generate damage areas from content understanding data.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
     """
     settings = load_settings()
     root = settings.app.storage_root
-    app_dir = get_application_dir(root, claim_id)
-    cu_path = app_dir / "content_understanding.json"
     
-    if not cu_path.exists():
+    # Use storage provider to load CU result (supports both local and blob storage)
+    cu_data = load_cu_result(root, claim_id)
+    
+    if not cu_data:
         return []
     
     try:
-        with open(cu_path, "r", encoding="utf-8") as f:
-            cu_data = json.load(f)
-        
         result = cu_data.get("result", {})
         contents = result.get("contents", [])
         if not contents:
