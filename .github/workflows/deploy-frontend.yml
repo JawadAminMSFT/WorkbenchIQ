@@ -1,0 +1,157 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+    inputs:
+      swap_to_production:
+        description: 'Swap staging slot to production after deployment'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '18.x'
+  AZURE_WEBAPP_NAME: 'workbenchiq'
+  AZURE_RESOURCE_GROUP: 'work-bench-iq-rg'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Copy static assets
+        run: cp -r .next/static .next/standalone/.next/
+
+      - name: Copy public folder
+        run: |
+          if [ -d "public" ]; then
+            cp -r public .next/standalone/
+          fi
+
+      - name: Create deployment package
+        run: |
+          cd .next/standalone
+          zip -rq ../deploy.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-package
+          path: frontend/.next/deploy.zip
+          retention-days: 1
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-package
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to staging slot
+        run: |
+          az webapp deploy \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --slot staging \
+            --src-path deploy.zip \
+            --type zip
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Health check staging
+        run: |
+          STAGING_URL="https://${{ env.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net"
+          echo "Checking health at $STAGING_URL/"
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP status $HTTP_STATUS, retrying in 15 seconds..."
+            sleep 15
+          done
+          
+          echo "Staging health check failed after 5 attempts"
+          exit 1
+
+      - name: Azure logout
+        if: always()
+        run: az logout
+
+  swap-to-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.swap_to_production }}
+    environment: production
+    
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Swap staging to production
+        run: |
+          az webapp deployment slot swap \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --slot staging \
+            --target-slot production
+
+      - name: Health check production
+        run: |
+          PROD_URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          echo "Checking health at $PROD_URL/"
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Production health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP status $HTTP_STATUS, retrying in 15 seconds..."
+            sleep 15
+          done
+          
+          echo "Production health check failed after 5 attempts"
+          exit 1
+
+      - name: Azure logout
+        if: always()
+        run: az logout
