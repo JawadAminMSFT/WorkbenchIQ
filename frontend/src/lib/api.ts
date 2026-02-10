@@ -29,6 +29,28 @@ import type {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
+ * Get the direct backend API base URL for media requests.
+ * In the browser, derives the API origin from the current hostname
+ * (e.g., workbenchiq.azurewebsites.net → workbenchiq-api.azurewebsites.net).
+ * Falls back to NEXT_PUBLIC_API_URL or localhost for SSR/local dev.
+ */
+function getMediaBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    // Use NEXT_PUBLIC_API_URL if it was injected at build time
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
+    // On Azure: derive API URL from frontend URL (add -api suffix)
+    const host = window.location.hostname;
+    if (host.endsWith('.azurewebsites.net')) {
+      const appName = host.replace('.azurewebsites.net', '');
+      return `https://${appName}-api.azurewebsites.net`;
+    }
+  }
+  return API_BASE_URL;
+}
+
+/**
  * Get the full direct URL for a media file (image, video, PDF).
  * Bypasses the Next.js proxy so browsers receive proper Content-Length
  * and Accept-Ranges headers needed for video/image rendering.
@@ -38,7 +60,8 @@ export function getMediaUrl(url: string): string {
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
   }
-  return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  const base = getMediaBaseUrl();
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
 /**
