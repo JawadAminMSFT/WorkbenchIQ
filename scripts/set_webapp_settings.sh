@@ -7,8 +7,8 @@ set -e
 
 # Default values
 ENV_FILE=".env"
-RESOURCE_GROUP=""
-WEBAPP_NAME=""
+RESOURCE_GROUP="work-bench-iq-rg"
+WEBAPP_NAME="workbenchiq-api"
 
 # Parse command line arguments
 while getopts "g:n:e:h" opt; do
