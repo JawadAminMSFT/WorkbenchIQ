@@ -1,0 +1,166 @@
+name: Deploy Backend API
+
+on:
+  workflow_dispatch:
+    inputs:
+      swap_to_production:
+        description: 'Swap staging slot to production after deployment'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.10'
+  AZURE_WEBAPP_NAME: 'workbenchiq-api'
+  AZURE_RESOURCE_GROUP: 'work-bench-iq-rg'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy
+          # Copy only necessary files for deployment
+          rsync -av --progress . deploy/ \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude '.pytest_cache' \
+            --exclude 'tests' \
+            --exclude 'docs' \
+            --exclude 'frontend' \
+            --exclude 'specs' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'deploy' \
+            --exclude '.venv' \
+            --exclude 'venv'
+          
+          cd deploy && zip -r ../backend.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-package
+          path: backend.zip
+          retention-days: 1
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-package
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      - name: Deploy to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          resource-group-name: ${{ env.AZURE_RESOURCE_GROUP }}
+          slot-name: staging
+          package: backend.zip
+          startup-command: 'bash scripts/startup.sh'
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Health check staging
+        run: |
+          STAGING_URL="https://${{ env.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net"
+          echo "Checking health at $STAGING_URL/"
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP status $HTTP_STATUS, retrying in 15 seconds..."
+            sleep 15
+          done
+          
+          echo "Staging health check failed after 5 attempts"
+          exit 1
+
+      - name: Azure logout
+        if: always()
+        run: az logout
+
+  swap-to-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: ${{ inputs.swap_to_production }}
+    environment: production
+    
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      - name: Swap staging to production
+        run: |
+          az webapp deployment slot swap \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --slot staging \
+            --target-slot production
+
+      - name: Health check production
+        run: |
+          PROD_URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          echo "Checking health at $PROD_URL/"
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Production health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP status $HTTP_STATUS, retrying in 15 seconds..."
+            sleep 15
+          done
+          
+          echo "Production health check failed after 5 attempts"
+          exit 1
+
+      - name: Azure logout
+        if: always()
+        run: az logout

@@ -6,7 +6,8 @@
 # Project-specific
 # ============================================================================
 .specify/
-.github/
+.github/*
+!.github/workflows/
 underwriting-aps-docs/
 batch-review-output/
 
