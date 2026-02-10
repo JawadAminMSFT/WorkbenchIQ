@@ -7,6 +7,7 @@
 # ============================================================================
 .specify/
 .github/
+!.github/workflows/
 underwriting-aps-docs/
 batch-review-output/
 
