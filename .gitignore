@@ -8,6 +8,9 @@
 .specify/
 .github/*
 !.github/workflows/
+!.github/agents/
+!.github/instructions/
+!.github/prompts/
 underwriting-aps-docs/
 batch-review-output/
 
