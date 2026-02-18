@@ -8,6 +8,9 @@
 .specify/
 .github/*
 !.github/workflows/
+!.github/agents/
+!.github/instructions/
+!.github/prompts/
 underwriting-aps-docs/
 batch-review-output/
 
@@ -374,3 +377,6 @@ content-understanding-samples/
 
 # Include frontend lib folder (not Python's lib/)
 !frontend/src/lib/
+
+# Include infra bash library folder
+!infra/lib/
