@@ -145,6 +145,14 @@ export interface RiskAnalysis {
   };
 }
 
+export interface BatchSummary {
+  batch_num: number;
+  page_start: number;
+  page_end: number;
+  page_count: number;
+  summary: string;
+}
+
 export interface ApplicationMetadata {
   id: string;
   created_at: string;
@@ -160,6 +168,20 @@ export interface ApplicationMetadata {
   confidence_summary?: ConfidenceSummary;
   analyzer_id_used?: string;
   risk_analysis?: RiskAnalysis;
+  // Background processing status
+  processing_status?: 'extracting' | 'analyzing' | 'error' | null;
+  processing_error?: string | null;
+  // Large document processing
+  processing_mode?: 'standard' | 'large_document';
+  condensed_context?: string;
+  document_stats?: {
+    size_bytes?: number;
+    size_kb?: number;
+    size_mb?: number;
+    page_count?: number;
+    estimated_tokens?: number;
+  };
+  batch_summaries?: BatchSummary[];
 }
 
 export interface ApplicationListItem {
@@ -169,6 +191,7 @@ export interface ApplicationListItem {
   status: string;
   persona?: string;
   summary_title?: string;
+  processing_status?: 'extracting' | 'analyzing' | 'error' | null;
 }
 
 // Patient/Applicant structured data derived from extracted fields
@@ -293,8 +316,11 @@ export interface AnalyzerStatus {
 export interface AnalyzerInfo {
   id: string;
   type: 'prebuilt' | 'custom';
+  media_type?: 'document' | 'image' | 'video';
   description: string;
   exists: boolean;
+  persona?: string;
+  persona_name?: string;
 }
 
 /**

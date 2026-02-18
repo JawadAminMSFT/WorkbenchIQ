@@ -21,7 +21,7 @@ except ImportError:
 logger = setup_logging()
 
 # Polling timeout in seconds for long-running operations
-POLL_TIMEOUT_SECONDS = 180
+POLL_TIMEOUT_SECONDS = 900
 
 # Cache for Azure AD credential to avoid recreating on every request
 _credential_cache: Optional[Any] = None
@@ -230,16 +230,19 @@ def analyze_document(
 
     # Get authentication token or key
     token = None
+    api_key = None
     if settings.use_azure_ad:
         credential = DefaultAzureCredential()
         token = credential.get_token("https://cognitiveservices.azure.com/.default").token
+    else:
+        api_key = settings.api_key
 
     # Use the correct GA API endpoint path
     url = f"{endpoint}/contentunderstanding/analyzers/{analyzer_id}:analyzeBinary"
     params = {"api-version": settings.api_version}
     
     # Headers for binary file upload
-    headers = _get_headers(subscription_key=settings.api_key, token=token)
+    headers = _get_headers(subscription_key=api_key, token=token)
     headers["Content-Type"] = "application/octet-stream"
 
     if output_markdown:
@@ -281,6 +284,308 @@ def analyze_document(
     )
 
 
+def analyze_image(
+    settings: ContentUnderstandingSettings,
+    file_path: str = "",
+    file_bytes: Optional[bytes] = None,
+    analyzer_id: Optional[str] = None,
+    max_retries: int = 3,
+    retry_backoff: float = 1.5,
+) -> Dict[str, Any]:
+    """Analyze an image using Azure Content Understanding.
+    
+    Uses the prebuilt-image analyzer or a custom image analyzer for
+    automotive claims damage detection.
+    
+    Args:
+        settings: Content Understanding settings
+        file_path: Path to the image file (used if file_bytes not provided)
+        file_bytes: Raw image content bytes (preferred for cloud storage)
+        analyzer_id: Analyzer ID to use (defaults to prebuilt-image)
+        max_retries: Number of retry attempts
+        retry_backoff: Backoff multiplier between retries
+    
+    Returns:
+        Analysis result with image content, objects, and extracted fields
+    """
+    if not settings.endpoint:
+        raise ContentUnderstandingError(
+            "Azure Content Understanding endpoint is not set."
+        )
+    
+    endpoint = settings.endpoint.rstrip("/")
+    analyzer_id = analyzer_id or "prebuilt-image"
+    
+    # Get authentication
+    token, headers = _get_auth_token_and_headers(settings)
+    headers["Content-Type"] = "application/octet-stream"
+    
+    url = f"{endpoint}/contentunderstanding/analyzers/{analyzer_id}:analyzeBinary"
+    params = {"api-version": settings.api_version}
+    
+    # Use provided bytes or read from file path
+    if file_bytes is None:
+        file_bytes = Path(file_path).read_bytes()
+    
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(
+                url,
+                params=params,
+                headers=headers,
+                data=file_bytes,
+                timeout=120,
+            )
+            _raise_for_status_with_detail(resp)
+            
+            result = poll_result(resp, headers)
+            return result
+        
+        except Exception as exc:
+            last_err = exc
+            logger.warning(
+                "Content Understanding analyze_image attempt %s failed: %s",
+                attempt,
+                str(exc),
+            )
+            if attempt < max_retries:
+                time.sleep(retry_backoff**attempt)
+    
+    raise ContentUnderstandingError(
+        f"Content Understanding analyze_image failed after {max_retries} attempts: {last_err}"
+    )
+
+
+def analyze_video(
+    settings: ContentUnderstandingSettings,
+    file_path: str = "",
+    file_bytes: Optional[bytes] = None,
+    analyzer_id: Optional[str] = None,
+    max_retries: int = 3,
+    retry_backoff: float = 1.5,
+    poll_timeout_seconds: int = 300,  # Videos take longer to process
+) -> Dict[str, Any]:
+    """Analyze a video using Azure Content Understanding.
+    
+    Uses the prebuilt-video analyzer or a custom video analyzer for
+    automotive claims incident analysis.
+    
+    Args:
+        settings: Content Understanding settings
+        file_path: Path to the video file (used if file_bytes not provided)
+        file_bytes: Raw video content bytes (preferred for cloud storage)
+        analyzer_id: Analyzer ID to use (defaults to prebuilt-video)
+        max_retries: Number of retry attempts
+        retry_backoff: Backoff multiplier between retries
+        poll_timeout_seconds: Timeout for video processing (default 300s / 5 min)
+    
+    Returns:
+        Analysis result with video segments, keyframes, transcript, and fields
+    """
+    if not settings.endpoint:
+        raise ContentUnderstandingError(
+            "Azure Content Understanding endpoint is not set."
+        )
+    
+    endpoint = settings.endpoint.rstrip("/")
+    analyzer_id = analyzer_id or "prebuilt-video"
+    
+    # Get authentication
+    token, headers = _get_auth_token_and_headers(settings)
+    headers["Content-Type"] = "application/octet-stream"
+    
+    url = f"{endpoint}/contentunderstanding/analyzers/{analyzer_id}:analyzeBinary"
+    params = {"api-version": settings.api_version}
+    
+    # Use provided bytes or read from file path
+    if file_bytes is None:
+        file_bytes = Path(file_path).read_bytes()
+    
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(
+                url,
+                params=params,
+                headers=headers,
+                data=file_bytes,
+                timeout=180,  # Longer timeout for video upload
+            )
+            _raise_for_status_with_detail(resp)
+            
+            # Use longer timeout for video polling
+            result = poll_result(resp, headers, timeout_seconds=poll_timeout_seconds)
+            return result
+        
+        except Exception as exc:
+            last_err = exc
+            logger.warning(
+                "Content Understanding analyze_video attempt %s failed: %s",
+                attempt,
+                str(exc),
+            )
+            if attempt < max_retries:
+                time.sleep(retry_backoff**attempt)
+    
+    raise ContentUnderstandingError(
+        f"Content Understanding analyze_video failed after {max_retries} attempts: {last_err}"
+    )
+
+
+def extract_video_keyframes(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract keyframe URLs from video analysis result.
+    
+    Keyframes are representative frames extracted at key moments in the video.
+    For automotive claims, these often capture damage states or incident moments.
+    
+    Args:
+        payload: The raw video analysis result from Content Understanding
+    
+    Returns:
+        List of keyframe dictionaries with timestamp, url, and description
+    """
+    keyframes: List[Dict[str, Any]] = []
+    
+    result = payload.get("result", {})
+    contents = result.get("contents", [])
+    
+    for content in contents:
+        # Check for audioVisual content type
+        if content.get("kind") == "audioVisual":
+            # Keyframes may be in segments or directly in content
+            segments = content.get("segments", [])
+            for segment in segments:
+                segment_keyframes = segment.get("keyframes", [])
+                for kf in segment_keyframes:
+                    keyframes.append({
+                        "timestamp": kf.get("timestamp") or kf.get("time", "0:00:00"),
+                        "url": kf.get("url") or kf.get("imageUrl"),
+                        "description": kf.get("description") or kf.get("caption", ""),
+                        "segment_id": segment.get("id"),
+                    })
+            
+            # Also check top-level keyframes
+            top_keyframes = content.get("keyframes", [])
+            for kf in top_keyframes:
+                keyframes.append({
+                    "timestamp": kf.get("timestamp") or kf.get("time", "0:00:00"),
+                    "url": kf.get("url") or kf.get("imageUrl"),
+                    "description": kf.get("description") or kf.get("caption", ""),
+                })
+    
+    # Also check legacy format
+    if not keyframes:
+        for kf in payload.get("keyframes", []):
+            keyframes.append({
+                "timestamp": kf.get("timestamp") or kf.get("time", "0:00:00"),
+                "url": kf.get("url") or kf.get("imageUrl"),
+                "description": kf.get("description") or kf.get("caption", ""),
+            })
+    
+    logger.info("Extracted %d keyframes from video", len(keyframes))
+    return keyframes
+
+
+def extract_video_transcript(payload: Dict[str, Any]) -> str:
+    """Extract transcript text from video analysis result.
+    
+    The transcript contains spoken words detected in the video,
+    useful for capturing driver statements or witness accounts.
+    
+    Args:
+        payload: The raw video analysis result from Content Understanding
+    
+    Returns:
+        Full transcript text as a single string
+    """
+    transcript_parts: List[str] = []
+    
+    result = payload.get("result", {})
+    contents = result.get("contents", [])
+    
+    for content in contents:
+        if content.get("kind") == "audioVisual":
+            # Transcript may be in markdown or separate transcript field
+            markdown = content.get("markdown", "")
+            if markdown:
+                transcript_parts.append(markdown)
+            
+            # Check for explicit transcript
+            transcript = content.get("transcript", "")
+            if transcript:
+                transcript_parts.append(transcript)
+            
+            # Check segments for speech
+            segments = content.get("segments", [])
+            for segment in segments:
+                speech = segment.get("speech") or segment.get("transcript", "")
+                if speech:
+                    timestamp = segment.get("startTime", "")
+                    if timestamp:
+                        transcript_parts.append(f"[{timestamp}] {speech}")
+                    else:
+                        transcript_parts.append(speech)
+    
+    # Legacy format
+    if not transcript_parts:
+        transcript = payload.get("transcript", "")
+        if transcript:
+            transcript_parts.append(transcript)
+    
+    full_transcript = "\n".join(transcript_parts)
+    logger.info("Extracted transcript with %d characters", len(full_transcript))
+    return full_transcript
+
+
+def extract_video_segments(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract video segments/chapters from analysis result.
+    
+    Segments represent logical divisions of the video content,
+    such as pre-incident, impact moment, and post-incident phases.
+    
+    Args:
+        payload: The raw video analysis result from Content Understanding
+    
+    Returns:
+        List of segment dictionaries with timing and description
+    """
+    segments: List[Dict[str, Any]] = []
+    
+    result = payload.get("result", {})
+    contents = result.get("contents", [])
+    
+    for content in contents:
+        if content.get("kind") == "audioVisual":
+            content_segments = content.get("segments", [])
+            for seg in content_segments:
+                segments.append({
+                    "id": seg.get("id") or len(segments),
+                    "start_time": seg.get("startTime") or seg.get("start", "0:00:00"),
+                    "end_time": seg.get("endTime") or seg.get("end"),
+                    "duration": seg.get("duration"),
+                    "description": seg.get("description") or seg.get("summary", ""),
+                    "label": seg.get("label") or seg.get("title", ""),
+                    "keyframes": seg.get("keyframes", []),
+                    "transcript": seg.get("speech") or seg.get("transcript", ""),
+                })
+    
+    # Legacy format
+    if not segments:
+        for seg in payload.get("segments", []):
+            segments.append({
+                "id": seg.get("id") or len(segments),
+                "start_time": seg.get("startTime") or seg.get("start", "0:00:00"),
+                "end_time": seg.get("endTime") or seg.get("end"),
+                "duration": seg.get("duration"),
+                "description": seg.get("description") or seg.get("summary", ""),
+                "label": seg.get("label") or seg.get("title", ""),
+            })
+    
+    logger.info("Extracted %d video segments", len(segments))
+    return segments
+
+
 def extract_markdown_from_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Normalise the CU result into a combined markdown + page list.
     
@@ -314,13 +619,27 @@ def extract_markdown_from_result(payload: Dict[str, Any]) -> Dict[str, Any]:
                 start_page = content.get("startPageNumber", 1)
                 end_page = content.get("endPageNumber", start_page)
                 
-                # If we have page-level data, split accordingly
+                # If we have page-level data with spans, split markdown by page
                 if pages_data:
                     for page_info in pages_data:
                         page_num = page_info.get("pageNumber", len(pages) + 1)
+                        
+                        # Extract page-specific markdown using spans
+                        page_markdown = ""
+                        spans = page_info.get("spans", [])
+                        if spans:
+                            # Combine all spans for this page
+                            for span in spans:
+                                offset = span.get("offset", 0)
+                                length = span.get("length", 0)
+                                page_markdown += markdown[offset:offset + length]
+                        else:
+                            # No spans available, can't split - use placeholder
+                            page_markdown = f"[Page {page_num} content - see full document]"
+                        
                         pages.append({
                             "page_number": page_num,
-                            "markdown": markdown,  # Full markdown for now
+                            "markdown": page_markdown.strip(),
                             "width": page_info.get("width"),
                             "height": page_info.get("height"),
                         })
@@ -378,6 +697,7 @@ def _get_auth_token_and_headers(settings: ContentUnderstandingSettings) -> tuple
     """Get authentication token and headers for API calls."""
     global _credential_cache
     token = None
+    api_key = None
     if settings.use_azure_ad:
         if not AZURE_IDENTITY_AVAILABLE:
             raise ContentUnderstandingError(
@@ -390,8 +710,10 @@ def _get_auth_token_and_headers(settings: ContentUnderstandingSettings) -> tuple
             _credential_cache = DefaultAzureCredential()
         # Get token from cached credential (tokens are cached internally by azure-identity)
         token = _credential_cache.get_token("https://cognitiveservices.azure.com/.default").token
+    else:
+        api_key = settings.api_key
     
-    headers = _get_headers(subscription_key=settings.api_key, token=token)
+    headers = _get_headers(subscription_key=api_key, token=token)
     return token, headers
 
 
@@ -437,6 +759,7 @@ def create_or_update_custom_analyzer(
     field_schema: Optional[Dict[str, Any]] = None,
     description: str = "Custom analyzer for document extraction with confidence scores",
     force_recreate: bool = True,
+    media_type: str = "document",
 ) -> Dict[str, Any]:
     """Create or update a custom analyzer with field schema for confidence scoring.
     
@@ -447,6 +770,7 @@ def create_or_update_custom_analyzer(
         field_schema: Field schema definition (overrides persona_id if provided)
         description: Description of the analyzer
         force_recreate: If True, delete existing analyzer and recreate (default True)
+        media_type: Type of media to analyze ("document", "image", or "video")
     
     Returns:
         The created/updated analyzer configuration
@@ -462,7 +786,7 @@ def create_or_update_custom_analyzer(
     if field_schema is None:
         if persona_id:
             from app.personas import get_field_schema
-            field_schema = get_field_schema(persona_id)
+            field_schema = get_field_schema(persona_id, media_type=media_type)
         else:
             field_schema = UNDERWRITING_FIELD_SCHEMA
     
@@ -473,18 +797,37 @@ def create_or_update_custom_analyzer(
     _, headers = _get_auth_token_and_headers(settings)
     headers["Content-Type"] = "application/json"
     
-    # Build the analyzer configuration
-    analyzer_config = {
-        "analyzerId": analyzer_id,
-        "description": description,
-        "baseAnalyzerId": "prebuilt-document",
-        "config": {
+    # Determine base analyzer and config based on media type
+    if media_type == "image":
+        base_analyzer = "prebuilt-image"
+        config = {
+            "returnDetails": True,
+            "estimateFieldSourceAndConfidence": settings.enable_confidence_scores,
+        }
+    elif media_type == "video":
+        base_analyzer = "prebuilt-video"
+        config = {
+            "returnDetails": True,
+            "estimateFieldSourceAndConfidence": settings.enable_confidence_scores,
+            "videoExtractionMode": "keyFrames",  # Extract key frames from video
+        }
+    else:
+        # Default to document
+        base_analyzer = "prebuilt-document"
+        config = {
             "returnDetails": True,
             "enableOcr": True,
             "enableLayout": True,
             "tableFormat": "markdown",
             "estimateFieldSourceAndConfidence": settings.enable_confidence_scores,
-        },
+        }
+    
+    # Build the analyzer configuration
+    analyzer_config = {
+        "analyzerId": analyzer_id,
+        "description": description,
+        "baseAnalyzerId": base_analyzer,
+        "config": config,
         "fieldSchema": field_schema,
         "models": {
             "completion": "gpt-4.1",  # Use gpt-4.1-mini for cost efficiency

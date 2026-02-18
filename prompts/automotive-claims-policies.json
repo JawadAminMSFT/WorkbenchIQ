@@ -1,0 +1,414 @@
+{
+  "version": "1.0",
+  "effective_date": "2026-01-01",
+  "description": "Automotive Claims Assessment Policies - Guidelines for evaluating automotive insurance claims including damage assessment, liability determination, fraud detection, and payout calculation",
+  "last_updated": "2026-01-20",
+  "policies": [
+    {
+      "id": "DMG-SEV-001",
+      "category": "damage_assessment",
+      "subcategory": "severity_rating",
+      "name": "Damage Severity Classification",
+      "description": "Guidelines for classifying vehicle damage severity based on visual assessment and repair estimates",
+      "criteria": [
+        {
+          "id": "DMG-SEV-001-A",
+          "condition": "Single minor dent OR scratch < 6 inches AND no structural damage AND no component replacement needed",
+          "severity": "Minor",
+          "action": "Standard processing, estimated repair $0-$1,000. Fast-track approval eligible.",
+          "rationale": "Cosmetic damage only with no safety implications. Typically PDR (paintless dent repair) or touch-up."
+        },
+        {
+          "id": "DMG-SEV-001-B",
+          "condition": "Multiple dents OR panel damage OR single component replacement (bumper, light, mirror) AND no structural damage",
+          "severity": "Moderate",
+          "action": "Standard processing, estimated repair $1,000-$5,000. Photo documentation required.",
+          "rationale": "Repairable damage affecting single panel or requiring component replacement. No frame involvement."
+        },
+        {
+          "id": "DMG-SEV-001-C",
+          "condition": "Multiple panel damage OR airbag deployment OR suspension/alignment affected OR structural component affected",
+          "severity": "Heavy",
+          "action": "Senior adjuster review required, estimated repair $5,000-$15,000. Frame inspection mandatory.",
+          "rationale": "Significant damage requiring frame assessment and possible structural repair. Safety systems may be compromised."
+        },
+        {
+          "id": "DMG-SEV-001-D",
+          "condition": "Repair cost exceeds 70% of vehicle value OR frame damage beyond repair OR safety systems compromised beyond repair",
+          "severity": "Total Loss",
+          "action": "Total loss evaluation required. Obtain market value assessment (NADA, KBB). Salvage value determination.",
+          "rationale": "Economically unviable to repair. Proceed with total loss settlement per policy terms."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Vehicle age and mileage",
+          "impact": "Vehicles > 10 years old OR > 150K miles: lower threshold for total loss (60% of value instead of 70%)"
+        },
+        {
+          "factor": "Pre-existing damage",
+          "impact": "Documented pre-existing damage reduces payout by appraised diminution. Require photos of prior condition if available."
+        },
+        {
+          "factor": "OEM vs aftermarket parts",
+          "impact": "OEM parts add 10-25% to estimate. Use aftermarket if permitted by policy and state law."
+        },
+        {
+          "factor": "Classic or specialty vehicle",
+          "impact": "Agreed value policies apply. Specialty appraiser may be required."
+        }
+      ],
+      "references": [
+        "Mitchell Collision Estimating Guide 2026",
+        "CCC One Damage Analysis Standards",
+        "NADA Vehicle Valuation Guidelines"
+      ]
+    },
+    {
+      "id": "DMG-LOC-001",
+      "category": "damage_assessment",
+      "subcategory": "damage_location",
+      "name": "Damage Location Assessment",
+      "description": "Guidelines for evaluating damage by vehicle location and associated repair complexity",
+      "criteria": [
+        {
+          "id": "DMG-LOC-001-A",
+          "condition": "Front-end damage (bumper, grille, hood, headlights) with no radiator or engine involvement",
+          "severity": "Moderate",
+          "action": "Standard repair estimate. Check for hidden damage to radiator support and cooling system.",
+          "rationale": "Front-end cosmetic damage is common and straightforward. Hidden damage check required."
+        },
+        {
+          "id": "DMG-LOC-001-B",
+          "condition": "Front-end damage with radiator, AC condenser, or engine compartment involvement",
+          "severity": "Heavy",
+          "action": "Mechanical inspection required. Fluid leak assessment. Supplement likely.",
+          "rationale": "Mechanical components affected increase complexity and cost significantly."
+        },
+        {
+          "id": "DMG-LOC-001-C",
+          "condition": "Side impact damage to doors and quarter panels with no B-pillar or rocker involvement",
+          "severity": "Moderate",
+          "action": "Door replacement or repair. Check for intrusion bar integrity.",
+          "rationale": "Side panel replacement is standard but intrusion bars must be inspected for safety."
+        },
+        {
+          "id": "DMG-LOC-001-D",
+          "condition": "Side impact with B-pillar, rocker panel, or floor pan damage",
+          "severity": "Heavy",
+          "action": "Structural repair required. Frame measurement mandatory. Senior review.",
+          "rationale": "Structural side damage affects vehicle safety envelope and requires specialized repair."
+        },
+        {
+          "id": "DMG-LOC-001-E",
+          "condition": "Rear-end damage to bumper, trunk/tailgate, tail lights only",
+          "severity": "Moderate",
+          "action": "Standard repair. Check rear body panel alignment.",
+          "rationale": "Rear cosmetic damage typically straightforward with good parts availability."
+        },
+        {
+          "id": "DMG-LOC-001-F",
+          "condition": "Rear-end damage affecting rear floor, fuel system, or rear suspension",
+          "severity": "Heavy",
+          "action": "Fuel system inspection mandatory. Frame measurement required. Supplement expected.",
+          "rationale": "Rear structural damage may affect fuel system safety and suspension geometry."
+        },
+        {
+          "id": "DMG-LOC-001-G",
+          "condition": "Roof or rollover damage",
+          "severity": "Heavy",
+          "action": "Total loss evaluation likely. Structural integrity compromised. Safety systems (airbags, curtains) affected.",
+          "rationale": "Roof damage typically indicates severe impact. Structural integrity cannot be guaranteed after rollover."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Unibody vs body-on-frame",
+          "impact": "Body-on-frame vehicles (trucks, SUVs) may have frame straightening option. Unibody damage is often more severe."
+        },
+        {
+          "factor": "Aluminum or carbon fiber body",
+          "impact": "Specialty materials require certified repair facilities. Add 25-50% to labor estimates."
+        }
+      ]
+    },
+    {
+      "id": "LIA-001",
+      "category": "liability",
+      "subcategory": "fault_determination",
+      "name": "Liability Assessment",
+      "description": "Guidelines for determining fault and liability percentage based on incident circumstances",
+      "criteria": [
+        {
+          "id": "LIA-001-A",
+          "condition": "Rear-end collision with no contributing factors from lead vehicle (no sudden stop, brake check, reverse)",
+          "liability_determination": "Following vehicle 100% at fault",
+          "action": "Clear liability. Expedited processing. No comparative negligence applies.",
+          "rationale": "Following vehicle is responsible for maintaining safe following distance under all conditions."
+        },
+        {
+          "id": "LIA-001-B",
+          "condition": "Rear-end collision with evidence of brake check, sudden reverse, or aggressive driving by lead vehicle",
+          "liability_determination": "Comparative: Lead vehicle 20-50% at fault",
+          "action": "Review dashcam evidence. Obtain witness statements. Apply comparative negligence.",
+          "rationale": "Intentional or reckless actions by lead vehicle may shift partial liability."
+        },
+        {
+          "id": "LIA-001-C",
+          "condition": "Intersection collision with traffic signal present AND clear red light runner",
+          "liability_determination": "Red light runner 100% at fault",
+          "action": "Obtain police report. Review traffic camera footage if available. Clear liability.",
+          "rationale": "Traffic control violations establish clear fault."
+        },
+        {
+          "id": "LIA-001-D",
+          "condition": "Intersection collision with disputed signal status",
+          "liability_determination": "Pending investigation - 50/50 default until resolved",
+          "action": "Request traffic camera footage. Obtain all witness statements. Review dashcam from both parties.",
+          "rationale": "Word vs word scenarios require independent evidence to establish fault."
+        },
+        {
+          "id": "LIA-001-E",
+          "condition": "Left turn collision with through traffic",
+          "liability_determination": "Left turning vehicle typically 100% at fault",
+          "action": "Document right of way. Through traffic has priority unless turning vehicle had green arrow.",
+          "rationale": "Left turning vehicle must yield to oncoming traffic unless protected by signal."
+        },
+        {
+          "id": "LIA-001-F",
+          "condition": "Parking lot collision - one vehicle parked, one vehicle moving",
+          "liability_determination": "Moving vehicle 100% at fault",
+          "action": "Clear liability. Parked vehicle has no contributory negligence.",
+          "rationale": "Moving vehicle has duty to avoid stationary objects."
+        },
+        {
+          "id": "LIA-001-G",
+          "condition": "Parking lot collision - both vehicles moving (backing, lane travel)",
+          "liability_determination": "Comparative: Typically 50/50 unless evidence shows one party clearly at fault",
+          "action": "Review damage patterns. Backing vehicle often majority at fault. Check for right of way.",
+          "rationale": "Parking lot collisions with both vehicles moving require detailed damage analysis."
+        },
+        {
+          "id": "LIA-001-H",
+          "condition": "Multi-vehicle collision (3+ vehicles) - chain reaction",
+          "liability_determination": "Initial striking vehicle typically at fault for all impacts",
+          "action": "Detailed investigation required. Diagram all impacts. May involve multiple at-fault parties.",
+          "rationale": "Chain reactions may have shared liability if intermediate vehicles failed to maintain distance."
+        },
+        {
+          "id": "LIA-001-I",
+          "condition": "Single vehicle accident - road hazard, animal, weather",
+          "liability_determination": "Comprehensive claim - no third party liability",
+          "action": "Verify coverage type (collision vs comprehensive). Document road/weather conditions.",
+          "rationale": "No third party at fault. Coverage depends on policy terms."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "State comparative negligence rules",
+          "impact": "Pure comparative vs modified comparative (50% or 51% bar) affects recovery. Check state law."
+        },
+        {
+          "factor": "Police report fault determination",
+          "impact": "Police citation strengthens but does not conclusively establish civil liability."
+        },
+        {
+          "factor": "Video evidence availability",
+          "impact": "Dashcam or surveillance video may override eyewitness accounts. Preserve all video evidence."
+        }
+      ]
+    },
+    {
+      "id": "FRD-001",
+      "category": "fraud_detection",
+      "subcategory": "red_flags",
+      "name": "Fraud Indicator Detection",
+      "description": "Guidelines for identifying potential fraudulent automotive insurance claims",
+      "criteria": [
+        {
+          "id": "FRD-001-A",
+          "condition": "Claim filed within 30 days of policy inception or coverage increase",
+          "risk_level": "High",
+          "action": "SIU referral. Enhanced documentation review. Verify policy application accuracy.",
+          "rationale": "New policies have significantly higher fraud incidence. Pre-existing damage often claimed on new policies."
+        },
+        {
+          "id": "FRD-001-B",
+          "condition": "Repair estimate exceeds visible damage assessment by more than 50%",
+          "risk_level": "Moderate-High",
+          "action": "Independent appraisal required. Request supplement justification. Review repair facility history.",
+          "rationale": "Estimate inflation is a common fraud pattern. Legitimate hidden damage should be documented with photos."
+        },
+        {
+          "id": "FRD-001-C",
+          "condition": "Multiple claims in 12-month period (more than 2 at-fault claims)",
+          "risk_level": "Moderate",
+          "action": "Claims history pattern analysis. Review for consistency. Consider EUO (Examination Under Oath).",
+          "rationale": "Frequent claims may indicate fraud, claim abuse, or high-risk behavior."
+        },
+        {
+          "id": "FRD-001-D",
+          "condition": "Damage pattern inconsistent with described incident mechanism",
+          "risk_level": "High",
+          "action": "SIU referral. Accident reconstruction may be required. Photo analysis. Possible EUO.",
+          "rationale": "Staged accidents often have damage patterns that don't match the claimed incident narrative."
+        },
+        {
+          "id": "FRD-001-E",
+          "condition": "No police report for significant damage claim (>$5,000) without reasonable explanation",
+          "risk_level": "Low-Moderate",
+          "action": "Request written explanation. Verify claimed incident details independently.",
+          "rationale": "Legitimate significant accidents typically have police documentation. Exception for remote locations."
+        },
+        {
+          "id": "FRD-001-F",
+          "condition": "Claimant insisting on specific repair facility known for fraud or overbilling",
+          "risk_level": "Moderate",
+          "action": "Offer alternative facility options. Request competitive estimates. Enhanced estimate review.",
+          "rationale": "Collusion between claimant and repair facility is a common fraud scheme."
+        },
+        {
+          "id": "FRD-001-G",
+          "condition": "Prior damage visible in photos that appears unrelated to claimed incident",
+          "risk_level": "Moderate-High",
+          "action": "Document prior damage. Request pre-loss photos from claimant. Adjust estimate to exclude prior damage.",
+          "rationale": "Claimants may attempt to include pre-existing damage in current claim."
+        },
+        {
+          "id": "FRD-001-H",
+          "condition": "Vehicle ownership recently transferred before claim",
+          "risk_level": "Moderate",
+          "action": "Verify ownership chain. Check for liens. Confirm insurable interest at time of loss.",
+          "rationale": "Title washing and owner-give-up schemes involve recent ownership transfers."
+        },
+        {
+          "id": "FRD-001-I",
+          "condition": "Claimant uncooperative with investigation or documentation requests",
+          "risk_level": "Moderate-High",
+          "action": "Document all requests and responses. Issue formal demand letters. Consider claim denial for non-cooperation.",
+          "rationale": "Legitimate claimants typically cooperate with reasonable investigation requests."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Geographic high-fraud area",
+          "impact": "Claims from known high-fraud ZIP codes warrant enhanced scrutiny."
+        },
+        {
+          "factor": "Claimant occupation",
+          "impact": "Claimants with insurance or repair industry knowledge may be more sophisticated."
+        },
+        {
+          "factor": "Time of incident",
+          "impact": "Late night incidents with no witnesses warrant additional verification."
+        }
+      ]
+    },
+    {
+      "id": "PAY-001",
+      "category": "payout_calculation",
+      "subcategory": "estimate_validation",
+      "name": "Repair Estimate Validation",
+      "description": "Guidelines for validating and adjusting repair estimates to ensure fair and accurate payout",
+      "criteria": [
+        {
+          "id": "PAY-001-A",
+          "condition": "Estimate within 10% of AI damage assessment and market benchmarks",
+          "action": "Approve estimate as submitted. No adjustment required.",
+          "rationale": "Estimate aligns with damage severity and market rates. Standard approval process."
+        },
+        {
+          "id": "PAY-001-B",
+          "condition": "Estimate exceeds AI assessment by 10-25%",
+          "action": "Review line items for reasonableness. Request photo documentation for any hidden damage claimed.",
+          "rationale": "Minor discrepancy may indicate legitimate hidden damage. Documentation required."
+        },
+        {
+          "id": "PAY-001-C",
+          "condition": "Estimate exceeds AI assessment by more than 25%",
+          "action": "Independent appraisal required. Negotiate or deny excess amount. Document all disputed items.",
+          "rationale": "Significant discrepancy requires third-party verification. May indicate overbilling."
+        },
+        {
+          "id": "PAY-001-D",
+          "condition": "Labor rate exceeds prevailing market rate by more than 15%",
+          "action": "Adjust to prevailing market rate for region. Provide rate documentation to claimant.",
+          "rationale": "Insurance pays reasonable and customary rates. Excessive labor rates not covered."
+        },
+        {
+          "id": "PAY-001-E",
+          "condition": "Parts pricing exceeds OEM list or reasonable aftermarket rates",
+          "action": "Verify parts sourcing. Apply policy terms for OEM vs aftermarket. Adjust for betterment if applicable.",
+          "rationale": "Parts should be priced at list or competitive aftermarket rates per policy terms."
+        },
+        {
+          "id": "PAY-001-F",
+          "condition": "Betterment applies (new parts on worn vehicle)",
+          "action": "Calculate betterment deduction based on age and condition of replaced components.",
+          "rationale": "Claimant should not profit from claim. Betterment applies to tires, batteries, wear items."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Regional labor rate variations",
+          "impact": "Use Mitchell, CCC, or Audatex prevailing rates for specific ZIP code."
+        },
+        {
+          "factor": "Vehicle make specialty",
+          "impact": "Luxury and exotic vehicles may justify higher labor rates at certified facilities."
+        },
+        {
+          "factor": "Parts availability",
+          "impact": "Rare or backordered parts may justify rental car extension or storage fees."
+        }
+      ]
+    },
+    {
+      "id": "PAY-002",
+      "category": "payout_calculation",
+      "subcategory": "total_loss_settlement",
+      "name": "Total Loss Settlement Calculation",
+      "description": "Guidelines for calculating fair market value and settlement for total loss vehicles",
+      "criteria": [
+        {
+          "id": "PAY-002-A",
+          "condition": "Vehicle declared total loss with clear title and no liens",
+          "action": "Obtain ACV from NADA, KBB, and comparable sales. Offer settlement at fair market value minus deductible.",
+          "rationale": "Standard total loss settlement process for unencumbered vehicles."
+        },
+        {
+          "id": "PAY-002-B",
+          "condition": "Vehicle declared total loss with active lien",
+          "action": "Obtain payoff from lienholder. Settlement paid to lienholder first, remainder to insured.",
+          "rationale": "Lienholder interest must be satisfied before insured receives funds."
+        },
+        {
+          "id": "PAY-002-C",
+          "condition": "Owner retention of total loss vehicle",
+          "action": "Deduct salvage value from settlement. Owner keeps vehicle. Brand title as salvage per state law.",
+          "rationale": "Insured may elect to keep vehicle and receive reduced settlement."
+        },
+        {
+          "id": "PAY-002-D",
+          "condition": "Gap insurance claim triggered",
+          "action": "Calculate gap between ACV and loan balance. Process gap claim with gap insurer.",
+          "rationale": "Gap coverage pays difference between ACV and outstanding loan if applicable."
+        }
+      ],
+      "modifying_factors": [
+        {
+          "factor": "Vehicle condition and options",
+          "impact": "Adjust ACV for mileage, condition, and installed options vs base model."
+        },
+        {
+          "factor": "Local market conditions",
+          "impact": "Use comparable sales within 100-mile radius for accurate local market value."
+        },
+        {
+          "factor": "Recent improvements",
+          "impact": "Document and add value for recent repairs or improvements (new tires, brakes) if receipts provided."
+        }
+      ]
+    }
+  ]
+}

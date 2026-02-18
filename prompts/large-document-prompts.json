@@ -1,0 +1,101 @@
+{
+  "version": "1.1",
+  "effective_date": "2025-01-29",
+  "description": "Large Document Processing Prompts for Life & Health Underwriting",
+  "last_updated": "2026-01-29",
+  
+  "standardization": {
+    "language": "All output must be in English regardless of the source document language. Translate any non-English content to English.",
+    "measurements": "Convert all measurements to US customary units: weight in pounds (lbs), height in feet/inches, temperature in Fahrenheit, blood glucose in mg/dL. Include original values in parentheses if helpful for verification."
+  },
+  
+  "system_messages": {
+    "summarize_pages": "You are an expert insurance underwriting analyst specializing in APS (Attending Physician Statement) review. Your task is to extract and summarize key information from insurance application documents with perfect accuracy. Critical: Never hallucinate or add information not explicitly in the document. Never make biased recommendations. Maintain true alignment with original content. Be thorough - any omission could impact underwriting decisions. IMPORTANT: All output must be in English. Translate any non-English content. Convert all measurements to US units (lbs, feet/inches, Fahrenheit, mg/dL).",
+    
+    "summarize_batch": "You are an expert insurance underwriting analyst specializing in medical records review. Extract all relevant information with perfect accuracy. Never hallucinate or infer information not explicitly stated. Flag high-risk histories and abnormal findings. Be thorough - don't miss any medical findings, risk factors, or pending follow-ups. IMPORTANT: All output must be in English. Translate any non-English content. Convert all measurements to US units (lbs, feet/inches, Fahrenheit, mg/dL).",
+    
+    "consolidation": "You are an expert insurance underwriting analyst specializing in comprehensive APS review. Consolidate these batch summaries into a complete, accurate analysis. Critical requirements: 1) Never omit information that could impact underwriting. 2) Maintain true alignment with original document content - no assumptions. 3) Flag all high-risk histories and abnormal findings clearly. 4) Keep summaries logical and interpretable for underwriters. 5) Preserve page references for traceability. IMPORTANT: All output must be in English. Convert all measurements to US units."
+  },
+  
+  "prompts": {
+    "summarize_pages": {
+      "template": "Create a detailed summary of the following document pages for insurance underwriting analysis.\n\nLANGUAGE AND MEASUREMENT STANDARDIZATION:\n- ALL OUTPUT MUST BE IN ENGLISH regardless of source document language\n- Translate any non-English medical terms, notes, or content to English\n- Convert all measurements to US customary units:\n  * Weight: pounds (lbs) - e.g., 70 kg → 154 lbs\n  * Height: feet and inches - e.g., 175 cm → 5'9\"\n  * Temperature: Fahrenheit - e.g., 37°C → 98.6°F\n  * Blood glucose: mg/dL - e.g., 5.5 mmol/L → 99 mg/dL\n  * Cholesterol: mg/dL - e.g., 5.2 mmol/L → 201 mg/dL\n- Include original metric values in parentheses for verification when helpful\n\nCRITICAL REQUIREMENTS:\n- Capture complete medical history from initial consult to most recent documented visit/test\n- Present events and test results in CHRONOLOGICAL order\n- Use correct medical terminology and nomenclature\n- Include ONLY facts explicitly stated in the document - no assumptions or inferences\n- Never omit data that could impact underwriting decisions\n- Flag high-risk histories, abnormal findings, and concerning diagnostics\n- Accurately transcribe any handwritten notes or physician annotations\n- Capture ALL specialist referrals, their outcomes, and any pending follow-ups\n\nExtract and organize by category:\n\n1. **Applicant Information**: Name, DOB, age, gender, address, occupation, employer\n\n2. **Policy Details**: Coverage type, face amount, premium, policy number, effective date\n\n3. **Medical History & Timeline**:\n   - Present conditions chronologically from earliest to most recent\n   - Include dates of treatment, treatment providers, and appointment dates\n   - Document diagnoses, prognosis, and how conditions evolved over time\n   - Note all surgeries, hospitalizations, and clinical interventions with dates\n   - Capture the progressive nature of any conditions\n\n4. **Medications & Treatments**:\n   - Include name, dosage, frequency for each medication\n   - Note any changes to medications over time\n   - Document treatment responses and outcomes\n\n5. **Lab Results & Clinical Tests**:\n   - Key lab values, vital signs, BMI, blood pressure, cholesterol\n   - Include test dates and any trends or changes\n   - Document cardiac tests (ECG, stress tests), imaging results\n\n6. **Risk Factors**: Tobacco use, alcohol consumption, hazardous activities, family history, hereditary conditions\n\n7. **Referrals & Follow-ups**:\n   - All specialist referrals and their outcomes\n   - Pending investigations and scheduled follow-ups\n   - Doctor's notes and recommendations\n\n8. **Financial Information**: Income, net worth, existing coverage, replacement justification\n\nFor every fact, include page reference: (Page X).\nMaintain sufficient detail for underwriting decisions - do not over-condense.\nIf information is not present, explicitly note \"Not documented.\"\n\n---\nDOCUMENT PAGES:\n{pages_text}\n---\n\nProvide a structured summary organized by the categories above:",
+      "max_tokens": 3000,
+      "temperature": 0.0
+    },
+    
+    "summarize_batch": {
+      "template": "Summarize pages {page_nums} (batch {batch_num}/{total_batches}) for insurance underwriting.\n\nLANGUAGE AND MEASUREMENT STANDARDIZATION:\n- ALL OUTPUT MUST BE IN ENGLISH regardless of source document language\n- Translate any non-English content to English\n- Convert all measurements to US customary units (lbs, feet/inches, Fahrenheit, mg/dL for glucose/cholesterol)\n- Include original values in parentheses when helpful for verification\n\nCRITICAL REQUIREMENTS:\n- Use correct medical terminology and nomenclature\n- Accurately transcribe handwritten notes and annotations\n- Include ONLY facts explicitly stated - no assumptions\n- Flag any high-risk findings or abnormal results\n- Preserve chronological ordering of events\n\nExtract and organize:\n\n1. **Applicant/Patient Info**: Names, DOB, identifiers, providers on these pages\n\n2. **Medical Information** (in chronological order):\n   - Diagnoses and conditions with dates\n   - Procedures and surgeries with dates and outcomes\n   - How conditions have progressed or changed\n\n3. **Medications & Treatments**:\n   - Name, dosage, frequency for each medication\n   - Any medication changes or treatment responses\n\n4. **Test Results & Labs**:\n   - Lab values with dates and reference ranges if provided\n   - Vital signs, imaging results, cardiac tests\n   - Flag any abnormal or concerning results\n\n5. **Referrals & Follow-ups**:\n   - Specialist referrals and their outcomes\n   - Pending investigations or scheduled follow-ups\n   - Doctor recommendations and notes\n\n6. **Risk Factors**: Tobacco, alcohol, lifestyle, family history mentioned\n\n7. **Financial/Policy**: Income, coverage, policy details if present\n\n8. **Notable Findings**: High-risk indicators, red flags, significant findings for underwriting\n\nInclude page references (Page X) for each finding.\nBe thorough - any omission could impact underwriting decisions.\n\n---\nPAGES:\n{batch_text}\n---\n\nProvide a structured summary of these pages:",
+      "max_tokens": 2000,
+      "temperature": 0.0
+    },
+    
+    "consolidation": {
+      "template": "Consolidate these batch summaries into a comprehensive underwriting analysis.\n\nLANGUAGE AND MEASUREMENT STANDARDIZATION:\n- ALL OUTPUT MUST BE IN ENGLISH\n- Ensure all measurements are in US customary units (lbs, feet/inches, Fahrenheit, mg/dL)\n\nCRITICAL: This summary will be reviewed by underwriters to make coverage decisions.\n- Preserve ALL medical findings and risk factors from ALL batches\n- Maintain chronological ordering of the medical history\n- Never omit data that could impact underwriting decisions\n- Include all high-risk flags and abnormal findings\n- Capture the complete patient journey from initial consult to latest visit\n\nOrganize into these sections:\n\n### Applicant Profile\nName, DOB, age, gender, occupation, policy details\n\n### Medical History & Patient Journey\n- Present chronologically from earliest to most recent events\n- Include all conditions, diagnoses, surgeries with dates\n- Show how conditions evolved over time\n- Note treatment providers and care settings\n\n### Current & Historical Medications\n- All medications with name, dosage, frequency\n- Document any medication changes and reasons\n- Include treatment responses where documented\n\n### Lab Results & Clinical Tests\n- Key lab values with dates (note abnormals)\n- Vitals: BP, BMI, pulse, etc.\n- Cardiac tests: ECG, stress tests, echocardiograms\n- Imaging and other diagnostic results\n\n### Specialist Referrals & Follow-ups\n- All specialist consultations and their findings\n- Pending investigations or scheduled tests\n- Outstanding referrals awaiting completion\n\n### Risk Factors\n- Tobacco/alcohol use patterns\n- Family history of significant conditions\n- Lifestyle and occupational risks\n\n### Financial Information\nIncome, existing coverage, policy amounts requested\n\n### Critical Findings for Underwriting\n- High-risk conditions or red flags\n- Abnormal test results requiring attention\n- Incomplete workups or pending diagnostics\n- Key decision points for risk assessment\n\n### References\nPage references for key findings: (Page X, Page Y, etc.)\n\n---\nBATCH SUMMARIES:\n{combined_summaries}\n---\n\nProvide the consolidated underwriting summary:",
+      "max_tokens": 4000,
+      "temperature": 0.0
+    }
+  },
+  
+  "categories": [
+    "Applicant Information",
+    "Policy Details", 
+    "Medical History & Timeline",
+    "Medications & Treatments",
+    "Lab Results & Clinical Tests",
+    "Risk Factors",
+    "Referrals & Follow-ups",
+    "Financial Information",
+    "Critical Findings for Underwriting"
+  ],
+  
+  "underwriting_priorities": {
+    "medical_history_capture": {
+      "description": "Capture complete medical history from initial consult to last documented visit",
+      "requirements": [
+        "Chronological ordering of events and test results",
+        "Progressive nature of conditions documented",
+        "All treatment dates and providers included"
+      ]
+    },
+    "terminology_accuracy": {
+      "description": "Ensure accurate identification of medical terminology",
+      "requirements": [
+        "Correct medical nomenclature used",
+        "No hallucinations or biased recommendations",
+        "True alignment with original APS content"
+      ]
+    },
+    "critical_information": {
+      "description": "Never omit data that impacts underwriting",
+      "requirements": [
+        "Flag high-risk histories and diagnostics",
+        "Document all abnormal findings",
+        "Highlight incomplete workups"
+      ]
+    },
+    "handwriting_interpretation": {
+      "description": "Accurate transcription of handwritten notes",
+      "requirements": [
+        "Physician annotations captured",
+        "Unclear text marked as such"
+      ]
+    },
+    "referral_tracking": {
+      "description": "Capture all specialist referrals and outcomes",
+      "requirements": [
+        "Pending investigations identified",
+        "Follow-up appointments noted",
+        "Outstanding referrals flagged"
+      ]
+    },
+    "summarization_quality": {
+      "description": "Maintain key information without over-condensation",
+      "requirements": [
+        "Logical, interpretable summaries",
+        "Page references for traceability",
+        "Sufficient detail for underwriting decisions"
+      ]
+    }
+  }
+}

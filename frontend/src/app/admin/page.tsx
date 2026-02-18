@@ -1,10 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import {
+  RefreshCw,
+  Plus,
+  Trash2,
+  Loader2,
+  FileText,
+  AlertCircle,
+  Check,
+} from 'lucide-react';
 import {
   createApplication,
   listApplications,
+  getApplication,
+  startProcessing,
   runContentUnderstanding,
   runUnderwritingAnalysis,
   getPrompts,
@@ -20,13 +31,17 @@ import {
   createPolicy as createPolicyApi,
   updatePolicy as updatePolicyApi,
   deletePolicy as deletePolicyApi,
+  reindexAllPolicies,
+  getIndexStats,
 } from '@/lib/api';
 import type { ApplicationListItem, PromptsData, AnalyzerStatus, AnalyzerInfo, FieldSchema, UnderwritingPolicy, PolicyCriteriaItem } from '@/lib/types';
+import type { IndexStats } from '@/lib/api';
 import PersonaSelector from '@/components/PersonaSelector';
+import GlossaryManager from '@/components/GlossaryManager';
 import { usePersona } from '@/lib/PersonaContext';
 
 type ProcessingStep = 'idle' | 'uploading' | 'extracting' | 'analyzing' | 'complete' | 'error';
-type AdminTab = 'documents' | 'prompts' | 'policies' | 'analyzer';
+type AdminTab = 'documents' | 'prompts' | 'policies' | 'analyzer' | 'glossary';
 
 interface ProcessingState {
   step: ProcessingStep;
@@ -49,6 +64,10 @@ export default function AdminPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [externalRef, setExternalRef] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [useLargeDocMode, setUseLargeDocMode] = useState<'auto' | 'on' | 'off'>('auto');
+  
+  // Track which app is being polled to avoid duplicate polling
+  const pollingAppIdRef = useRef<string | null>(null);
 
   // Prompts state
   const [promptsData, setPromptsData] = useState<PromptsData | null>(null);
@@ -83,6 +102,10 @@ export default function AdminPage() {
   const [policiesSuccess, setPoliciesSuccess] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<UnderwritingPolicy | null>(null);
   const [showNewPolicyForm, setShowNewPolicyForm] = useState(false);
+  
+  // RAG Index state
+  const [indexStats, setIndexStats] = useState<IndexStats | null>(null);
+  const [reindexing, setReindexing] = useState(false);
   const [policyFormData, setPolicyFormData] = useState({
     id: '',
     category: '',
@@ -99,6 +122,27 @@ export default function AdminPage() {
   
   // Helper to check if current persona is claims-related
   const isClaimsPersona = currentPersona.includes('claims');
+  
+  // Helper to check if automotive claims persona (supports multimodal uploads)
+  const isAutomotiveClaimsPersona = currentPersona === 'automotive_claims';
+  
+  // Helper to check if underwriting persona (supports large document mode)
+  const isUnderwritingPersona = currentPersona === 'underwriting';
+  
+  // Accepted file types based on persona
+  const getAcceptedFileTypes = () => {
+    if (isAutomotiveClaimsPersona) {
+      return '.pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.avi,.webm';
+    }
+    return '.pdf';
+  };
+  
+  const getAcceptedMimeTypes = () => {
+    if (isAutomotiveClaimsPersona) {
+      return ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
+    }
+    return ['application/pdf'];
+  };
 
   // Load applications
   const loadApplications = useCallback(async () => {
@@ -112,6 +156,84 @@ export default function AdminPage() {
       setLoading(false);
     }
   }, [currentPersona]);
+
+  // Poll for processing completion - reusable function
+  const pollForProcessingCompletion = useCallback((appId: string) => {
+    // Avoid duplicate polling for the same app
+    if (pollingAppIdRef.current === appId) {
+      return;
+    }
+    pollingAppIdRef.current = appId;
+    
+    const pollInterval = 2000;
+    const maxPolls = 300;
+    let pollCount = 0;
+    
+    const poll = async () => {
+      // Check if we should stop polling (component unmounted or different app started)
+      if (pollingAppIdRef.current !== appId) {
+        return;
+      }
+      
+      pollCount++;
+      if (pollCount > maxPolls) {
+        setProcessing({
+          step: 'error',
+          message: 'Processing timed out.',
+          appId,
+        });
+        pollingAppIdRef.current = null;
+        return;
+      }
+      
+      try {
+        const status = await getApplication(appId);
+        
+        if (status.processing_status === 'extracting') {
+          setProcessing({
+            step: 'extracting',
+            message: 'Data Agent extracting documents...',
+            appId,
+          });
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'analyzing') {
+          setProcessing({
+            step: 'analyzing',
+            message: 'Risk Agent analyzing case...',
+            appId,
+          });
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'error') {
+          setProcessing({
+            step: 'error',
+            message: status.processing_error || 'Agent encountered an error',
+            appId,
+          });
+          pollingAppIdRef.current = null;
+          await loadApplications();
+        } else if (!status.processing_status) {
+          // Complete
+          setProcessing({ step: 'complete', message: 'All agents complete!', appId });
+          pollingAppIdRef.current = null;
+          await loadApplications();
+          setTimeout(() => {
+            setProcessing({ step: 'idle', message: '' });
+          }, 3000);
+        }
+      } catch (err) {
+        console.warn('Polling error, retrying...', err);
+        setTimeout(poll, pollInterval);
+      }
+    };
+    
+    // Set initial status and start polling
+    setProcessing({
+      step: 'extracting',
+      message: 'Reconnecting to agents...',
+      appId,
+    });
+    setTimeout(poll, pollInterval);
+  }, [loadApplications]);
 
   // Load prompts
   const loadPrompts = useCallback(async (resetSelection: boolean = false) => {
@@ -179,6 +301,18 @@ export default function AdminPage() {
     }
   }, [currentPersona]);
 
+  // Load index stats when policies tab is active
+  const loadIndexStats = useCallback(async () => {
+    try {
+      // Use unified persona-aware index stats
+      const stats = await getIndexStats(currentPersona);
+      setIndexStats(stats);
+    } catch {
+      // Silently fail - stats are optional
+      setIndexStats(null);
+    }
+  }, [currentPersona]);
+
   useEffect(() => {
     loadApplications();
   }, [loadApplications]);
@@ -194,8 +328,9 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'policies' && policies.length === 0 && !policiesLoading) {
       loadPolicies();
+      loadIndexStats(); // Also load RAG index stats
     }
-  }, [activeTab, policies.length, policiesLoading, loadPolicies]);
+  }, [activeTab, policies.length, policiesLoading, loadPolicies, loadIndexStats]);
 
   // Reload prompts when persona changes
   useEffect(() => {
@@ -248,8 +383,9 @@ export default function AdminPage() {
     e.stopPropagation();
     setDragActive(false);
 
+    const acceptedTypes = getAcceptedMimeTypes();
     const files = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type === 'application/pdf'
+      (f) => acceptedTypes.includes(f.type)
     );
     if (files.length > 0) {
       setSelectedFiles((prev) => [...prev, ...files]);
@@ -258,8 +394,9 @@ export default function AdminPage() {
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
+      const acceptedTypes = getAcceptedMimeTypes();
       const files = Array.from(e.target.files).filter(
-        (f) => f.type === 'application/pdf'
+        (f) => acceptedTypes.includes(f.type)
       );
       setSelectedFiles((prev) => [...prev, ...files]);
     }
@@ -280,37 +417,21 @@ export default function AdminPage() {
         externalRef || undefined,
         currentPersona
       );
-      setProcessing({
-        step: 'extracting',
-        message: 'Running document extraction...',
-        appId: app.id,
-      });
-
-      // Step 2: Run Content Understanding extraction
-      await runContentUnderstanding(app.id);
-      setProcessing({
-        step: 'analyzing',
-        message: 'Running analysis...',
-        appId: app.id,
-      });
-
-      // Step 3: Run underwriting analysis
-      await runUnderwritingAnalysis(app.id);
-      setProcessing({
-        step: 'complete',
-        message: 'Processing complete!',
-        appId: app.id,
-      });
-
-      // Reset form and reload list
+      
+      // Reset form
       setSelectedFiles([]);
       setExternalRef('');
-      await loadApplications();
-
-      // Clear success message after delay
-      setTimeout(() => {
-        setProcessing({ step: 'idle', message: '' });
-      }, 3000);
+      
+      // Step 2: Start background processing (extraction + analysis)
+      // Map toggle to processing mode value
+      const processingMode = useLargeDocMode === 'on' ? 'large_document' 
+                           : useLargeDocMode === 'off' ? 'standard' 
+                           : undefined; // 'auto' = let backend decide
+      await startProcessing(app.id, processingMode);
+      
+      // Step 3: Start polling for completion
+      pollForProcessingCompletion(app.id);
+      
     } catch (err) {
       setProcessing({
         step: 'error',
@@ -321,41 +442,34 @@ export default function AdminPage() {
 
   const handleReprocess = async (appId: string, step: 'extract' | 'analyze' | 'prompts-only', sections?: string[]) => {
     try {
+      // Start processing in background mode
       if (step === 'extract') {
+        // Full reprocess: extraction + analysis
         setProcessing({
           step: 'extracting',
-          message: 'Re-running full extraction...',
+          message: 'Data Agent starting extraction...',
           appId,
         });
-        await runContentUnderstanding(appId);
-        setProcessing({
-          step: 'analyzing',
-          message: 'Running analysis...',
-          appId,
-        });
-        await runUnderwritingAnalysis(appId);
+        await startProcessing(appId); // This does both extract + analyze
       } else if (step === 'prompts-only') {
         setProcessing({
           step: 'analyzing',
-          message: sections?.length ? `Re-running prompts for: ${sections.join(', ')}...` : 'Re-running all prompts...',
+          message: sections?.length ? `Analysis Agent running: ${sections.join(', ')}...` : 'Analysis Agents running all skills...',
           appId,
         });
-        await runUnderwritingAnalysis(appId, sections);
+        await runUnderwritingAnalysis(appId, sections, true); // background=true
       } else {
         setProcessing({
           step: 'analyzing',
-          message: 'Re-running analysis...',
+          message: 'Risk Agent starting analysis...',
           appId,
         });
-        await runUnderwritingAnalysis(appId);
+        await runUnderwritingAnalysis(appId, undefined, true); // background=true
       }
       
-      setProcessing({ step: 'complete', message: 'Reprocessing complete!', appId });
-      await loadApplications();
+      // Start polling for completion
+      pollForProcessingCompletion(appId);
       
-      setTimeout(() => {
-        setProcessing({ step: 'idle', message: '' });
-      }, 3000);
     } catch (err) {
       setProcessing({
         step: 'error',
@@ -432,14 +546,14 @@ export default function AdminPage() {
   };
 
   // Analyzer handlers
-  const handleCreateAnalyzer = async () => {
+  const handleCreateAnalyzer = async (analyzerId?: string, mediaType?: string) => {
     setAnalyzerProcessing(true);
     setAnalyzerError(null);
     setAnalyzerSuccess(null);
     
     try {
-      // Pass current persona to use persona-specific field schema
-      const result = await createAnalyzer(undefined, currentPersona);
+      // Pass current persona and optional analyzer ID/media type
+      const result = await createAnalyzer(analyzerId, currentPersona, undefined, mediaType);
       setAnalyzerSuccess(`Analyzer "${result.analyzer_id}" created successfully!`);
       await loadAnalyzerData();
       
@@ -563,6 +677,38 @@ export default function AdminPage() {
       setPoliciesError(err instanceof Error ? err.message : 'Failed to delete policy');
     } finally {
       setPoliciesSaving(false);
+    }
+  };
+
+  // Handle reindexing all policies for RAG search
+  const handleReindexPolicies = async () => {
+    const policyType = isAutomotiveClaimsPersona ? 'claims' : isClaimsPersona ? 'claims' : 'underwriting';
+    if (!confirm(`This will reindex all ${policyType} policies for RAG search. This may take a few minutes. Continue?`)) return;
+    
+    setReindexing(true);
+    setPoliciesError(null);
+    
+    try {
+      // Use unified persona-aware reindex
+      const result = await reindexAllPolicies(true, currentPersona);
+        
+      if (result.status === 'success') {
+        setPoliciesSuccess(
+          `Reindex complete: ${result.policies_indexed} policies, ${result.chunks_stored} chunks (${result.total_time_seconds}s)`
+        );
+        // Refresh stats using unified API
+        const stats = await getIndexStats(currentPersona);
+        setIndexStats(stats);
+      } else if (result.status === 'skipped') {
+        setPoliciesError(result.error || 'Reindexing skipped - PostgreSQL not configured');
+      } else {
+        setPoliciesError(result.error || 'Reindexing failed');
+      }
+      setTimeout(() => setPoliciesSuccess(null), 5000);
+    } catch (err) {
+      setPoliciesError(err instanceof Error ? err.message : 'Failed to reindex policies');
+    } finally {
+      setReindexing(false);
     }
   };
 
@@ -721,11 +867,11 @@ export default function AdminPage() {
               </svg>
               <div className="text-slate-600">
                 <label className="cursor-pointer text-indigo-600 hover:text-indigo-500">
-                  <span>Upload PDF files</span>
+                  <span>{isAutomotiveClaimsPersona ? 'Upload evidence files' : 'Upload PDF files'}</span>
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".pdf"
+                    accept={getAcceptedFileTypes()}
                     multiple
                     onChange={handleFileInput}
                     disabled={isProcessing}
@@ -733,7 +879,11 @@ export default function AdminPage() {
                 </label>
                 <span> or drag and drop</span>
               </div>
-              <p className="text-xs text-slate-500">PDF files only</p>
+              <p className="text-xs text-slate-500">
+                {isAutomotiveClaimsPersona 
+                  ? 'Images (PNG, JPG), Videos (MP4, MOV), and PDF documents' 
+                  : 'PDF files only'}
+              </p>
             </div>
           </div>
 
@@ -779,6 +929,64 @@ export default function AdminPage() {
               disabled={isProcessing}
             />
           </div>
+
+          {/* Condense Context Mode - Only for underwriting persona */}
+          {isUnderwritingPersona && (
+          <div className="mt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <label className="text-sm font-medium text-slate-700">
+                Condense Context
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('auto')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'auto' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Auto
+                {useLargeDocMode === 'auto' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('on')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'on' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Always
+                {useLargeDocMode === 'on' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseLargeDocMode('off')}
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                  useLargeDocMode === 'off' 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                Never
+                {useLargeDocMode === 'off' && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Summarizes large documents to fit within AI context limits. Auto enables for docs &gt;1.5MB.
+            </p>
+          </div>
+          )}
 
           {/* Submit Button */}
           <button
@@ -827,13 +1035,23 @@ export default function AdminPage() {
                         <span className="font-mono text-sm font-medium text-slate-900">
                           {app.id}
                         </span>
-                        <span
-                          className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(
-                            app.status
-                          )}`}
-                        >
-                          {app.status}
-                        </span>
+                        {/* Processing status indicator */}
+                        {app.processing_status ? (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 flex items-center gap-1">
+                            <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                            {app.processing_status === 'extracting' ? 'Data Agent...' : 
+                             app.processing_status === 'analyzing' ? 'Risk Agent...' : 
+                             app.processing_status}
+                          </span>
+                        ) : (
+                          <span
+                            className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(
+                              app.status
+                            )}`}
+                          >
+                            {app.status}
+                          </span>
+                        )}
                       </div>
                       {app.external_reference && (
                         <p className="text-sm text-slate-500">
@@ -848,7 +1066,30 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {app.status === 'pending' && (
+                      {/* Resume tracking button for in-progress apps */}
+                      {app.processing_status && (app.processing_status === 'extracting' || app.processing_status === 'analyzing') && (
+                        <button
+                          onClick={() => pollForProcessingCompletion(app.id)}
+                          disabled={processing.appId === app.id}
+                          className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 disabled:opacity-50 transition-colors flex items-center gap-1"
+                          title="Resume tracking progress"
+                        >
+                          {processing.appId === app.id ? (
+                            <>
+                              <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                              Tracking...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                              Resume
+                            </>
+                          )}
+                        </button>
+                      )}
+                      {app.status === 'pending' && !app.processing_status && (
                         <button
                           onClick={() => handleReprocess(app.id, 'extract')}
                           disabled={isProcessing}
@@ -857,7 +1098,7 @@ export default function AdminPage() {
                           Extract
                         </button>
                       )}
-                      {app.status === 'extracted' && (
+                      {app.status === 'extracted' && !app.processing_status && (
                         <button
                           onClick={() => handleReprocess(app.id, 'analyze')}
                           disabled={isProcessing}
@@ -960,12 +1201,12 @@ export default function AdminPage() {
   // Render Prompts Tab content
   const renderPromptsTab = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      {/* Prompt Selector */}
+      {/* Skill Selector */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-semibold mb-4 text-slate-900">Prompt Catalog</h2>
+        <h2 className="text-xl font-semibold mb-4 text-slate-900">Agent Skills</h2>
         
         {promptsLoading ? (
-          <div className="text-center py-8 text-slate-500">Loading prompts...</div>
+          <div className="text-center py-8 text-slate-500">Loading agent skills...</div>
         ) : promptsData ? (
           <div className="space-y-4">
             {/* Section Selector */}
@@ -1229,7 +1470,7 @@ export default function AdminPage() {
             {/* Actions */}
             <div className="flex gap-2 pt-4">
               <button
-                onClick={handleCreateAnalyzer}
+                onClick={() => handleCreateAnalyzer()}
                 disabled={analyzerProcessing}
                 className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
@@ -1272,15 +1513,25 @@ export default function AdminPage() {
                         {analyzer.type === 'prebuilt' ? 'Azure Prebuilt' : 'Custom'} • {analyzer.description}
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 text-xs rounded-full ${
-                        analyzer.exists
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {analyzer.exists ? 'Ready' : 'Not Created'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {analyzer.exists ? (
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700">
+                          Ready
+                        </span>
+                      ) : analyzer.type === 'custom' ? (
+                        <button
+                          onClick={() => handleCreateAnalyzer(analyzer.id, analyzer.media_type)}
+                          disabled={analyzerProcessing}
+                          className="px-3 py-1 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        >
+                          {analyzerProcessing ? '...' : 'Create'}
+                        </button>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-slate-200 text-slate-600">
+                          Not Created
+                        </span>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1360,81 +1611,377 @@ export default function AdminPage() {
   const renderPoliciesTab = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Policy List */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
-          </h2>
-          <button
-            onClick={handleNewPolicyClick}
-            className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            + New Policy
-          </button>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-900">
+              {isAutomotiveClaimsPersona ? 'Automotive Claims Policies' : isClaimsPersona ? 'Claims Policies' : 'Underwriting Policies'}
+            </h2>
+          </div>
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleReindexPolicies}
+              disabled={reindexing}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium border border-slate-300 text-slate-700 bg-white rounded-lg hover:bg-slate-50 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Reindex all policies for RAG search"
+            >
+              <RefreshCw className={`w-4 h-4 ${reindexing ? 'animate-spin' : ''}`} />
+              {reindexing ? 'Indexing...' : 'Reindex'}
+            </button>
+            <button
+              onClick={handleNewPolicyClick}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Policy
+            </button>
+          </div>
         </div>
 
-        {policiesLoading ? (
-          <div className="text-center py-8 text-slate-500">Loading policies...</div>
-        ) : policies.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">No policies found</div>
-        ) : (
-          <div className="space-y-2 max-h-[600px] overflow-y-auto">
-            {policies.map((policy) => (
-              <button
-                key={policy.id}
-                onClick={() => handleSelectPolicy(policy)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedPolicy?.id === policy.id
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
-                }`}
-              >
-                <div className="font-medium text-slate-900 text-sm">{policy.name || policy.id}</div>
-                {isClaimsPersona ? (
-                  <div className="text-xs text-slate-500">
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {(policy as any).plan_type} • {(policy as any).network?.split(' ')[0] || 'N/A'}
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500">{policy.category} / {policy.subcategory}</div>
-                )}
-              </button>
-            ))}
+        {/* Index Stats - Show for all personas with RAG support */}
+        {indexStats && indexStats.status === 'ok' && (
+          <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+            <span className="text-xs font-medium text-emerald-800">
+              RAG Index: {indexStats.total_chunks || indexStats.chunk_count || 0} chunks from {indexStats.policy_count} policies
+            </span>
           </div>
         )}
+
+        {/* Policy List */}
+        <div className="p-3">
+          {policiesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+            </div>
+          ) : policies.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-sm text-slate-500">No policies found</p>
+              <p className="text-xs text-slate-400 mt-1">Create your first policy to get started</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-[550px] overflow-y-auto">
+              {policies.map((policy) => (
+                <button
+                  key={policy.id}
+                  onClick={() => handleSelectPolicy(policy)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                    selectedPolicy?.id === policy.id
+                      ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+                      : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-medium text-slate-900 text-sm">{policy.name || policy.id}</div>
+                  {isAutomotiveClaimsPersona ? (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {(policy as any).category || 'damage_assessment'} • {(policy as any).subcategory || 'general'}
+                    </div>
+                  ) : isClaimsPersona ? (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {(policy as any).plan_type} • {(policy as any).network?.split(' ')[0] || 'N/A'}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500 mt-0.5">{policy.category} / {policy.subcategory}</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Policy Editor */}
-      <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {policiesError && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+          <div className="mx-5 mt-5 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             {policiesError}
           </div>
         )}
         {policiesSuccess && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm">
+          <div className="mx-5 mt-5 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm flex items-center gap-2">
+            <Check className="w-4 h-4 flex-shrink-0" />
             {policiesSuccess}
           </div>
         )}
 
         {(selectedPolicy || showNewPolicyForm) ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">
+          <div>
+            {/* Editor Header */}
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">
                 {showNewPolicyForm ? 'Create New Policy' : `Edit Policy: ${selectedPolicy?.name || selectedPolicy?.id}`}
               </h2>
               {selectedPolicy && !showNewPolicyForm && (
                 <button
                   onClick={handleDeletePolicy}
-                  className="px-3 py-1.5 text-sm text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
                 >
+                  <Trash2 className="w-4 h-4" />
                   Delete
                 </button>
               )}
             </div>
 
-            {isClaimsPersona ? (
-              /* Claims Policy Editor */
+            {/* Editor Content */}
+            <div className="p-5 space-y-5">
+            {isAutomotiveClaimsPersona ? (
+              /* Automotive Claims Policy Editor */
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy ID</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.id || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, id: e.target.value }))}
+                      disabled={!showNewPolicyForm}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100 font-mono"
+                      placeholder="e.g., DMG-SEV-001"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy Name</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.name || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., Damage Severity Classification"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select
+                      value={claimsPolicyFormData.category || 'damage_assessment'}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    >
+                      <option value="damage_assessment">Damage Assessment</option>
+                      <option value="coverage">Coverage</option>
+                      <option value="liability">Liability</option>
+                      <option value="fraud_detection">Fraud Detection</option>
+                      <option value="payout_rules">Payout Rules</option>
+                      <option value="repair_requirements">Repair Requirements</option>
+                      <option value="documentation">Documentation</option>
+                      <option value="total_loss">Total Loss</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Subcategory</label>
+                    <input
+                      type="text"
+                      value={claimsPolicyFormData.subcategory || ''}
+                      onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, subcategory: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., severity_rating, repair_costs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <textarea
+                    value={claimsPolicyFormData.description || ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="Describe when this policy applies..."
+                  />
+                </div>
+
+                {/* Criteria Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700">Policy Criteria</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newCriteria = [...(claimsPolicyFormData.criteria || []), {
+                          id: `C${(claimsPolicyFormData.criteria?.length || 0) + 1}`,
+                          condition: '',
+                          severity: 'moderate',
+                          action: '',
+                          rationale: ''
+                        }];
+                        setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                    >
+                      + Add Criterion
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {(claimsPolicyFormData.criteria || []).map((criterion: { id: string; condition: string; severity: string; action: string; rationale: string }, idx: number) => (
+                      <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-500">Criterion {idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newCriteria = [...claimsPolicyFormData.criteria];
+                              newCriteria.splice(idx, 1);
+                              setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                            }}
+                            className="text-xs text-rose-500 hover:text-rose-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={criterion.id || ''}
+                            onChange={(e) => {
+                              const newCriteria = [...claimsPolicyFormData.criteria];
+                              newCriteria[idx] = { ...criterion, id: e.target.value };
+                              setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                            }}
+                            className="px-2 py-1.5 border border-slate-300 rounded text-xs"
+                            placeholder="ID (e.g., C1)"
+                          />
+                          <select
+                            value={criterion.severity || 'moderate'}
+                            onChange={(e) => {
+                              const newCriteria = [...claimsPolicyFormData.criteria];
+                              newCriteria[idx] = { ...criterion, severity: e.target.value };
+                              setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                            }}
+                            className="px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          >
+                            <option value="minor">Minor</option>
+                            <option value="moderate">Moderate</option>
+                            <option value="major">Major</option>
+                            <option value="severe">Severe</option>
+                            <option value="total_loss">Total Loss</option>
+                          </select>
+                        </div>
+                        <input
+                          type="text"
+                          value={criterion.condition || ''}
+                          onChange={(e) => {
+                            const newCriteria = [...claimsPolicyFormData.criteria];
+                            newCriteria[idx] = { ...criterion, condition: e.target.value };
+                            setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                          }}
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          placeholder="Condition (when does this apply)"
+                        />
+                        <input
+                          type="text"
+                          value={criterion.action || ''}
+                          onChange={(e) => {
+                            const newCriteria = [...claimsPolicyFormData.criteria];
+                            newCriteria[idx] = { ...criterion, action: e.target.value };
+                            setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                          }}
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          placeholder="Action (what should be done)"
+                        />
+                        <input
+                          type="text"
+                          value={criterion.rationale || ''}
+                          onChange={(e) => {
+                            const newCriteria = [...claimsPolicyFormData.criteria];
+                            newCriteria[idx] = { ...criterion, rationale: e.target.value };
+                            setClaimsPolicyFormData(prev => ({ ...prev, criteria: newCriteria }));
+                          }}
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          placeholder="Rationale (why this applies)"
+                        />
+                      </div>
+                    ))}
+                    {(!claimsPolicyFormData.criteria || claimsPolicyFormData.criteria.length === 0) && (
+                      <p className="text-xs text-slate-400 italic">No criteria defined. Click &quot;Add Criterion&quot; to add one.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modifying Factors Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700">Modifying Factors</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newFactors = [...(claimsPolicyFormData.modifying_factors || []), {
+                          factor: '',
+                          impact: ''
+                        }];
+                        setClaimsPolicyFormData(prev => ({ ...prev, modifying_factors: newFactors }));
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                    >
+                      + Add Factor
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {(claimsPolicyFormData.modifying_factors || []).map((factor: { factor: string; impact: string }, idx: number) => (
+                      <div key={idx} className="flex gap-2 items-start">
+                        <input
+                          type="text"
+                          value={factor.factor || ''}
+                          onChange={(e) => {
+                            const newFactors = [...claimsPolicyFormData.modifying_factors];
+                            newFactors[idx] = { ...factor, factor: e.target.value };
+                            setClaimsPolicyFormData(prev => ({ ...prev, modifying_factors: newFactors }));
+                          }}
+                          className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          placeholder="Factor name"
+                        />
+                        <input
+                          type="text"
+                          value={factor.impact || ''}
+                          onChange={(e) => {
+                            const newFactors = [...claimsPolicyFormData.modifying_factors];
+                            newFactors[idx] = { ...factor, impact: e.target.value };
+                            setClaimsPolicyFormData(prev => ({ ...prev, modifying_factors: newFactors }));
+                          }}
+                          className="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs"
+                          placeholder="Impact description"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newFactors = [...claimsPolicyFormData.modifying_factors];
+                            newFactors.splice(idx, 1);
+                            setClaimsPolicyFormData(prev => ({ ...prev, modifying_factors: newFactors }));
+                          }}
+                          className="text-rose-500 hover:text-rose-600 p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {(!claimsPolicyFormData.modifying_factors || claimsPolicyFormData.modifying_factors.length === 0) && (
+                      <p className="text-xs text-slate-400 italic">No modifying factors. Click &quot;Add Factor&quot; to add one.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* References Section */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">References</label>
+                  <textarea
+                    value={Array.isArray(claimsPolicyFormData.references) ? claimsPolicyFormData.references.join('\n') : ''}
+                    onChange={(e) => setClaimsPolicyFormData(prev => ({ 
+                      ...prev, 
+                      references: e.target.value.split('\n').filter(Boolean)
+                    }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    placeholder="One reference per line:&#10;NHTSA Guidelines Section 4.2&#10;Insurance Code 1234&#10;Industry Standard ISO-12345"
+                  />
+                </div>
+              </div>
+            ) : isClaimsPersona ? (
+              /* Health Claims Policy Editor */
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1642,95 +2189,96 @@ export default function AdminPage() {
                 {/* Basic Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Policy ID</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Policy ID</label>
                     <input
                       type="text"
                       value={policyFormData.id}
                       onChange={(e) => setPolicyFormData(prev => ({ ...prev, id: e.target.value }))}
                       disabled={!showNewPolicyForm}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono disabled:bg-slate-50 disabled:text-slate-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                       placeholder="e.g., CVD-BP-001"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Name</label>
                     <input
                       type="text"
                       value={policyFormData.name}
                       onChange={(e) => setPolicyFormData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                       placeholder="Policy name"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Category</label>
                     <input
                       type="text"
                       value={policyFormData.category}
                       onChange={(e) => setPolicyFormData(prev => ({ ...prev, category: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                       placeholder="e.g., cardiovascular"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Subcategory</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Subcategory</label>
                     <input
                       type="text"
                       value={policyFormData.subcategory}
                       onChange={(e) => setPolicyFormData(prev => ({ ...prev, subcategory: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                       placeholder="e.g., hypertension"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Description</label>
                   <textarea
                     value={policyFormData.description}
                     onChange={(e) => setPolicyFormData(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-20"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                     placeholder="Policy description"
                   />
                 </div>
 
                 {/* Criteria Section */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-medium text-slate-700">Criteria</label>
                     <button
                       type="button"
                       onClick={handleAddCriteria}
-                      className="text-sm text-indigo-600 hover:text-indigo-700"
+                      className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
                     >
-                      + Add Criteria
+                      <Plus className="w-4 h-4" />
+                      Add Criteria
                     </button>
                   </div>
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
                     {policyFormData.criteria.map((criteria, index) => (
-                      <div key={index} className="p-3 border border-slate-200 rounded-lg bg-slate-50">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-mono text-slate-500">{criteria.id}</span>
+                      <div key={index} className="p-4 border border-slate-200 rounded-lg bg-slate-50/50">
+                        <div className="flex justify-between items-start mb-3">
+                          <span className="text-xs font-mono text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{criteria.id}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveCriteria(index)}
-                            className="text-rose-500 hover:text-rose-700 text-sm"
+                            className="inline-flex items-center gap-1 text-rose-500 hover:text-rose-700 text-xs font-medium transition-colors"
                           >
                             Remove
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div className="grid grid-cols-2 gap-3 mb-3">
                           <input
                             type="text"
                             value={criteria.condition}
                             onChange={(e) => handleCriteriaChange(index, 'condition', e.target.value)}
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
-                            placeholder="Condition"
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                            placeholder="Condition (e.g., Fasting Glucose < 100)"
                           />
                           <select
                             value={criteria.risk_level}
                             onChange={(e) => handleCriteriaChange(index, 'risk_level', e.target.value)}
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white"
                           >
                             <option value="Low">Low</option>
                             <option value="Low-Moderate">Low-Moderate</option>
@@ -1743,13 +2291,13 @@ export default function AdminPage() {
                           type="text"
                           value={criteria.action}
                           onChange={(e) => handleCriteriaChange(index, 'action', e.target.value)}
-                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs mb-2"
-                          placeholder="Action"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                          placeholder="Action (e.g., Standard rates)"
                         />
                         <textarea
                           value={criteria.rationale}
                           onChange={(e) => handleCriteriaChange(index, 'rationale', e.target.value)}
-                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs h-12"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm h-16 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                           placeholder="Rationale"
                         />
                       </div>
@@ -1760,29 +2308,31 @@ export default function AdminPage() {
             )}
 
             {/* Save Button */}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-3 pt-5 border-t border-slate-200">
               <button
                 onClick={() => {
                   setSelectedPolicy(null);
                   setShowNewPolicyForm(false);
                 }}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-700"
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSavePolicy}
                 disabled={policiesSaving}
-                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
                 {policiesSaving ? 'Saving...' : showNewPolicyForm ? 'Create Policy' : 'Save Changes'}
               </button>
             </div>
+            </div>
           </div>
         ) : (
-          <div className="text-center py-16 text-slate-500">
-            <p className="text-lg mb-2">Select a policy to edit</p>
-            <p className="text-sm">Or click &quot;New Policy&quot; to create one</p>
+          <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+            <FileText className="w-12 h-12 text-slate-300 mb-4" />
+            <p className="text-base font-medium mb-1">Select a policy to edit</p>
+            <p className="text-sm text-slate-400">Or click &quot;New Policy&quot; to create one</p>
           </div>
         )}
       </div>
@@ -1858,7 +2408,7 @@ export default function AdminPage() {
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               }`}
             >
-              Prompt Catalog
+              Agent Skills
             </button>
             <button
               onClick={() => setActiveTab('policies')}
@@ -1880,6 +2430,16 @@ export default function AdminPage() {
             >
               Analyzer Management
             </button>
+            <button
+              onClick={() => setActiveTab('glossary')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'glossary'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              Glossary
+            </button>
           </nav>
         </div>
       </div>
@@ -1889,6 +2449,12 @@ export default function AdminPage() {
         {activeTab === 'prompts' && renderPromptsTab()}
         {activeTab === 'policies' && renderPoliciesTab()}
         {activeTab === 'analyzer' && renderAnalyzerTab()}
+        {activeTab === 'glossary' && (
+          <GlossaryManager 
+            persona={currentPersona} 
+            personaName={personaConfig.name} 
+          />
+        )}
       </main>
     </div>
   );

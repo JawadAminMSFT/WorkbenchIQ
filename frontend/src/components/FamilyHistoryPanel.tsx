@@ -121,7 +121,7 @@ export default function FamilyHistoryPanel({ application }: FamilyHistoryPanelPr
             <ConfidenceIndicator confidence={confidence} fieldName="Family History" />
           )}
           {citationData && (
-            <CitationTooltip citation={citationData}>
+            <CitationTooltip citation={citationData} appId={application.id}>
               <span></span>
             </CitationTooltip>
           )}

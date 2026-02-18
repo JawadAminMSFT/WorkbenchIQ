@@ -1,0 +1,270 @@
+{
+  "version": "1.0",
+  "description": "Property & Casualty Claims Processing Policies",
+  "policies": [
+    {
+      "id": "PC-COV-001",
+      "category": "coverage_verification",
+      "subcategory": "property_damage",
+      "name": "Property Damage Coverage Verification",
+      "description": "Guidelines for verifying property damage coverage eligibility.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Policy active on date of loss",
+          "action": "Proceed with claim investigation",
+          "rationale": "Coverage must be in force when loss occurred"
+        },
+        {
+          "id": "C2",
+          "condition": "Covered peril caused the damage",
+          "action": "Apply applicable coverage limits and deductibles",
+          "rationale": "Only named perils (or all-risk minus exclusions) are covered"
+        },
+        {
+          "id": "C3",
+          "condition": "Property located at covered premises",
+          "action": "Confirm scheduled location matches claim address",
+          "rationale": "Coverage applies to scheduled locations only"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Vacant property endorsement", "impact": "May reduce coverage or exclude certain perils"},
+        {"factor": "Ordinance or law coverage", "impact": "Additional coverage for code upgrades"},
+        {"factor": "Replacement cost vs ACV", "impact": "Affects settlement calculation method"}
+      ],
+      "references": ["ISO CP 00 10", "Policy Declarations", "State Insurance Regulations"]
+    },
+    {
+      "id": "PC-LIA-001",
+      "category": "liability",
+      "subcategory": "general_liability",
+      "name": "General Liability Claim Assessment",
+      "description": "Guidelines for assessing general liability claims.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Bodily injury or property damage alleged",
+          "action": "Determine if occurrence happened during policy period",
+          "rationale": "Occurrence-based policies require loss during policy term"
+        },
+        {
+          "id": "C2",
+          "condition": "Insured has legal liability",
+          "action": "Evaluate duty to defend and duty to indemnify",
+          "rationale": "Coverage responds to legal liability, not moral obligation"
+        },
+        {
+          "id": "C3",
+          "condition": "Claim falls within coverage territory",
+          "action": "Verify incident location covered under policy",
+          "rationale": "Most policies have geographic limitations"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Additional insured status", "impact": "Extends coverage to named third parties"},
+        {"factor": "Professional liability exclusion", "impact": "E&O claims excluded from GL"},
+        {"factor": "Contractual liability", "impact": "May need specific endorsement"}
+      ],
+      "references": ["ISO CG 00 01", "Defense Counsel Guidelines", "Excess Carrier Notice Requirements"]
+    },
+    {
+      "id": "PC-WC-001",
+      "category": "workers_compensation",
+      "subcategory": "compensability",
+      "name": "Workers Compensation Compensability",
+      "description": "Guidelines for determining workers compensation claim compensability.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Injury arose out of employment",
+          "action": "Investigate connection between work duties and injury",
+          "rationale": "AOE requirement - work must contribute to injury"
+        },
+        {
+          "id": "C2",
+          "condition": "Injury occurred in course of employment",
+          "action": "Verify injury happened during work time/activities",
+          "rationale": "COE requirement - injury during work relationship"
+        },
+        {
+          "id": "C3",
+          "condition": "Employee was performing authorized duties",
+          "action": "Confirm activity was within scope of employment",
+          "rationale": "Unauthorized activities may not be compensable"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Pre-existing condition", "impact": "Apportionment may apply to permanent disability"},
+        {"factor": "Horseplay or intoxication", "impact": "May defeat compensability"},
+        {"factor": "Coming and going rule", "impact": "Commuting injuries generally not covered"}
+      ],
+      "references": ["State WC Statutes", "WCIRB Classification Manual", "Medical Treatment Guidelines"]
+    },
+    {
+      "id": "PC-AUTO-001",
+      "category": "auto_liability",
+      "subcategory": "coverage_determination",
+      "name": "Commercial Auto Liability Coverage",
+      "description": "Guidelines for commercial auto liability claim coverage.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Vehicle scheduled on policy or qualifies as covered auto",
+          "action": "Verify vehicle coverage symbol applies",
+          "rationale": "Coverage symbols determine which vehicles are insured"
+        },
+        {
+          "id": "C2",
+          "condition": "Driver is insured under policy",
+          "action": "Confirm permissive use or employee status",
+          "rationale": "Policy covers named insured and permitted drivers"
+        },
+        {
+          "id": "C3",
+          "condition": "Accident occurred during covered use",
+          "action": "Verify vehicle use consistent with policy declarations",
+          "rationale": "Use restrictions may limit coverage (business vs personal)"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Hired auto coverage", "impact": "Extends to rented/borrowed vehicles"},
+        {"factor": "Non-owned auto coverage", "impact": "Covers employee personal vehicles on business"},
+        {"factor": "MCS-90 endorsement", "impact": "Public liability for motor carriers"}
+      ],
+      "references": ["ISO CA 00 01", "Motor Carrier Regulations", "State Financial Responsibility Laws"]
+    },
+    {
+      "id": "PC-RSV-001",
+      "category": "reserving",
+      "subcategory": "loss_reserves",
+      "name": "Loss Reserve Establishment Guidelines",
+      "description": "Guidelines for establishing and adjusting claim reserves.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "New claim reported",
+          "action": "Establish initial reserve within 24-48 hours of assignment",
+          "rationale": "Timely reserving ensures accurate financial reporting"
+        },
+        {
+          "id": "C2",
+          "condition": "Material new information received",
+          "action": "Review and adjust reserve within 30 days",
+          "rationale": "Reserves must reflect current claim evaluation"
+        },
+        {
+          "id": "C3",
+          "condition": "Reserve exceeds authority level",
+          "action": "Escalate to supervisor/management for approval",
+          "rationale": "Authority levels ensure proper oversight"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Litigation pending", "impact": "Include defense costs in reserve"},
+        {"factor": "Subrogation potential", "impact": "May offset ultimate net loss"},
+        {"factor": "Catastrophe event", "impact": "Follow special CAT reserving guidelines"}
+      ],
+      "references": ["Company Reserving Guidelines", "Actuarial Standards of Practice", "State Reserving Requirements"]
+    },
+    {
+      "id": "PC-SIU-001",
+      "category": "fraud_detection",
+      "subcategory": "special_investigations",
+      "name": "Fraud Referral Guidelines",
+      "description": "Guidelines for identifying and referring suspicious claims.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Claim exhibits multiple red flags",
+          "action": "Refer to Special Investigations Unit (SIU)",
+          "rationale": "Pattern of indicators suggests potential fraud"
+        },
+        {
+          "id": "C2",
+          "condition": "Material misrepresentation identified",
+          "action": "Document findings and consult with SIU and legal",
+          "rationale": "Misrep may void coverage or support rescission"
+        },
+        {
+          "id": "C3",
+          "condition": "Staged accident indicators present",
+          "action": "Escalate for detailed investigation before payment",
+          "rationale": "Staged accidents require professional investigation"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Prior claim history", "impact": "Multiple suspicious claims heighten concern"},
+        {"factor": "Financial stress indicators", "impact": "Motive assessment for arson/theft claims"},
+        {"factor": "Anonymous tip received", "impact": "Investigate tip while maintaining confidentiality"}
+      ],
+      "references": ["Coalition Against Insurance Fraud Guidelines", "NICB Referral Criteria", "State Fraud Bureau Requirements"]
+    },
+    {
+      "id": "PC-SUB-001",
+      "category": "subrogation",
+      "subcategory": "recovery_potential",
+      "name": "Subrogation Assessment Guidelines",
+      "description": "Guidelines for identifying and pursuing subrogation recovery.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Third party liability identified",
+          "action": "Document liable party and preserve evidence",
+          "rationale": "Subrogation requires identifiable responsible party"
+        },
+        {
+          "id": "C2",
+          "condition": "Recovery potential exceeds pursuit costs",
+          "action": "Initiate subrogation demand or litigation",
+          "rationale": "Economic analysis determines pursuit viability"
+        },
+        {
+          "id": "C3",
+          "condition": "Product defect contributed to loss",
+          "action": "Preserve product and notify products liability counsel",
+          "rationale": "Product cases require specialized handling"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Anti-subrogation rule", "impact": "Cannot subrogate against own insured"},
+        {"factor": "Waiver of subrogation endorsement", "impact": "Contractual waiver limits recovery"},
+        {"factor": "Made whole doctrine", "impact": "Insured must be made whole before carrier recovers"}
+      ],
+      "references": ["Subrogation Recovery Guidelines", "Arbitration Forums Rules", "State Subrogation Laws"]
+    },
+    {
+      "id": "PC-SET-001",
+      "category": "settlement",
+      "subcategory": "negotiation",
+      "name": "Claim Settlement Authority",
+      "description": "Guidelines for claim settlement negotiations and authority.",
+      "criteria": [
+        {
+          "id": "C1",
+          "condition": "Settlement within adjuster authority",
+          "action": "Negotiate and settle within documented authority limits",
+          "rationale": "Authority levels ensure efficient claim resolution"
+        },
+        {
+          "id": "C2",
+          "condition": "Settlement requires management approval",
+          "action": "Prepare settlement summary and obtain approval before commitment",
+          "rationale": "Large settlements require oversight and approval"
+        },
+        {
+          "id": "C3",
+          "condition": "Release and settlement agreement required",
+          "action": "Use approved release forms; obtain legal review if modified",
+          "rationale": "Proper releases protect against future claims"
+        }
+      ],
+      "modifying_factors": [
+        {"factor": "Minor claimant", "impact": "Court approval may be required"},
+        {"factor": "Medicare/Medicaid lien", "impact": "CMS approval required before settlement"},
+        {"factor": "Structured settlement", "impact": "Annuity quotes and documentation needed"}
+      ],
+      "references": ["Settlement Authority Matrix", "Release Form Library", "Medicare Set-Aside Guidelines"]
+    }
+  ]
+}

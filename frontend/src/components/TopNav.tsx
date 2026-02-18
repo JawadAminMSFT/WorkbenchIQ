@@ -13,6 +13,7 @@ import type { ApplicationListItem, ApplicationMetadata } from '@/lib/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import PersonaSelector from './PersonaSelector';
+import GlossaryDropdown from './GlossaryDropdown';
 import { usePersona } from '@/lib/PersonaContext';
 
 interface TopNavProps {
@@ -22,6 +23,7 @@ interface TopNavProps {
   activeView: 'overview' | 'timeline' | 'documents' | 'source';
   onSelectApp: (appId: string) => void;
   onChangeView: (view: 'overview' | 'timeline' | 'documents' | 'source') => void;
+  showWorkbenchControls?: boolean; // Show application selector and glossary (only in workbench view)
 }
 
 export default function TopNav({
@@ -31,19 +33,23 @@ export default function TopNav({
   activeView,
   onSelectApp,
   onChangeView,
+  showWorkbenchControls = false,
 }: TopNavProps) {
   const [appDropdownOpen, setAppDropdownOpen] = useState(false);
   const { personaConfig } = usePersona();
   
   const hasDocuments = selectedApp?.files && selectedApp.files.length > 0;
   const hasSourcePages = selectedApp?.markdown_pages && selectedApp.markdown_pages.length > 0;
+  
+  // Automotive claims has its own overview with inline documents/timeline - hide these tabs
+  const isAutomotiveClaims = personaConfig.id === 'automotive_claims';
 
   const navItems = [
     { id: 'overview' as const, label: 'Overview', icon: LayoutDashboard, enabled: true },
-    { id: 'timeline' as const, label: 'Timeline', icon: Clock, enabled: true },
-    { id: 'documents' as const, label: 'Documents', icon: FileText, enabled: hasDocuments, count: selectedApp?.files?.length },
+    { id: 'timeline' as const, label: 'Timeline', icon: Clock, enabled: true, hidden: isAutomotiveClaims },
+    { id: 'documents' as const, label: 'Documents', icon: FileText, enabled: hasDocuments, count: selectedApp?.files?.length, hidden: isAutomotiveClaims },
     { id: 'source' as const, label: 'Source Pages', icon: FileStack, enabled: hasSourcePages, count: selectedApp?.markdown_pages?.length },
-  ];
+  ].filter(item => !item.hidden);
 
   const selectedApplication = applications.find(a => a.id === selectedAppId);
 
@@ -66,23 +72,23 @@ export default function TopNav({
           {/* Persona Selector */}
           <PersonaSelector />
 
-          {/* Application Selector */}
-          {applications.length > 0 && (
+          {/* Application Selector - Only in workbench view */}
+          {showWorkbenchControls && applications.length > 0 && (
             <div className="relative">
               <button
                 onClick={() => setAppDropdownOpen(!appDropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
               >
-                <span className="text-sm font-medium text-slate-700">
+                <span className="text-slate-700">
                   {selectedApplication?.summary_title || selectedApplication?.id?.substring(0, 8) || 'Select Application'}
                 </span>
-                <ChevronDown className={clsx('w-4 h-4 text-slate-500 transition-transform', appDropdownOpen && 'rotate-180')} />
+                <ChevronDown className={clsx('w-4 h-4 text-slate-400 transition-transform', appDropdownOpen && 'rotate-180')} />
               </button>
 
               {appDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setAppDropdownOpen(false)} />
-                  <div className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-slate-200 z-20 max-h-96 overflow-y-auto flex flex-col">
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-slate-200 z-20 max-h-96 overflow-y-auto flex flex-col">
                     <div className="py-1 overflow-y-auto">
                       {applications.map((app) => (
                         <button
@@ -131,13 +137,16 @@ export default function TopNav({
         </div>
 
         {/* Right Side Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Glossary Dropdown - Only in workbench view */}
+          {showWorkbenchControls && <GlossaryDropdown />}
+          
           <Link
             href="/admin"
-            className="flex items-center gap-2 px-3 py-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
           >
             <Settings className="w-4 h-4" />
-            <span className="text-sm">Admin</span>
+            <span>Admin</span>
           </Link>
         </div>
       </div>

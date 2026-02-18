@@ -3,12 +3,60 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Application List Cache (Performance Optimization)
+# =============================================================================
+
+class ApplicationCache:
+    """Thread-safe in-memory cache for application listings."""
+    
+    def __init__(self, ttl_seconds: int = 30):
+        self._cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+        self._lock = threading.Lock()
+        self._ttl = ttl_seconds
+    
+    def get(self, key: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached value if not expired."""
+        with self._lock:
+            if key in self._cache:
+                timestamp, data = self._cache[key]
+                if time.time() - timestamp < self._ttl:
+                    logger.debug("Cache hit for key: %s", key)
+                    return data
+                else:
+                    del self._cache[key]
+            return None
+    
+    def set(self, key: str, data: List[Dict[str, Any]]) -> None:
+        """Store value in cache."""
+        with self._lock:
+            self._cache[key] = (time.time(), data)
+            logger.debug("Cached data for key: %s", key)
+    
+    def invalidate(self, key: Optional[str] = None) -> None:
+        """Invalidate cache entry or all entries."""
+        with self._lock:
+            if key is None:
+                self._cache.clear()
+                logger.debug("Invalidated entire cache")
+            elif key in self._cache:
+                del self._cache[key]
+                logger.debug("Invalidated cache key: %s", key)
+
+
+# Global cache instance (30 second TTL)
+_applications_cache = ApplicationCache(ttl_seconds=30)
 
 
 @dataclass
@@ -16,6 +64,8 @@ class StoredFile:
     filename: str
     path: str
     url: Optional[str] = None
+    content_type: Optional[str] = None
+    media_type: Optional[str] = None  # 'image', 'video', 'document'
 
 
 @dataclass
@@ -60,6 +110,14 @@ class ApplicationMetadata:
     analyzer_id_used: Optional[str] = None  # Which analyzer was used for extraction
     # Risk analysis results (separate from main LLM outputs)
     risk_analysis: Optional[Dict[str, Any]] = None  # Policy-based risk assessment
+    # Background processing status tracking
+    processing_status: Optional[str] = None  # idle, extracting, analyzing, error
+    processing_error: Optional[str] = None  # Error message if processing failed
+    # Large document processing fields
+    processing_mode: Optional[str] = None  # 'standard' or 'large_document'
+    condensed_context: Optional[str] = None  # Summarized context for large docs
+    document_stats: Optional[Dict[str, Any]] = None  # Document size/page stats
+    batch_summaries: Optional[List[Dict[str, Any]]] = None  # Batch summaries for large docs UI
 
 
 # =============================================================================
@@ -104,6 +162,32 @@ def load_file_content(stored_file: StoredFile) -> Optional[bytes]:
             logger.warning("File not found on filesystem: %s", path)
             return None
         return path.read_bytes()
+
+
+def load_file(root: str, app_id: str, filename: str) -> Optional[bytes]:
+    """Load a file from an application's files directory.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
+    
+    Args:
+        root: Storage root path (used for legacy local storage).
+        app_id: Application ID.
+        filename: Name of the file to load.
+        
+    Returns:
+        File content as bytes, or None if file not found.
+    """
+    provider = _get_provider()
+    
+    if provider:
+        return provider.load_file(app_id, filename)
+    else:
+        # Legacy local storage
+        file_path = Path(root) / "applications" / app_id / "files" / filename
+        if not file_path.exists():
+            logger.warning("File not found on filesystem: %s", file_path)
+            return None
+        return file_path.read_bytes()
 
 
 # =============================================================================
@@ -187,6 +271,25 @@ def save_cu_raw_result(root: str, app_id: str, payload: Dict[str, Any]) -> str:
         return str(cu_path)
 
 
+def load_cu_result(root: str, app_id: str) -> Optional[Dict[str, Any]]:
+    """Load Content Understanding result JSON.
+    
+    Uses storage provider abstraction to support both local and Azure Blob storage.
+    """
+    provider = _get_provider()
+    
+    if provider:
+        return provider.load_cu_result(app_id)
+    else:
+        # Legacy local storage
+        app_dir = get_application_dir(root, app_id)
+        cu_path = app_dir / "content_understanding.json"
+        if not cu_path.exists():
+            return None
+        with open(cu_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
 def _metadata_to_dict(metadata: ApplicationMetadata) -> Dict[str, Any]:
     """Convert ApplicationMetadata to a serializable dictionary."""
     serializable = asdict(metadata)
@@ -212,6 +315,13 @@ def _dict_to_metadata(data: Dict[str, Any]) -> ApplicationMetadata:
         confidence_summary=data.get("confidence_summary"),
         analyzer_id_used=data.get("analyzer_id_used"),
         risk_analysis=data.get("risk_analysis"),
+        processing_status=data.get("processing_status"),
+        processing_error=data.get("processing_error"),
+        # Large document processing fields
+        processing_mode=data.get("processing_mode"),
+        condensed_context=data.get("condensed_context"),
+        document_stats=data.get("document_stats"),
+        batch_summaries=data.get("batch_summaries"),
     )
 
 
@@ -223,11 +333,19 @@ def save_application_metadata(root: str, metadata: ApplicationMetadata) -> None:
     if provider:
         provider.save_metadata(metadata.id, serializable)
     else:
-        # Legacy local storage
+        # Legacy local storage - use atomic write
+        import os
         app_dir = get_application_dir(root, metadata.id)
         meta_path = app_dir / "metadata.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
+        temp_path = app_dir / "metadata.json.tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        temp_path.replace(meta_path)
+    
+    # Invalidate cache when metadata changes
+    invalidate_applications_cache()
 
 
 def load_application(root: str, app_id: str) -> Optional[ApplicationMetadata]:
@@ -250,47 +368,111 @@ def load_application(root: str, app_id: str) -> Optional[ApplicationMetadata]:
         return _dict_to_metadata(data)
 
 
-def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Return lightweight list of available applications, optionally filtered by persona."""
-    from app.personas import normalize_persona_id
+def delete_application(root: str, app_id: str) -> bool:
+    """Delete an application and all its files.
+    
+    Args:
+        root: Storage root path
+        app_id: Application ID to delete
+        
+    Returns:
+        True if deleted, False if not found
+    """
+    import shutil
     
     provider = _get_provider()
+    deleted = False
+    
+    if provider:
+        # Use storage provider delete if available
+        if hasattr(provider, 'delete_application'):
+            deleted = provider.delete_application(app_id)
+        else:
+            logger.warning("Storage provider does not support delete_application")
+            return False
+    else:
+        # Legacy local storage
+        app_dir = Path(root) / "applications" / app_id
+        if not app_dir.exists():
+            return False
+        
+        try:
+            shutil.rmtree(app_dir)
+            logger.info("Deleted application directory: %s", app_dir)
+            deleted = True
+        except Exception as e:
+            logger.error("Failed to delete application %s: %s", app_id, e)
+            return False
+    
+    # Invalidate cache when application is deleted
+    if deleted:
+        invalidate_applications_cache()
+    
+    return deleted
+
+
+def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return lightweight list of available applications, optionally filtered by persona.
+    
+    Uses caching and parallel loading for improved performance with cloud storage.
+    """
+    from app.personas import normalize_persona_id
     
     # Normalize the filter persona (handles legacy 'claims' -> 'life_health_claims')
     if persona is not None:
         persona = normalize_persona_id(persona)
-
+    
+    # Check cache first
+    cache_key = f"apps:{persona or 'all'}"
+    cached = _applications_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    
+    provider = _get_provider()
     apps: List[Dict[str, Any]] = []
     
     if provider:
-        # Use storage provider
+        # Use storage provider with parallel metadata loading
         app_ids = provider.list_applications()
-        for app_id in app_ids:
+        
+        def load_app_metadata(app_id: str) -> Optional[Dict[str, Any]]:
+            """Load and format metadata for a single application."""
             data = provider.load_metadata(app_id)
             if data is None:
-                continue
+                return None
             
             # Filter by persona if specified
             app_persona = data.get("persona") or "underwriting"
             app_persona = normalize_persona_id(app_persona)
             
             if persona is not None and app_persona != persona:
-                continue
+                return None
             
-            apps.append(
-                {
-                    "id": data.get("id"),
-                    "created_at": data.get("created_at"),
-                    "external_reference": data.get("external_reference"),
-                    "status": data.get("status", "unknown"),
-                    "persona": app_persona,
-                    "summary_title": data.get("llm_outputs", {})
-                    .get("application_summary", {})
-                    .get("customer_profile", {})
-                    .get("summary", "")
-                    or "",
-                }
-            )
+            return {
+                "id": data.get("id") or app_id,
+                "created_at": data.get("created_at"),
+                "external_reference": data.get("external_reference"),
+                "status": data.get("status", "unknown"),
+                "persona": app_persona,
+                "processing_status": data.get("processing_status"),
+                "summary_title": data.get("llm_outputs", {})
+                .get("application_summary", {})
+                .get("customer_profile", {})
+                .get("summary", "")
+                or "",
+            }
+        
+        # Load metadata in parallel (up to 10 concurrent requests)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(load_app_metadata, app_id): app_id for app_id in app_ids}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result is not None:
+                        apps.append(result)
+                except Exception as e:
+                    app_id = futures[future]
+                    logger.warning("Failed to load metadata for %s: %s", app_id, e)
     else:
         # Legacy local storage
         base = get_storage_root(root) / "applications"
@@ -317,11 +499,12 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
                 
             apps.append(
                 {
-                    "id": data.get("id"),
+                    "id": data.get("id") or app_dir.name,
                     "created_at": data.get("created_at"),
                     "external_reference": data.get("external_reference"),
                     "status": data.get("status", "unknown"),
                     "persona": app_persona,
+                    "processing_status": data.get("processing_status"),
                     "summary_title": data.get("llm_outputs", {})
                     .get("application_summary", {})
                     .get("customer_profile", {})
@@ -332,7 +515,19 @@ def list_applications(root: str, persona: Optional[str] = None) -> List[Dict[str
     
     # Sort by created_at descending
     apps.sort(key=lambda a: a.get("created_at") or "", reverse=True)
+    
+    # Cache the result
+    _applications_cache.set(cache_key, apps)
+    
     return apps
+
+
+def invalidate_applications_cache() -> None:
+    """Invalidate the applications list cache.
+    
+    Call this when applications are created, updated, or deleted.
+    """
+    _applications_cache.invalidate()
 
 
 def new_metadata(

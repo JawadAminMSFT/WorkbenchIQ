@@ -8,6 +8,8 @@ interface CitableValueProps {
   value: string | number | null | undefined;
   /** Citation/source information for this value */
   citation?: ExtractedField | CitationData | null;
+  /** Application ID for building PDF URLs */
+  appId?: string;
   /** Additional CSS classes for the value text */
   className?: string;
   /** Callback when user clicks "View in Document" */
@@ -43,6 +45,7 @@ interface CitableValueProps {
 export default function CitableValue({
   value,
   citation,
+  appId,
   className = '',
   onViewDocument,
   tooltipPosition = 'top',
@@ -96,6 +99,7 @@ export default function CitableValue({
   return (
     <CitationTooltip
       citation={citationData}
+      appId={appId}
       onViewDocument={onViewDocument}
       position={tooltipPosition}
     >

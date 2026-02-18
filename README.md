@@ -145,6 +145,15 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 - **Chat History** - Persistent chat sessions per application with slide-out history panel
 - **Smart Recommendations** - Decision cards showing approve/defer/decline with confidence levels and conditions
 
+### RAG-Powered Policy Search *(Optional)*
+
+- **Semantic Policy Retrieval** - Vector-based search finds relevant policy sections using Azure OpenAI embeddings
+- **Hybrid Search** - Combines semantic similarity with keyword matching (pg_trgm) for comprehensive results
+- **Policy Citations** - Chat responses include expandable citations linking to specific policy sections
+- **RAG Metadata** - View chunks retrieved, token usage, and latency for transparency
+- **Auto-Indexing** - Policies are automatically chunked and indexed when created or updated
+- **Admin Controls** - Manual reindex button and index statistics in the Admin panel
+
 ### Technical Features
 
 - **Modern Stack** - Next.js 14 + Tailwind CSS frontend, FastAPI backend
@@ -152,6 +161,8 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 - **Azure AD Authentication** - Secure service-to-service authentication
 - **Extensible Personas** - Easy to add new industry verticals
 - **Retry Logic** - Resilient API calls with exponential backoff
+- **PostgreSQL + pgvector** - Optional vector database for RAG-powered policy search
+- **Hybrid Search** - Semantic (HNSW index) + keyword (GIN/pg_trgm) search capabilities
 
 ---
 
@@ -196,13 +207,29 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 |              |                               |                              |
 |    +---------v----------+      +-------------v-------------+                |
 |    |  Azure AI Content  |      |      Azure OpenAI         |                |
-|    |   Understanding    |      |       (LLM)           |                |
+|    |   Understanding    |      |       (LLM + Embeddings)  |                |
 |    |                    |      |                           |                |
 |    | - Document Search  |      | - Underwriting Summaries  |                |
 |    | - Field Extraction |      | - Risk Assessment         |                |
 |    | - OCR + Layout     |      | - Medical Analysis        |                |
 |    | - Confidence Scores|      | - Requirements Checklist  |                |
-|    +--------------------+      +---------------------------+                |
+|    +--------------------+      | - text-embedding-3-small  |                |
+|                                +---------------------------+                |
+|                                              |                              |
++----------------------------------------------+------------------------------+
+                                               |
++----------------------------------------------+------------------------------+
+|                              | AZURE DATA SERVICES (Optional)               |
+|                              |                                              |
+|                    +---------v---------+                                    |
+|                    | Azure PostgreSQL  |                                    |
+|                    | Flexible Server   |                                    |
+|                    |                   |                                    |
+|                    | - pgvector (HNSW) |                                    |
+|                    | - pg_trgm (GIN)   |                                    |
+|                    | - Policy Chunks   |                                    |
+|                    | - RAG Search      |                                    |
+|                    +-------------------+                                    |
 |                                                                             |
 +-----------------------------------------------------------------------------+
 ```
@@ -406,7 +433,18 @@ workbenchiq/
 │   ├── content_understanding_client.py  # Azure CU integration
 │   ├── processing.py             # Orchestration logic
 │   ├── underwriting_policies.py  # Policy loader and injector
-│   └── utils.py                  # Helper utilities
+│   ├── utils.py                  # Helper utilities
+│   └── rag/                      # RAG module (optional PostgreSQL)
+│       ├── __init__.py           # RAG service exports
+│       ├── chunker.py            # Policy text chunking
+│       ├── embedder.py           # Azure OpenAI embedding client
+│       ├── repository.py         # PostgreSQL CRUD operations
+│       ├── search.py             # Semantic & hybrid search
+│       ├── service.py            # Unified RAG service interface
+│       └── indexer.py            # Policy indexing pipeline
+├── scripts/                      # Utility scripts
+│   ├── setup_postgresql_rag.py   # Azure PostgreSQL provisioning
+│   └── index_policies.py         # CLI for policy indexing
 ├── prompts/                      # Git-tracked prompts & policies
 │   ├── prompts.json              # LLM prompts for document analysis
 │   ├── risk-analysis-prompts.json # Risk analysis prompt templates
@@ -463,6 +501,10 @@ workbenchiq/
 | `GET` | `/api/applications/{id}/conversations` | List chat sessions for an application |
 | `GET` | `/api/applications/{id}/conversations/{chat_id}` | Get specific chat session |
 | `DELETE` | `/api/applications/{id}/conversations/{chat_id}` | Delete a chat session |
+| `GET` | `/api/conversations` | List all conversations across applications |
+| `POST` | `/api/rag/index` | Index all underwriting policies for RAG |
+| `GET` | `/api/rag/stats` | Get RAG index statistics |
+| `POST` | `/api/rag/query` | Query policies using semantic search |
 
 ---
 
@@ -486,6 +528,20 @@ workbenchiq/
 | `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if using azure_blob) |
 | `AZURE_STORAGE_CONNECTION_STRING` | Conditional | - | Azure storage connection string (alternative to account name/key) |
 | `AZURE_STORAGE_CONTAINER_NAME` | No | `workbenchiq-data` | Azure blob container name |
+| `DATABASE_BACKEND` | No | `json` | Database backend (`json` or `postgresql`) |
+| `POSTGRESQL_HOST` | Conditional | - | PostgreSQL host (if using postgresql backend) |
+| `POSTGRESQL_PORT` | No | `5432` | PostgreSQL port |
+| `POSTGRESQL_DATABASE` | Conditional | - | PostgreSQL database name |
+| `POSTGRESQL_USER` | Conditional | - | PostgreSQL username |
+| `POSTGRESQL_PASSWORD` | Conditional | - | PostgreSQL password |
+| `POSTGRESQL_SSL_MODE` | No | - | SSL mode (`require`, `verify-full`, etc.) |
+| `POSTGRESQL_SCHEMA` | No | `public` | PostgreSQL schema for RAG tables |
+| `RAG_ENABLED` | No | `false` | Enable RAG-powered policy search |
+| `RAG_TOP_K` | No | `5` | Number of policy chunks to retrieve |
+| `RAG_SIMILARITY_THRESHOLD` | No | `0.5` | Minimum similarity score for results |
+| `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Azure OpenAI embedding model name |
+| `EMBEDDING_DEPLOYMENT` | No | Same as model | Azure OpenAI embedding deployment name |
+| `EMBEDDING_DIMENSIONS` | No | `1536` | Embedding vector dimensions |
 
 ### Storage Configuration
 
@@ -519,6 +575,78 @@ AZURE_STORAGE_CONTAINER_NAME=workbenchiq-data
 ```
 
 The container will be automatically created if it doesn't exist. See [quickstart.md](specs/003-azure-blob-storage-integration/quickstart.md) for detailed setup instructions.
+
+### PostgreSQL RAG Configuration *(Optional)*
+
+For enhanced policy search with semantic retrieval, you can enable the RAG (Retrieval-Augmented Generation) feature using Azure PostgreSQL Flexible Server with pgvector:
+
+**Prerequisites:**
+- Azure PostgreSQL Flexible Server (v15+)
+- Extensions enabled: `vector` (pgvector), `pg_trgm`
+- Azure OpenAI embedding model deployed (e.g., `text-embedding-3-small`)
+
+**Quick Setup:**
+
+```bash
+# Start your Azure PostgreSQL server (if stopped)
+az postgres flexible-server start --resource-group workbenchiq-rg --name workbenchiq-db
+
+# Run the setup script to provision Azure PostgreSQL and create schema
+uv run python scripts/setup_postgresql_rag.py
+
+# Index existing policies
+uv run python scripts/index_policies.py
+```
+
+**Server Management:**
+
+```bash
+# Check server status
+az postgres flexible-server show --resource-group workbenchiq-rg --name workbenchiq-db --query "state"
+
+# Stop server (to save costs when not in use)
+az postgres flexible-server stop --resource-group workbenchiq-rg --name workbenchiq-db
+```
+
+**Manual Configuration:**
+
+```env
+# Enable PostgreSQL backend
+DATABASE_BACKEND=postgresql
+
+# PostgreSQL connection
+POSTGRESQL_HOST=your-server.postgres.database.azure.com
+POSTGRESQL_PORT=5432
+POSTGRESQL_DATABASE=workbenchiq
+POSTGRESQL_USER=your_admin_user
+POSTGRESQL_PASSWORD=your_password
+POSTGRESQL_SSL_MODE=require
+
+# Enable RAG
+RAG_ENABLED=true
+RAG_TOP_K=5
+RAG_SIMILARITY_THRESHOLD=0.5
+
+# Embedding model (must match your Azure OpenAI deployment)
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DEPLOYMENT=text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+```
+
+**How RAG Works:**
+
+1. **Indexing** - Policies are chunked (500 tokens, 50 overlap) and embedded using Azure OpenAI
+2. **Storage** - Chunks stored in PostgreSQL with pgvector HNSW index for fast similarity search
+3. **Query** - User questions are embedded and matched against policy chunks
+4. **Hybrid Search** - Combines vector similarity with keyword matching (pg_trgm) for best results
+5. **Augmentation** - Retrieved policy context is injected into chat prompts for grounded responses
+
+**Admin Panel Features:**
+- View index statistics (total chunks, last indexed time)
+- Manual reindex button for underwriting policies
+- Automatic reindexing when policies are created/updated/deleted
+
+See [spec.md](specs/006-azure-postgresql-rag-integration/spec.md) for detailed architecture documentation.
 
 ### Adding a New Persona
 

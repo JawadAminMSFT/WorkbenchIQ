@@ -1,5 +1,91 @@
 
+
 from __future__ import annotations
+from dataclasses import dataclass
+# --- Database & RAG Settings ---
+from typing import Any
+
+
+@dataclass
+class DatabaseSettings:
+    backend: str = "json"  # 'json' or 'postgresql'
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    ssl_mode: Optional[str] = None
+    schema: Optional[str] = None
+
+@dataclass
+class RAGSettings:
+    enabled: bool = False
+    top_k: int = 5
+    similarity_threshold: float = 0.5
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    embedding_deployment: Optional[str] = None  # Azure OpenAI deployment for embeddings
+
+
+@dataclass
+class AutomotiveClaimsSettings:
+    """Settings for Automotive Claims multimodal processing."""
+    enabled: bool = True
+    doc_analyzer: str = "autoClaimsDocAnalyzer"
+    image_analyzer: str = "autoClaimsImageAnalyzer"
+    video_analyzer: str = "autoClaimsVideoAnalyzer"
+    policies_path: str = "prompts/automotive-claims-policies.json"
+    video_max_duration_minutes: int = 10
+    image_max_size_mb: int = 20
+
+    @classmethod
+    def from_env(cls) -> "AutomotiveClaimsSettings":
+        """Load automotive claims settings from environment variables."""
+        return cls(
+            enabled=os.getenv("AUTO_CLAIMS_ENABLED", "true").lower() == "true",
+            doc_analyzer=os.getenv("AUTO_CLAIMS_DOC_ANALYZER", "autoClaimsDocAnalyzer"),
+            image_analyzer=os.getenv("AUTO_CLAIMS_IMAGE_ANALYZER", "autoClaimsImageAnalyzer"),
+            video_analyzer=os.getenv("AUTO_CLAIMS_VIDEO_ANALYZER", "autoClaimsVideoAnalyzer"),
+            policies_path=os.getenv("AUTO_CLAIMS_POLICIES_PATH", "prompts/automotive-claims-policies.json"),
+            video_max_duration_minutes=int(os.getenv("VIDEO_MAX_DURATION_MINUTES", "10")),
+            image_max_size_mb=int(os.getenv("IMAGE_MAX_SIZE_MB", "20")),
+        )
+
+
+@dataclass
+class MortgageUnderwritingSettings:
+    """Settings for Mortgage Underwriting."""
+    enabled: bool = True
+    doc_analyzer: str = "mortgageDocAnalyzer"
+    policies_path: str = "prompts/mortgage-underwriting-policies.json"
+    osfi_mqr_floor_pct: float = 5.25  # OSFI B-20 floor rate
+    osfi_mqr_buffer_pct: float = 2.0  # Contract rate buffer
+    gds_limit_standard: float = 0.39  # 39%
+    tds_limit_standard: float = 0.44  # 44%
+    ltv_limit_conventional: float = 0.80  # 80% for conventional
+    ltv_limit_insured: float = 0.95  # 95% for insured
+    max_amortization_insured: int = 25  # years
+    max_amortization_uninsured: int = 30  # years
+
+    @classmethod
+    def from_env(cls) -> "MortgageUnderwritingSettings":
+        """Load mortgage underwriting settings from environment variables."""
+        return cls(
+            enabled=os.getenv("MORTGAGE_ENABLED", "true").lower() == "true",
+            doc_analyzer=os.getenv("MORTGAGE_DOC_ANALYZER", "mortgageDocAnalyzer"),
+            policies_path=os.getenv("MORTGAGE_POLICIES_PATH", "prompts/mortgage-underwriting-policies.json"),
+            osfi_mqr_floor_pct=float(os.getenv("OSFI_MQR_FLOOR_PCT", "5.25")),
+            osfi_mqr_buffer_pct=float(os.getenv("OSFI_MQR_BUFFER_PCT", "2.0")),
+            gds_limit_standard=float(os.getenv("GDS_LIMIT_STANDARD", "0.39")),
+            tds_limit_standard=float(os.getenv("TDS_LIMIT_STANDARD", "0.44")),
+            ltv_limit_conventional=float(os.getenv("LTV_LIMIT_CONVENTIONAL", "0.80")),
+            ltv_limit_insured=float(os.getenv("LTV_LIMIT_INSURED", "0.95")),
+            max_amortization_insured=int(os.getenv("MAX_AMORT_INSURED", "25")),
+            max_amortization_uninsured=int(os.getenv("MAX_AMORT_UNINSURED", "30")),
+        )
+
+
+
 
 import os
 from dataclasses import dataclass
@@ -45,11 +131,18 @@ class OpenAISettings:
     deployment_name: str
     api_version: str = "2024-10-21"
     model_name: str = "gpt-4.1"
+    use_azure_ad: bool = False  # Use Azure AD auth instead of API key
     # Chat-specific settings (for Ask IQ feature)
     # If not set, falls back to main deployment
     chat_deployment_name: Optional[str] = None
     chat_model_name: Optional[str] = None
     chat_api_version: Optional[str] = None
+    # Fallback endpoint for rate limiting (429) errors
+    fallback_endpoint: Optional[str] = None
+    fallback_api_key: Optional[str] = None
+    fallback_deployment_name: Optional[str] = None
+    fallback_api_version: Optional[str] = None
+    fallback_use_azure_ad: bool = False  # Use Azure AD for fallback
 
 
 @dataclass
@@ -60,10 +153,26 @@ class AppSettings:
 
 
 @dataclass
+class ProcessingSettings:
+    """Settings for document processing modes."""
+    large_doc_threshold_kb: int = 1500  # Documents >= this size use large doc mode (1.5MB)
+    chunk_size_chars: int = 50000      # Characters per chunk for summarization
+    max_sample_pages: int = 15         # Max pages to sample for large docs
+    condensed_context_max_chars: int = 40000  # Target size for condensed context
+    auto_detect_mode: bool = True      # Automatically detect processing mode
+
+
+
+@dataclass
 class Settings:
     content_understanding: ContentUnderstandingSettings
     openai: OpenAISettings
     app: AppSettings
+    processing: ProcessingSettings
+    database: DatabaseSettings
+    rag: RAGSettings
+    automotive_claims: AutomotiveClaimsSettings
+    mortgage_underwriting: MortgageUnderwritingSettings
 
 
 def load_settings() -> Settings:
@@ -88,11 +197,19 @@ def load_settings() -> Settings:
         deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", ""),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         model_name=os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-4.1"),
+        use_azure_ad=os.getenv("AZURE_OPENAI_USE_AZURE_AD", "true").lower() == "true",
         # Chat-specific settings for Ask IQ (defaults to main model if not set)
         chat_deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME") or None,
         chat_model_name=os.getenv("AZURE_OPENAI_CHAT_MODEL_NAME") or None,
         chat_api_version=os.getenv("AZURE_OPENAI_CHAT_API_VERSION") or None,
+        # Fallback endpoint for rate limiting
+        fallback_endpoint=os.getenv("AZURE_OPENAI_FALLBACK_ENDPOINT", "").rstrip("/") or None,
+        fallback_api_key=os.getenv("AZURE_OPENAI_FALLBACK_API_KEY") or None,
+        fallback_deployment_name=os.getenv("AZURE_OPENAI_FALLBACK_DEPLOYMENT_NAME") or None,
+        fallback_api_version=os.getenv("AZURE_OPENAI_FALLBACK_API_VERSION") or None,
+        fallback_use_azure_ad=os.getenv("AZURE_OPENAI_FALLBACK_USE_AZURE_AD", "false").lower() == "true",
     )
+
 
     app = AppSettings(
         storage_root=os.getenv("UW_APP_STORAGE_ROOT", "data"),
@@ -100,7 +217,47 @@ def load_settings() -> Settings:
         public_files_base_url=os.getenv("PUBLIC_FILES_BASE_URL") or None,
     )
 
-    return Settings(content_understanding=cu, openai=oa, app=app)
+    db = DatabaseSettings(
+        backend=os.getenv("DATABASE_BACKEND", "json"),
+        host=os.getenv("POSTGRESQL_HOST"),
+        port=int(os.getenv("POSTGRESQL_PORT", 5432)) if os.getenv("POSTGRESQL_PORT") else None,
+        database=os.getenv("POSTGRESQL_DATABASE"),
+        user=os.getenv("POSTGRESQL_USER"),
+        password=os.getenv("POSTGRESQL_PASSWORD"),
+        ssl_mode=os.getenv("POSTGRESQL_SSL_MODE"),
+        schema=os.getenv("POSTGRESQL_SCHEMA"),
+    )
+
+    rag = RAGSettings(
+        enabled=os.getenv("RAG_ENABLED", "false").lower() == "true",
+        top_k=int(os.getenv("RAG_TOP_K", 5)),
+        similarity_threshold=float(os.getenv("RAG_SIMILARITY_THRESHOLD", 0.5)),
+        embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+        embedding_dimensions=int(os.getenv("EMBEDDING_DIMENSIONS", 1536)),
+        embedding_deployment=os.getenv("EMBEDDING_DEPLOYMENT") or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+    )
+
+    auto_claims = AutomotiveClaimsSettings.from_env()
+    mortgage = MortgageUnderwritingSettings.from_env()
+
+    processing = ProcessingSettings(
+        large_doc_threshold_kb=int(os.getenv("LARGE_DOC_THRESHOLD_KB", "1500")),
+        chunk_size_chars=int(os.getenv("CHUNK_SIZE_CHARS", "50000")),
+        max_sample_pages=int(os.getenv("MAX_SAMPLE_PAGES", "15")),
+        condensed_context_max_chars=int(os.getenv("CONDENSED_CONTEXT_MAX_CHARS", "40000")),
+        auto_detect_mode=os.getenv("AUTO_DETECT_PROCESSING_MODE", "true").lower() == "true",
+    )
+
+    return Settings(
+        content_understanding=cu,
+        openai=oa,
+        app=app,
+        processing=processing,
+        database=db,
+        rag=rag,
+        automotive_claims=auto_claims,
+        mortgage_underwriting=mortgage
+    )
 
 
 def validate_settings(settings: Settings) -> List[str]:

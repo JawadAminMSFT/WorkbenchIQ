@@ -1,0 +1,1004 @@
+{
+  "version": "1.0",
+  "effective_date": "2026-01-01",
+  "description": "Canadian Residential Mortgage Underwriting Policies - OSFI B-20 Guidelines for mortgage underwriting including debt service ratios, stress testing, income qualification, and risk assessment",
+  "last_updated": "2026-01-23",
+  "jurisdiction": "Canada",
+  "regulatory_framework": "OSFI Guideline B-20",
+  "policies": [
+    {
+      "id": "OSFI-B20-GDS-001",
+      "category": "debt_service_ratios",
+      "subcategory": "gds",
+      "name": "Gross Debt Service Ratio Limit",
+      "description": "Maximum GDS ratio for mortgage qualification per OSFI B-20",
+      "criteria": [
+        {
+          "id": "OSFI-B20-GDS-001-A",
+          "condition": "GDS ratio <= 39%",
+          "severity": "Pass",
+          "action": "Application meets GDS requirements. Proceed with assessment.",
+          "rationale": "GDS (Gross Debt Service) ratio within OSFI B-20 limit of 39%. Borrower can afford housing costs relative to income."
+        },
+        {
+          "id": "OSFI-B20-GDS-001-B",
+          "condition": "GDS ratio > 39% AND <= 42%",
+          "severity": "Warning",
+          "action": "GDS slightly above limit. Review compensating factors: high credit score (>740), substantial down payment (>25%), stable employment (5+ years).",
+          "rationale": "Minor GDS exceedance may be acceptable with strong compensating factors."
+        },
+        {
+          "id": "OSFI-B20-GDS-001-C",
+          "condition": "GDS ratio > 42%",
+          "severity": "Fail",
+          "action": "GDS significantly exceeds OSFI limit. DECLINE unless exceptional circumstances. Recommend: reduce purchase price, increase down payment, or reduce housing costs.",
+          "rationale": "Excessive housing cost burden relative to income creates high default risk."
+        }
+      ],
+      "calculation": "GDS = (P + I + T + H + 50% of Condo Fees) / Gross Monthly Income",
+      "components": {
+        "P": "Principal payment (at qualifying rate)",
+        "I": "Interest payment (at qualifying rate)",
+        "T": "Property taxes (monthly)",
+        "H": "Heating costs (monthly)",
+        "Condo": "50% of condominium fees (if applicable)"
+      },
+      "references": [
+        "OSFI Guideline B-20 Section 4.1",
+        "CMHC Underwriting Standards"
+      ]
+    },
+    {
+      "id": "OSFI-B20-TDS-001",
+      "category": "debt_service_ratios",
+      "subcategory": "tds",
+      "name": "Total Debt Service Ratio Limit",
+      "description": "Maximum TDS ratio for mortgage qualification per OSFI B-20",
+      "criteria": [
+        {
+          "id": "OSFI-B20-TDS-001-A",
+          "condition": "TDS ratio <= 44%",
+          "severity": "Pass",
+          "action": "Application meets TDS requirements. Proceed with assessment.",
+          "rationale": "TDS (Total Debt Service) ratio within OSFI B-20 limit of 44%. Borrower can afford total debt obligations relative to income."
+        },
+        {
+          "id": "OSFI-B20-TDS-001-B",
+          "condition": "TDS ratio > 44% AND <= 47%",
+          "severity": "Warning",
+          "action": "TDS slightly above limit. Review compensating factors and consider debt consolidation or elimination of certain debts.",
+          "rationale": "Minor TDS exceedance requires additional scrutiny of debt obligations."
+        },
+        {
+          "id": "OSFI-B20-TDS-001-C",
+          "condition": "TDS ratio > 47%",
+          "severity": "Fail",
+          "action": "TDS significantly exceeds OSFI limit. DECLINE. Recommend: pay down existing debts, reduce purchase price, or increase income.",
+          "rationale": "Excessive total debt burden creates high risk of default and financial hardship."
+        }
+      ],
+      "calculation": "TDS = (PITH + Other Monthly Debts) / Gross Monthly Income",
+      "other_debts_include": [
+        "Car loans/leases",
+        "Credit card minimum payments",
+        "Lines of credit minimum payments",
+        "Student loans",
+        "Other mortgages",
+        "Child support/alimony",
+        "Property taxes on other properties"
+      ],
+      "references": [
+        "OSFI Guideline B-20 Section 4.1"
+      ]
+    },
+    {
+      "id": "OSFI-B20-MQR-001",
+      "category": "stress_testing",
+      "subcategory": "qualifying_rate",
+      "name": "Mortgage Qualifying Rate (MQR) Stress Test",
+      "description": "All uninsured mortgages must qualify at the Mortgage Qualifying Rate per OSFI B-20",
+      "criteria": [
+        {
+          "id": "OSFI-B20-MQR-001-A",
+          "condition": "Application qualifies at MQR (contract rate + 2% OR 5.25%, whichever is greater)",
+          "severity": "Pass",
+          "action": "Application passes stress test. Borrower can afford payments if rates increase.",
+          "rationale": "OSFI B-20 requires stress testing to ensure borrowers can withstand interest rate increases."
+        },
+        {
+          "id": "OSFI-B20-MQR-001-B",
+          "condition": "Application fails at MQR (GDS or TDS exceeds limits when using qualifying rate)",
+          "severity": "Fail",
+          "action": "DECLINE. Application does not pass mandatory stress test. Recommend: reduce loan amount, increase down payment, or reduce other debts.",
+          "rationale": "Stress test failure indicates borrower cannot withstand potential rate increases. Mandatory requirement per OSFI B-20."
+        }
+      ],
+      "mqr_calculation": "MQR = MAX(Contract Rate + 2%, 5.25%)",
+      "examples": [
+        {
+          "contract_rate": "3.5%",
+          "mqr": "5.5%",
+          "explanation": "Contract 3.5% + 2% = 5.5%, which is > floor 5.25%"
+        },
+        {
+          "contract_rate": "3.0%",
+          "mqr": "5.25%",
+          "explanation": "Contract 3.0% + 2% = 5.0%, use floor 5.25%"
+        },
+        {
+          "contract_rate": "5.25%",
+          "mqr": "7.25%",
+          "explanation": "Contract 5.25% + 2% = 7.25%, which is > floor 5.25%"
+        }
+      ],
+      "references": [
+        "OSFI Guideline B-20 Section 4.2",
+        "Bank of Canada MQR Announcements"
+      ]
+    },
+    {
+      "id": "LTV-CONV-001",
+      "category": "loan_to_value",
+      "subcategory": "conventional",
+      "name": "Conventional Mortgage LTV Limit",
+      "description": "Maximum LTV for conventional (uninsured) mortgages",
+      "criteria": [
+        {
+          "id": "LTV-CONV-001-A",
+          "condition": "LTV <= 80%",
+          "severity": "Pass",
+          "action": "LTV meets conventional mortgage requirements. No mortgage insurance required.",
+          "rationale": "Down payment of at least 20% provides adequate equity cushion."
+        },
+        {
+          "id": "LTV-CONV-001-B",
+          "condition": "LTV > 80% AND < 95%",
+          "severity": "Warning",
+          "action": "LTV exceeds conventional limit. Require CMHC/Genworth/Canada Guaranty mortgage insurance. Assess as high-ratio mortgage.",
+          "rationale": "Down payment less than 20% requires default insurance per regulations."
+        },
+        {
+          "id": "LTV-CONV-001-C",
+          "condition": "LTV >= 95%",
+          "severity": "Fail",
+          "action": "LTV exceeds maximum insurable limit. DECLINE. Minimum 5% down payment required.",
+          "rationale": "Canadian regulations require minimum 5% down payment on all mortgages."
+        }
+      ],
+      "calculation": "LTV = Loan Amount / Property Value (lesser of purchase price or appraisal)",
+      "insurance_premiums": [
+        {"ltv_range": "80.01-85%", "premium": "2.80%"},
+        {"ltv_range": "85.01-90%", "premium": "3.10%"},
+        {"ltv_range": "90.01-95%", "premium": "4.00%"}
+      ],
+      "references": [
+        "Canada Mortgage and Housing Corporation (CMHC) Guidelines",
+        "Bank Act (Canada)"
+      ]
+    },
+    {
+      "id": "DP-REQ-001",
+      "category": "down_payment",
+      "subcategory": "minimum_requirements",
+      "name": "Minimum Down Payment Requirements",
+      "description": "Graduated down payment requirements based on purchase price",
+      "criteria": [
+        {
+          "id": "DP-REQ-001-A",
+          "condition": "Purchase price <= $500,000",
+          "severity": "Info",
+          "action": "Minimum 5% down payment required.",
+          "rationale": "Standard minimum for homes under $500K."
+        },
+        {
+          "id": "DP-REQ-001-B",
+          "condition": "Purchase price $500,001 - $999,999",
+          "severity": "Info",
+          "action": "Minimum down payment: 5% on first $500K + 10% on amount above $500K.",
+          "rationale": "Graduated requirement for mid-priced homes."
+        },
+        {
+          "id": "DP-REQ-001-C",
+          "condition": "Purchase price >= $1,000,000",
+          "severity": "Info",
+          "action": "Minimum 20% down payment required. Mortgage insurance not available.",
+          "rationale": "Homes $1M+ must be uninsured conventional mortgages."
+        }
+      ],
+      "examples": [
+        {
+          "purchase_price": "$400,000",
+          "min_down_payment": "$20,000",
+          "calculation": "5% × $400,000"
+        },
+        {
+          "purchase_price": "$700,000",
+          "min_down_payment": "$45,000",
+          "calculation": "(5% × $500,000) + (10% × $200,000) = $25,000 + $20,000"
+        },
+        {
+          "purchase_price": "$1,200,000",
+          "min_down_payment": "$240,000",
+          "calculation": "20% × $1,200,000"
+        }
+      ],
+      "references": [
+        "Finance Canada Mortgage Regulations",
+        "CMHC Down Payment Requirements"
+      ]
+    },
+    {
+      "id": "DP-SRC-001",
+      "category": "down_payment",
+      "subcategory": "source_verification",
+      "name": "Down Payment Source Verification",
+      "description": "Requirements for verifying and documenting down payment sources",
+      "criteria": [
+        {
+          "id": "DP-SRC-001-A",
+          "condition": "Down payment from savings (90-day history in bank statements)",
+          "severity": "Pass",
+          "action": "Acceptable source. Verify with 90 days of bank statements showing accumulation.",
+          "rationale": "Savings with established history demonstrate financial discipline."
+        },
+        {
+          "id": "DP-SRC-001-B",
+          "condition": "Down payment from gift (with signed gift letter)",
+          "severity": "Pass",
+          "action": "Acceptable source. Require: signed gift letter stating no repayment required, proof of transfer, donor relationship verification.",
+          "rationale": "Gifts from immediate family are acceptable with proper documentation."
+        },
+        {
+          "id": "DP-SRC-001-C",
+          "condition": "Down payment from RRSP (Home Buyers' Plan)",
+          "severity": "Pass",
+          "action": "Acceptable source up to $35,000 per person ($70,000 for couple). Verify RRSP statements and HBP eligibility.",
+          "rationale": "Home Buyers' Plan allows tax-free RRSP withdrawal for first-time buyers."
+        },
+        {
+          "id": "DP-SRC-001-D",
+          "condition": "Down payment from sale of property (with closing statement)",
+          "severity": "Pass",
+          "action": "Acceptable source. Verify with signed agreement of purchase and sale, closing statement showing net proceeds.",
+          "rationale": "Equity from property sale is standard down payment source."
+        },
+        {
+          "id": "DP-SRC-001-E",
+          "condition": "Down payment source unclear or suspicious (large recent deposits)",
+          "severity": "Warning",
+          "action": "Request written explanation and supporting documentation for all large deposits in past 90 days. Flag for AML review if unexplained.",
+          "rationale": "Large unexplained deposits may indicate loan proceeds, money laundering, or undisclosed debt."
+        }
+      ],
+      "references": [
+        "FINTRAC AML Guidelines",
+        "OSFI B-20 Section 3.2"
+      ]
+    },
+    {
+      "id": "INC-SAL-001",
+      "category": "income_qualification",
+      "subcategory": "salary",
+      "name": "Salary Income Verification",
+      "description": "Requirements for verifying and qualifying salary income",
+      "criteria": [
+        {
+          "id": "INC-SAL-001-A",
+          "condition": "Permanent full-time employment (2+ years same employer OR 2+ years same industry)",
+          "severity": "Pass",
+          "action": "Verify with: employment letter, 2 recent paystubs, 2 years T4s or NOAs. Use 100% of base salary.",
+          "rationale": "Stable permanent employment with consistent income."
+        },
+        {
+          "id": "INC-SAL-001-B",
+          "condition": "Probationary period (< 3 months employment)",
+          "severity": "Warning",
+          "action": "Require confirmation of successful probation completion before funding. Consider excluding or haircutting income.",
+          "rationale": "Probationary employment has termination risk."
+        },
+        {
+          "id": "INC-SAL-001-C",
+          "condition": "Contract employment (renewable contracts with 1+ year remaining)",
+          "severity": "Pass",
+          "action": "Verify with: signed contract showing end date, 2 years history of renewals, 2 years T4s or NOAs. Use 100% of contract income if renewal history strong.",
+          "rationale": "Contract employment acceptable with history of renewals."
+        }
+      ],
+      "required_documents": [
+        "Employment verification letter (signed by employer, on letterhead)",
+        "Most recent 2 consecutive paystubs",
+        "Most recent 2 years T4 slips",
+        "Most recent 2 years Notice of Assessment (NOA) from CRA"
+      ],
+      "references": [
+        "CMHC Income Verification Requirements"
+      ]
+    },
+    {
+      "id": "INC-VAR-001",
+      "category": "income_qualification",
+      "subcategory": "variable_income",
+      "name": "Variable Income (Bonus, Commission, Overtime)",
+      "description": "Requirements for qualifying variable income components",
+      "criteria": [
+        {
+          "id": "INC-VAR-001-A",
+          "condition": "Bonus income (2+ year history shown on T4s)",
+          "severity": "Pass",
+          "action": "Apply 50% haircut to 2-year average bonus income. Verify with T4s showing consistent bonus history.",
+          "rationale": "Bonuses are discretionary and may not continue. 50% haircut provides conservative estimate."
+        },
+        {
+          "id": "INC-VAR-001-B",
+          "condition": "Commission income (2+ year history)",
+          "severity": "Pass",
+          "action": "Apply 50% haircut to 2-year average commission income. Verify with T4s and paystubs showing commission breakdown.",
+          "rationale": "Commission income is variable and market-dependent. 50% haircut required."
+        },
+        {
+          "id": "INC-VAR-001-C",
+          "condition": "Overtime income (2+ year history)",
+          "severity": "Pass",
+          "action": "Apply 50% haircut to 2-year average overtime income if consistently earned. Verify with T4s and paystubs.",
+          "rationale": "Overtime is not guaranteed and may be reduced. 50% haircut required."
+        },
+        {
+          "id": "INC-VAR-001-D",
+          "condition": "Variable income < 1 year history OR declining trend",
+          "severity": "Warning",
+          "action": "Exclude from qualifying income. Recent or declining variable income is not reliable.",
+          "rationale": "Insufficient history or negative trend makes income unreliable."
+        }
+      ],
+      "haircut_rates": {
+        "bonus": "50%",
+        "commission": "50%",
+        "overtime": "50%"
+      },
+      "references": [
+        "CMHC Underwriting Policy Section 5.3"
+      ]
+    },
+    {
+      "id": "INC-SE-001",
+      "category": "income_qualification",
+      "subcategory": "self_employed",
+      "name": "Self-Employed Income",
+      "description": "Requirements for qualifying self-employed borrowers",
+      "criteria": [
+        {
+          "id": "INC-SE-001-A",
+          "condition": "Self-employed 2+ years (business operating profitably)",
+          "severity": "Pass",
+          "action": "Use 2-year average of Line 150 (Total Income) from T1 General + addbacks (depreciation, CCA). Verify with: 2 years complete T1 + NOAs, current Interim Financial Statement if > 6 months since year-end.",
+          "rationale": "2-year average smooths income fluctuations. Addbacks restore non-cash expenses."
+        },
+        {
+          "id": "INC-SE-001-B",
+          "condition": "Self-employed < 2 years OR income declining",
+          "severity": "Warning",
+          "action": "Refer to senior underwriter. Consider declining if no extenuating circumstances. Insufficient business track record.",
+          "rationale": "New businesses and declining income present high risk."
+        },
+        {
+          "id": "INC-SE-001-C",
+          "condition": "Ownership < 25% of business",
+          "severity": "Info",
+          "action": "Treat as employed income if ownership < 25%. Require employment letter from business and T4.",
+          "rationale": "Minority ownership treated as employment rather than self-employment."
+        }
+      ],
+      "required_documents": [
+        "Complete T1 General (all pages) for most recent 2 years",
+        "Notice of Assessment (NOA) for most recent 2 years",
+        "Articles of Incorporation or Business License",
+        "Interim Financial Statement (if > 6 months since year-end)",
+        "Business bank statements (3 months)"
+      ],
+      "income_calculation": "Average of (Line 150 + Depreciation + CCA) for 2 years",
+      "references": [
+        "CMHC Self-Employed Guidelines"
+      ]
+    },
+    {
+      "id": "INC-RENT-001",
+      "category": "income_qualification",
+      "subcategory": "rental_income",
+      "name": "Rental Income",
+      "description": "Requirements for qualifying rental income from investment properties",
+      "criteria": [
+        {
+          "id": "INC-RENT-001-A",
+          "condition": "Rental property owned 2+ years (positive cash flow)",
+          "severity": "Pass",
+          "action": "Use 50% of gross monthly rent (net of vacancy and expense allowance). Verify with: signed lease agreement, 2 years rental history on T1 (T776), property tax bill.",
+          "rationale": "50% offset accounts for vacancy, maintenance, and operating expenses."
+        },
+        {
+          "id": "INC-RENT-001-B",
+          "condition": "Proposed rental income (property will be rented)",
+          "severity": "Warning",
+          "action": "Use 50% of appraised rental value (from appraisal comparables). Do NOT use for subject property if purchased as primary residence.",
+          "rationale": "Proposed rental income requires conservative treatment."
+        },
+        {
+          "id": "INC-RENT-001-C",
+          "condition": "Subject property basement suite or secondary unit",
+          "severity": "Warning",
+          "action": "Exclude unless: suite is legal/permitted, separate entrance, 2+ year history of rental. Maximum 30% of qualifying income from rental.",
+          "rationale": "Basement suite income is less reliable. Require legal status and history."
+        }
+      ],
+      "offset_rate": "50% of gross monthly rent",
+      "references": [
+        "CMHC Rental Income Policy"
+      ]
+    },
+    {
+      "id": "AMORT-001",
+      "category": "amortization",
+      "subcategory": "maximum_periods",
+      "name": "Maximum Amortization Periods",
+      "description": "Maximum allowable amortization periods per OSFI B-20",
+      "criteria": [
+        {
+          "id": "AMORT-001-A",
+          "condition": "Insured mortgage (LTV > 80%)",
+          "severity": "Info",
+          "action": "Maximum 25-year amortization. Longer amortization not available for insured mortgages.",
+          "rationale": "CMHC limits insured mortgages to 25-year amortization to reduce default risk."
+        },
+        {
+          "id": "AMORT-001-B",
+          "condition": "Uninsured mortgage (LTV <= 80%)",
+          "severity": "Info",
+          "action": "Maximum 30-year amortization. Longer periods increase payment affordability but total interest cost.",
+          "rationale": "Conventional mortgages may have up to 30-year amortization."
+        },
+        {
+          "id": "AMORT-001-C",
+          "condition": "Amortization > 30 years",
+          "severity": "Fail",
+          "action": "DECLINE. Maximum 30-year amortization per regulations.",
+          "rationale": "Amortization beyond 30 years not permitted in Canada."
+        }
+      ],
+      "references": [
+        "CMHC Mortgage Loan Insurance Rules",
+        "OSFI B-20 Section 4.3"
+      ]
+    },
+    {
+      "id": "RISK-FRAUD-001",
+      "category": "risk_assessment",
+      "subcategory": "fraud_detection",
+      "name": "Fraud Risk Signals",
+      "description": "Red flags that may indicate mortgage fraud",
+      "criteria": [
+        {
+          "id": "RISK-FRAUD-001-A",
+          "condition": "Income documentation inconsistencies (paystub vs T4 vs employment letter)",
+          "severity": "High",
+          "action": "REFER to fraud team. Contact employer directly to verify employment and income. May indicate forged documents.",
+          "rationale": "Income inconsistencies are primary indicator of application fraud."
+        },
+        {
+          "id": "RISK-FRAUD-001-B",
+          "condition": "Suspiciously round income figures (exactly $100,000, $120,000, etc.)",
+          "severity": "Medium",
+          "action": "Request additional documentation. Verify income directly with employer.",
+          "rationale": "Legitimate income rarely falls on exact round numbers."
+        },
+        {
+          "id": "RISK-FRAUD-001-C",
+          "condition": "Property flip (purchased < 1 year ago at significantly lower price)",
+          "severity": "High",
+          "action": "Require independent appraisal. Investigate prior sale details. If price increased >20% in < 1 year, refer for review.",
+          "rationale": "Rapid appreciation may indicate property value fraud or straw buyer scheme."
+        },
+        {
+          "id": "RISK-FRAUD-001-D",
+          "condition": "Non-arms-length transaction (buyer/seller related parties)",
+          "severity": "Medium",
+          "action": "Require independent appraisal. Verify transaction is at fair market value. Document relationship.",
+          "rationale": "Related party transactions may overstate property value."
+        },
+        {
+          "id": "RISK-FRAUD-001-E",
+          "condition": "Employment verification fails (employer does not confirm employment/income)",
+          "severity": "High",
+          "action": "DECLINE. Do not proceed without verified employment.",
+          "rationale": "Inability to verify employment indicates forged documentation."
+        }
+      ],
+      "references": [
+        "FCAC Mortgage Fraud Prevention",
+        "FINTRAC Guidance"
+      ]
+    },
+    {
+      "id": "RISK-AML-001",
+      "category": "risk_assessment",
+      "subcategory": "aml",
+      "name": "Anti-Money Laundering (AML) Risk Signals",
+      "description": "Indicators requiring enhanced due diligence for AML compliance",
+      "criteria": [
+        {
+          "id": "RISK-AML-001-A",
+          "condition": "Large cash deposits (>$10,000) in past 90 days",
+          "severity": "High",
+          "action": "Require written explanation and source documentation. Report to FINTRAC if suspicious. Do not use unexplained cash for down payment.",
+          "rationale": "Large cash deposits may indicate proceeds of crime or money laundering."
+        },
+        {
+          "id": "RISK-AML-001-B",
+          "condition": "Structured deposits (multiple deposits just under $10,000 reporting threshold)",
+          "severity": "High",
+          "action": "REFER to compliance. Structuring to avoid reporting is illegal. File Suspicious Transaction Report (STR) with FINTRAC.",
+          "rationale": "Structuring is a criminal offense indicating deliberate avoidance of reporting."
+        },
+        {
+          "id": "RISK-AML-001-C",
+          "condition": "Down payment from foreign source (wire transfer from non-Canadian bank)",
+          "severity": "Medium",
+          "action": "Verify source of funds. Require documentation: foreign bank statements, employment verification, tax returns from source country. Enhanced due diligence required.",
+          "rationale": "Foreign source funds require additional scrutiny for AML compliance."
+        },
+        {
+          "id": "RISK-AML-001-D",
+          "condition": "Borrower is PEP (Politically Exposed Person) or close associate",
+          "severity": "Medium",
+          "action": "Enhanced due diligence required. Verify source of wealth and funds. Senior approval required.",
+          "rationale": "PEPs present higher risk of corruption or money laundering per FINTRAC."
+        }
+      ],
+      "reporting_threshold": "$10,000 CAD or equivalent",
+      "references": [
+        "Proceeds of Crime (Money Laundering) and Terrorist Financing Act",
+        "FINTRAC Guidance for Mortgage Lenders"
+      ]
+    },
+    {
+      "id": "PROP-OCC-001",
+      "category": "property",
+      "subcategory": "occupancy",
+      "name": "Property Occupancy Type",
+      "description": "Risk assessment based on intended property occupancy",
+      "criteria": [
+        {
+          "id": "PROP-OCC-001-A",
+          "condition": "Owner-occupied (borrower will live in property as principal residence)",
+          "severity": "Pass",
+          "action": "Lowest risk category. Standard underwriting applies.",
+          "rationale": "Owner-occupied properties have lowest default rates."
+        },
+        {
+          "id": "PROP-OCC-001-B",
+          "condition": "Second home / vacation property",
+          "severity": "Warning",
+          "action": "Higher risk. May require higher down payment (10-15% minimum). Verify borrower can afford both properties.",
+          "rationale": "Second homes present higher default risk. Borrowers may prioritize principal residence."
+        },
+        {
+          "id": "PROP-OCC-001-C",
+          "condition": "Investment property (rental)",
+          "severity": "Warning",
+          "action": "Higher risk. Minimum 20% down payment required (no insurance available). Verify rental income potential and borrower experience.",
+          "rationale": "Investment properties have higher default rates and no insurance option."
+        },
+        {
+          "id": "PROP-OCC-001-D",
+          "condition": "Occupancy status unclear or misrepresented",
+          "severity": "High",
+          "action": "REFER. Investigate stated vs actual occupancy. Occupancy fraud is common to obtain better rates.",
+          "rationale": "Misrepresenting occupancy to obtain lower rates or insurance is fraud."
+        }
+      ],
+      "references": [
+        "CMHC Occupancy Requirements"
+      ]
+    },
+    {
+      "id": "CREDIT-001",
+      "category": "credit_assessment",
+      "subcategory": "credit_score",
+      "name": "Credit Score Requirements",
+      "description": "Minimum credit score requirements and risk tiers",
+      "criteria": [
+        {
+          "id": "CREDIT-001-A",
+          "condition": "Credit score >= 740",
+          "severity": "Pass",
+          "action": "Excellent credit. Lowest risk tier. May qualify for preferred rates.",
+          "rationale": "High credit score indicates strong payment history and low default risk."
+        },
+        {
+          "id": "CREDIT-001-B",
+          "condition": "Credit score 680-739",
+          "severity": "Pass",
+          "action": "Good credit. Standard risk tier. Standard rates apply.",
+          "rationale": "Good credit score with acceptable risk profile."
+        },
+        {
+          "id": "CREDIT-001-C",
+          "condition": "Credit score 650-679",
+          "severity": "Warning",
+          "action": "Fair credit. May require compensating factors: higher down payment, lower ratios, stable employment. May incur rate premium.",
+          "rationale": "Fair credit requires additional scrutiny and risk mitigation."
+        },
+        {
+          "id": "CREDIT-001-D",
+          "condition": "Credit score 600-649",
+          "severity": "Warning",
+          "action": "Subprime tier. Refer to specialized lending. Significant rate premium. Minimum 20% down payment typically required.",
+          "rationale": "Elevated credit risk requires specialized underwriting."
+        },
+        {
+          "id": "CREDIT-001-E",
+          "condition": "Credit score < 600",
+          "severity": "Fail",
+          "action": "DECLINE for prime lending. Refer to alternative/private lenders if requested.",
+          "rationale": "Credit score below acceptable threshold for prime mortgage lending."
+        }
+      ],
+      "insured_mortgage_minimum": 680,
+      "conventional_mortgage_minimum": 650,
+      "references": [
+        "CMHC Credit Score Requirements",
+        "Lender Risk-Based Pricing Policies"
+      ]
+    },
+    {
+      "id": "CREDIT-DER-001",
+      "category": "credit_assessment",
+      "subcategory": "derogatory_items",
+      "name": "Derogatory Credit Items",
+      "description": "Treatment of derogatory credit events",
+      "criteria": [
+        {
+          "id": "CREDIT-DER-001-A",
+          "condition": "Bankruptcy discharged > 2 years ago (clean credit since)",
+          "severity": "Warning",
+          "action": "May consider with: strong compensating factors, 20%+ down payment, clean credit for 2+ years post-discharge, written explanation.",
+          "rationale": "Discharged bankruptcy with re-established credit may be acceptable."
+        },
+        {
+          "id": "CREDIT-DER-001-B",
+          "condition": "Consumer proposal completed > 2 years ago",
+          "severity": "Warning",
+          "action": "May consider with: strong compensating factors, 20%+ down payment, clean credit for 2+ years post-completion.",
+          "rationale": "Completed proposal with re-established credit may be acceptable."
+        },
+        {
+          "id": "CREDIT-DER-001-C",
+          "condition": "Recent late payments (within 12 months) on mortgage or rent",
+          "severity": "High",
+          "action": "DECLINE unless isolated incident with strong explanation (medical emergency, job loss with quick recovery).",
+          "rationale": "Recent housing payment delinquency is strong predictor of future default."
+        },
+        {
+          "id": "CREDIT-DER-001-D",
+          "condition": "Collections or charge-offs (unpaid)",
+          "severity": "High",
+          "action": "Require payment in full or settlement prior to funding. Obtain proof of payment/settlement.",
+          "rationale": "Unpaid collections indicate unwillingness or inability to meet obligations."
+        },
+        {
+          "id": "CREDIT-DER-001-E",
+          "condition": "Judgments or liens",
+          "severity": "High",
+          "action": "Must be paid in full and discharged prior to funding. Cannot close with liens on property or borrower.",
+          "rationale": "Liens must be cleared to obtain clear title."
+        }
+      ],
+      "references": [
+        "CMHC Credit Event Guidelines"
+      ]
+    },
+    {
+      "id": "FTHBI-001",
+      "category": "government_programs",
+      "subcategory": "fthbi",
+      "name": "First-Time Home Buyer Incentive (FTHBI)",
+      "description": "CMHC shared equity program for first-time home buyers",
+      "criteria": [
+        {
+          "id": "FTHBI-001-A",
+          "condition": "First-time buyer, household income <= $120,000 (or $150,000 in Toronto, Vancouver, Victoria)",
+          "severity": "Info",
+          "action": "Eligible for FTHBI. Government provides 5% (existing) or 10% (new construction) shared equity. Purchase price limit: 4x income (4.5x in high-cost markets).",
+          "rationale": "FTHBI reduces monthly payments by sharing equity with government."
+        },
+        {
+          "id": "FTHBI-001-B",
+          "condition": "Household income > $120,000 (or $150,000 in high-cost markets)",
+          "severity": "Info",
+          "action": "Not eligible for FTHBI. Proceed with standard mortgage assessment.",
+          "rationale": "Income exceeds FTHBI program limits."
+        },
+        {
+          "id": "FTHBI-001-C",
+          "condition": "FTHBI applicant - repayment calculation",
+          "severity": "Info",
+          "action": "Inform borrower: FTHBI equity must be repaid at sale or after 25 years, whichever is first. Repayment = same percentage of property's fair market value at time of repayment.",
+          "rationale": "Borrower shares property appreciation with government."
+        }
+      ],
+      "eligibility": {
+        "max_income_standard": 120000,
+        "max_income_high_cost": 150000,
+        "high_cost_markets": ["Toronto", "Vancouver", "Victoria"],
+        "purchase_price_multiplier": 4.0,
+        "purchase_price_multiplier_high_cost": 4.5,
+        "equity_share_existing": "5%",
+        "equity_share_new": "10%"
+      },
+      "references": [
+        "CMHC First-Time Home Buyer Incentive Program"
+      ]
+    },
+    {
+      "id": "FHSA-001",
+      "category": "government_programs",
+      "subcategory": "fhsa",
+      "name": "First Home Savings Account (FHSA)",
+      "description": "Tax-advantaged savings account for first-time home buyers",
+      "criteria": [
+        {
+          "id": "FHSA-001-A",
+          "condition": "Down payment from FHSA (with account statements)",
+          "severity": "Pass",
+          "action": "Acceptable source. Verify with FHSA statements. Contributions are tax-deductible and withdrawals for home purchase are tax-free. Maximum $40,000 lifetime contribution.",
+          "rationale": "FHSA provides tax-advantaged savings specifically for home purchase."
+        },
+        {
+          "id": "FHSA-001-B",
+          "condition": "Combined FHSA and RRSP HBP withdrawal",
+          "severity": "Pass",
+          "action": "Acceptable combination. FHSA: up to $40,000 (tax-free withdrawal). HBP: up to $35,000 (repayable over 15 years). Total possible: $75,000 per person.",
+          "rationale": "Both programs can be used together for larger down payment."
+        }
+      ],
+      "limits": {
+        "annual_contribution": 8000,
+        "lifetime_contribution": 40000,
+        "carryforward_max": 8000
+      },
+      "references": [
+        "Canada Revenue Agency FHSA Guidelines"
+      ]
+    },
+    {
+      "id": "PROV-ON-001",
+      "category": "provincial_programs",
+      "subcategory": "ontario",
+      "name": "Ontario Land Transfer Tax Rebate",
+      "description": "First-time home buyer rebate for Ontario land transfer tax",
+      "criteria": [
+        {
+          "id": "PROV-ON-001-A",
+          "condition": "First-time buyer purchasing in Ontario",
+          "severity": "Info",
+          "action": "Eligible for Ontario LTT rebate up to $4,000. Reduces closing costs. Must occupy as principal residence within 9 months.",
+          "rationale": "Provincial rebate reduces closing costs for first-time buyers."
+        },
+        {
+          "id": "PROV-ON-001-B",
+          "condition": "Purchase in City of Toronto",
+          "severity": "Info",
+          "action": "Subject to BOTH Ontario LTT and Toronto Municipal LTT. First-time buyers eligible for rebates on both: up to $4,000 provincial + up to $4,475 municipal = $8,475 total.",
+          "rationale": "Toronto has additional municipal land transfer tax."
+        }
+      ],
+      "rebate_amounts": {
+        "ontario_ltt_max": 4000,
+        "toronto_municipal_max": 4475
+      },
+      "references": [
+        "Ontario Ministry of Finance",
+        "City of Toronto Land Transfer Tax"
+      ]
+    },
+    {
+      "id": "PROV-BC-001",
+      "category": "provincial_programs",
+      "subcategory": "british_columbia",
+      "name": "BC First Time Home Buyers' Program",
+      "description": "Property transfer tax exemption for BC first-time buyers",
+      "criteria": [
+        {
+          "id": "PROV-BC-001-A",
+          "condition": "First-time buyer, purchase price <= $500,000",
+          "severity": "Info",
+          "action": "Full exemption from BC Property Transfer Tax. Saves up to $8,000. Must be Canadian citizen/PR, BC resident for 12 months.",
+          "rationale": "Full PTT exemption for qualifying first-time buyers."
+        },
+        {
+          "id": "PROV-BC-001-B",
+          "condition": "First-time buyer, purchase price $500,001 - $525,000",
+          "severity": "Info",
+          "action": "Partial exemption from BC Property Transfer Tax. Exemption phases out between $500K-$525K.",
+          "rationale": "Partial exemption for properties slightly above threshold."
+        },
+        {
+          "id": "PROV-BC-001-C",
+          "condition": "Purchase price > $525,000",
+          "severity": "Info",
+          "action": "No first-time buyer PTT exemption. Full property transfer tax applies (1% on first $200K, 2% on $200K-$2M, 3% above $2M).",
+          "rationale": "Property exceeds first-time buyer program limits."
+        },
+        {
+          "id": "PROV-BC-001-D",
+          "condition": "Foreign buyer or non-resident",
+          "severity": "Warning",
+          "action": "Subject to BC Foreign Buyers Tax (20% additional PTT in Metro Vancouver, Victoria, Nanaimo, etc.). Verify residency status carefully.",
+          "rationale": "Significant additional tax for non-residents. Verify eligibility for exemptions."
+        }
+      ],
+      "exemption_threshold": 500000,
+      "exemption_phaseout": 525000,
+      "foreign_buyers_tax": "20%",
+      "references": [
+        "BC Property Transfer Tax Act",
+        "BC First Time Home Buyers' Program"
+      ]
+    },
+    {
+      "id": "PROV-QC-001",
+      "category": "provincial_programs",
+      "subcategory": "quebec",
+      "name": "Quebec First-Time Home Buyer Programs",
+      "description": "Quebec-specific programs and welcome tax considerations",
+      "criteria": [
+        {
+          "id": "PROV-QC-001-A",
+          "condition": "First-time buyer purchasing in Quebec",
+          "severity": "Info",
+          "action": "No provincial first-time buyer rebate on welcome tax (droit de mutation). Some municipalities offer rebates. Check local programs.",
+          "rationale": "Quebec welcome tax rebates vary by municipality."
+        },
+        {
+          "id": "PROV-QC-001-B",
+          "condition": "Purchase in Montreal",
+          "severity": "Info",
+          "action": "First-time buyers may qualify for Montreal Home Ownership Program. Provides up to $15,000 for down payment or renovations for properties needing work.",
+          "rationale": "Montreal offers assistance for first-time buyers in certain conditions."
+        }
+      ],
+      "references": [
+        "Revenu Quebec - Droit de mutation",
+        "Montreal Home Ownership Program"
+      ]
+    },
+    {
+      "id": "PROV-AB-001",
+      "category": "provincial_programs",
+      "subcategory": "alberta",
+      "name": "Alberta Mortgage Programs",
+      "description": "Alberta-specific considerations including no land transfer tax",
+      "criteria": [
+        {
+          "id": "PROV-AB-001-A",
+          "condition": "Purchase in Alberta",
+          "severity": "Info",
+          "action": "Alberta has NO provincial land transfer tax. Only registration fees apply (approx. $50 + $2 per $5,000 of property value). Lower closing costs than Ontario/BC.",
+          "rationale": "Alberta's absence of LTT significantly reduces closing costs."
+        }
+      ],
+      "land_transfer_tax": "None",
+      "references": [
+        "Alberta Land Titles Office"
+      ]
+    },
+    {
+      "id": "NEWCAN-001",
+      "category": "special_programs",
+      "subcategory": "newcomers",
+      "name": "Newcomers to Canada Mortgage Program",
+      "description": "Modified qualification criteria for recent immigrants",
+      "criteria": [
+        {
+          "id": "NEWCAN-001-A",
+          "condition": "Newcomer (landed immigrant or work permit holder) < 5 years in Canada",
+          "severity": "Info",
+          "action": "May qualify with 10% down payment (vs 20% for limited credit history). Require: valid work permit or PR card, employment letter, 3 months bank statements, credit reference from home country if available.",
+          "rationale": "Special programs accommodate limited Canadian credit history."
+        },
+        {
+          "id": "NEWCAN-001-B",
+          "condition": "Newcomer with no Canadian credit history",
+          "severity": "Warning",
+          "action": "Cannot obtain Canadian credit score. Require alternative documentation: 12 months rent payment history, foreign credit report (translated), utility payment history, employment stability evidence.",
+          "rationale": "Alternative credit assessment required when no bureau score available."
+        },
+        {
+          "id": "NEWCAN-001-C",
+          "condition": "Non-resident (no work permit, not PR)",
+          "severity": "Warning",
+          "action": "Higher risk category. Minimum 35% down payment typically required. May not qualify for insured mortgages. Limited lender options.",
+          "rationale": "Non-residents present higher risk due to enforcement challenges."
+        }
+      ],
+      "references": [
+        "CMHC Newcomers Program",
+        "Lender Newcomer Policies"
+      ]
+    },
+    {
+      "id": "PORTABILITY-001",
+      "category": "mortgage_features",
+      "subcategory": "portability",
+      "name": "Mortgage Portability Assessment",
+      "description": "Assessment of mortgage portability for property changes",
+      "criteria": [
+        {
+          "id": "PORTABILITY-001-A",
+          "condition": "Borrower selling and buying within lender's portability window (30-120 days)",
+          "severity": "Info",
+          "action": "Mortgage may be portable to new property without penalty. Verify: same or lower mortgage amount, new property qualifies, timing requirements met.",
+          "rationale": "Portability avoids prepayment penalty when moving."
+        },
+        {
+          "id": "PORTABILITY-001-B",
+          "condition": "New property requires higher mortgage than existing",
+          "severity": "Info",
+          "action": "Port and blend option: existing mortgage ported + new funds at current rate. Blended rate calculated on weighted average. Re-qualification required for total amount.",
+          "rationale": "Blend extends mortgage while preserving existing rate on ported portion."
+        }
+      ],
+      "references": [
+        "Lender Portability Policies"
+      ]
+    }
+  ],
+  "modifying_factors": [
+    {
+      "factor": "High credit score (>780) with substantial liquid assets",
+      "impact": "May allow GDS/TDS ratios up to 2% higher than standard limits"
+    },
+    {
+      "factor": "First-time home buyer",
+      "impact": "May be eligible for CMHC First-Time Home Buyer Incentive, FHSA, provincial rebates"
+    },
+    {
+      "factor": "New to Canada immigrant",
+      "impact": "May have limited credit history. Require alternative documentation: foreign credit report, employment letter, bank statements from country of origin. May qualify for newcomer programs with 10% down."
+    },
+    {
+      "factor": "Strong compensating factors",
+      "impact": "High down payment (>25%), excellent credit (>760), stable long-term employment (10+ years), low existing debts"
+    },
+    {
+      "factor": "Property location",
+      "impact": "BC/Ontario have significant land transfer taxes. Toronto has municipal LTT. Alberta has no LTT. Factor into closing costs."
+    },
+    {
+      "factor": "Self-employed < 2 years",
+      "impact": "May require Business for Self (BFS) stated income program with higher down payment (typically 20%+)"
+    }
+  ],
+  "glossary": {
+    "GDS": "Gross Debt Service - Housing costs (PITH) as percentage of gross income",
+    "TDS": "Total Debt Service - Total debt obligations as percentage of gross income",
+    "PITH": "Principal, Interest, Taxes, Heating (and 50% condo fees)",
+    "LTV": "Loan-to-Value - Mortgage amount as percentage of property value",
+    "MQR": "Mortgage Qualifying Rate - Rate used for stress test qualification",
+    "OSFI": "Office of the Superintendent of Financial Institutions",
+    "CMHC": "Canada Mortgage and Housing Corporation",
+    "T4": "Statement of Remuneration Paid (Canadian tax form)",
+    "NOA": "Notice of Assessment from Canada Revenue Agency",
+    "T1": "Individual Income Tax Return",
+    "RRSP": "Registered Retirement Savings Plan",
+    "HBP": "Home Buyers' Plan - RRSP withdrawal program",
+    "FHSA": "First Home Savings Account - Tax-advantaged savings for first-time buyers",
+    "FTHBI": "First-Time Home Buyer Incentive - CMHC shared equity program",
+    "LTT": "Land Transfer Tax - Provincial/municipal tax on property purchases",
+    "PTT": "Property Transfer Tax - BC term for land transfer tax",
+    "FINTRAC": "Financial Transactions and Reports Analysis Centre of Canada",
+    "PEP": "Politically Exposed Person",
+    "STR": "Suspicious Transaction Report",
+    "CCA": "Capital Cost Allowance (depreciation for tax purposes)",
+    "PR": "Permanent Resident",
+    "BFS": "Business for Self - Self-employed mortgage program"
+  }
+}

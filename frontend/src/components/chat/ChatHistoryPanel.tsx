@@ -9,7 +9,9 @@ import {
   ChevronLeft, 
   ChevronRight,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Globe,
+  FileText
 } from 'lucide-react';
 
 export interface ConversationSummary {
@@ -22,10 +24,12 @@ export interface ConversationSummary {
   preview?: string;
 }
 
+type HistoryTab = 'app' | 'all';
+
 interface ChatHistoryPanelProps {
   applicationId: string;
   currentConversationId: string | null;
-  onSelectConversation: (id: string | null) => void;
+  onSelectConversation: (id: string | null, applicationId?: string) => void;
   onNewConversation: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -39,24 +43,28 @@ export default function ChatHistoryPanel({
   isCollapsed,
   onToggleCollapse,
 }: ChatHistoryPanelProps) {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeTab, setActiveTab] = useState<HistoryTab>('app');
+  const [appConversations, setAppConversations] = useState<ConversationSummary[]>([]);
+  const [allConversations, setAllConversations] = useState<ConversationSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Load conversations
+  const conversations = activeTab === 'app' ? appConversations : allConversations;
+
+  // Load app-specific conversations
   useEffect(() => {
     if (!applicationId) return;
     
-    const loadConversations = async () => {
+    const loadAppConversations = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${backendUrl}/api/applications/${applicationId}/conversations`);
+        // Use relative path to go through Next.js proxy
+        const response = await fetch(`/api/applications/${applicationId}/conversations`);
         if (!response.ok) throw new Error('Failed to load conversations');
         const data = await response.json();
-        setConversations(data.conversations || []);
+        setAppConversations(data.conversations || []);
       } catch (e) {
         console.error('Failed to load conversations:', e);
         setError('Failed to load history');
@@ -65,17 +73,49 @@ export default function ChatHistoryPanel({
       }
     };
     
-    loadConversations();
+    loadAppConversations();
   }, [applicationId]);
+
+  // Load all conversations when switching to 'all' tab
+  useEffect(() => {
+    if (activeTab !== 'all') return;
+    
+    const loadAllConversations = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Use relative path to go through Next.js proxy
+        const response = await fetch(`/api/conversations?limit=50`);
+        if (!response.ok) throw new Error('Failed to load all conversations');
+        const data = await response.json();
+        setAllConversations(data.conversations || []);
+      } catch (e) {
+        console.error('Failed to load all conversations:', e);
+        setError('Failed to load history');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadAllConversations();
+  }, [activeTab]);
 
   // Refresh conversations when a new one might be created
   const refreshConversations = async () => {
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/api/applications/${applicationId}/conversations`);
+      // Use relative path to go through Next.js proxy
+      const response = await fetch(`/api/applications/${applicationId}/conversations`);
       if (response.ok) {
         const data = await response.json();
-        setConversations(data.conversations || []);
+        setAppConversations(data.conversations || []);
+      }
+      // Also refresh all conversations if on that tab
+      if (activeTab === 'all') {
+        const allResponse = await fetch(`/api/conversations?limit=50`);
+        if (allResponse.ok) {
+          const allData = await allResponse.json();
+          setAllConversations(allData.conversations || []);
+        }
       }
     } catch (e) {
       console.error('Failed to refresh conversations:', e);
@@ -88,22 +128,26 @@ export default function ChatHistoryPanel({
     return () => {
       delete (window as any).__refreshChatHistory;
     };
-  }, [applicationId]);
+  }, [applicationId, activeTab]);
 
-  const handleDelete = async (e: React.MouseEvent, conversationId: string) => {
+  const handleDelete = async (e: React.MouseEvent, conversationId: string, convAppId?: string) => {
     e.stopPropagation();
     if (deletingId) return;
     
+    const targetAppId = convAppId || applicationId;
+    
     setDeletingId(conversationId);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      // Use relative path to go through Next.js proxy
       const response = await fetch(
-        `${backendUrl}/api/applications/${applicationId}/conversations/${conversationId}`,
+        `/api/applications/${targetAppId}/conversations/${conversationId}`,
         { method: 'DELETE' }
       );
       
       if (response.ok) {
-        setConversations(prev => prev.filter(c => c.id !== conversationId));
+        // Remove from both lists
+        setAppConversations(prev => prev.filter(c => c.id !== conversationId));
+        setAllConversations(prev => prev.filter(c => c.id !== conversationId));
         if (currentConversationId === conversationId) {
           onSelectConversation(null);
         }
@@ -173,6 +217,34 @@ export default function ChatHistoryPanel({
         </button>
       </div>
 
+      {/* Tab Switcher */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('app')}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
+            activeTab === 'app'
+              ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+          }`}
+          title="Conversations for this application"
+        >
+          <FileText className="w-4 h-4" />
+          <span>Current</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
+            activeTab === 'all'
+              ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+          }`}
+          title="Conversations across all applications"
+        >
+          <Globe className="w-4 h-4" />
+          <span>All Apps</span>
+        </button>
+      </div>
+
       {/* New Conversation Button */}
       <div className="p-2">
         <button
@@ -198,57 +270,78 @@ export default function ChatHistoryPanel({
         ) : conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
-            <p className="text-xs text-slate-500">No conversations yet</p>
-            <p className="text-xs text-slate-400">Start a new chat!</p>
+            <p className="text-xs text-slate-500">
+              {activeTab === 'app' ? 'No conversations yet' : 'No conversations found'}
+            </p>
+            <p className="text-xs text-slate-400">
+              {activeTab === 'app' ? 'Start a new chat!' : 'Start chatting with any application'}
+            </p>
           </div>
         ) : (
-          conversations.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => onSelectConversation(conv.id)}
-              className={`w-full text-left p-2 rounded-lg transition-colors group ${
-                currentConversationId === conv.id
-                  ? 'bg-indigo-100 border border-indigo-200'
-                  : 'hover:bg-slate-100 border border-transparent'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-1">
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-medium truncate ${
-                    currentConversationId === conv.id ? 'text-indigo-800' : 'text-slate-700'
-                  }`}>
-                    {conv.title}
-                  </p>
-                  {conv.preview && (
-                    <p className="text-xs text-slate-500 truncate mt-0.5">
-                      {conv.preview}
+          conversations.map((conv) => {
+            const isFromDifferentApp = activeTab === 'all' && conv.application_id !== applicationId;
+            return (
+              <button
+                key={`${conv.application_id}-${conv.id}`}
+                onClick={() => onSelectConversation(conv.id, conv.application_id)}
+                className={`w-full text-left p-2 rounded-lg transition-colors group ${
+                  currentConversationId === conv.id && conv.application_id === applicationId
+                    ? 'bg-indigo-100 border border-indigo-200'
+                    : isFromDifferentApp
+                      ? 'hover:bg-amber-50 border border-transparent'
+                      : 'hover:bg-slate-100 border border-transparent'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-1">
+                  <div className="flex-1 min-w-0">
+                    {/* Show app ID badge for global view */}
+                    {activeTab === 'all' && (
+                      <div className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded mb-1 ${
+                        isFromDifferentApp 
+                          ? 'bg-amber-100 text-amber-700' 
+                          : 'bg-indigo-100 text-indigo-700'
+                      }`}>
+                        {conv.application_id}
+                      </div>
+                    )}
+                    <p className={`text-xs font-medium truncate ${
+                      currentConversationId === conv.id && conv.application_id === applicationId 
+                        ? 'text-indigo-800' 
+                        : 'text-slate-700'
+                    }`}>
+                      {conv.title}
                     </p>
-                  )}
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-400">
-                      {formatDate(conv.updated_at)}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {conv.message_count} msgs
-                    </span>
+                    {conv.preview && (
+                      <p className="text-xs text-slate-500 truncate mt-0.5">
+                        {conv.preview}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-400">
+                        {formatDate(conv.updated_at)}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {conv.message_count} msgs
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    onClick={(e) => handleDelete(e, conv.id, conv.application_id)}
+                    className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                      deletingId === conv.id ? 'opacity-100' : ''
+                    } hover:bg-rose-100`}
+                    title="Delete"
+                  >
+                    {deletingId === conv.id ? (
+                      <Loader2 className="w-3 h-3 text-rose-500 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3 h-3 text-rose-500" />
+                    )}
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => handleDelete(e, conv.id)}
-                  className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                    deletingId === conv.id ? 'opacity-100' : ''
-                  } hover:bg-rose-100`}
-                  title="Delete"
-                >
-                  {deletingId === conv.id ? (
-                    <Loader2 className="w-3 h-3 text-rose-500 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3 h-3 text-rose-500" />
-                  )}
-                </button>
-              </div>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
       </div>
     </div>

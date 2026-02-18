@@ -433,14 +433,20 @@ def format_policy_for_prompt(policy: Dict[str, Any]) -> str:
     """
     lines = []
     lines.append(f"### Policy: {policy['id']} - {policy['name']}")
-    lines.append(f"Category: {policy['category']}/{policy['subcategory']}")
+    lines.append(f"Category: {policy['category']}/{policy.get('subcategory', 'general')}")
     lines.append(f"Description: {policy['description']}")
     lines.append("")
-    lines.append("**Risk Assessment Criteria:**")
+    lines.append("**Criteria:**")
     
     for criteria in policy.get("criteria", []):
         lines.append(f"- [{criteria['id']}] {criteria['condition']}")
-        lines.append(f"  - Risk Level: {criteria['risk_level']}")
+        # Handle different policy schema variants
+        if criteria.get('risk_level'):
+            lines.append(f"  - Risk Level: {criteria['risk_level']}")
+        if criteria.get('severity'):
+            lines.append(f"  - Severity: {criteria['severity']}")
+        if criteria.get('liability_determination'):
+            lines.append(f"  - Liability: {criteria['liability_determination']}")
         lines.append(f"  - Action: {criteria['action']}")
         lines.append(f"  - Rationale: {criteria['rationale']}")
     
@@ -468,16 +474,16 @@ def format_policies_for_prompt(
         Formatted string containing all policies
     """
     if not policies:
-        return "No specific underwriting policies applicable."
+        return "No specific policies applicable."
     
     # Limit policies to avoid token overflow
     policies_to_format = policies[:max_policies]
     
     lines = [
-        "# UNDERWRITING POLICY REFERENCE",
+        "# POLICY REFERENCE",
         "",
-        "Use the following underwriting policies to assess risk and determine appropriate actions.",
-        "When providing a risk assessment, you MUST cite the specific policy and criteria used.",
+        "Use the following policies to assess and determine appropriate actions.",
+        "When providing an assessment, you MUST cite the specific policy and criteria used.",
         "",
     ]
     
@@ -601,3 +607,177 @@ def validate_policy_citation(
         "policy": policy,
         "criteria": None,
     }
+
+
+# Mapping of personas to their policy JSON files
+PERSONA_POLICY_FILES = {
+    "underwriting": "life-health-underwriting-policies.json",
+    "life_health_claims": "life-health-claims-policies.json",
+    "automotive_claims": "automotive-claims-policies.json",
+    "property_casualty_claims": "property-casualty-claims-policies.json",
+    "mortgage_underwriting": "mortgage-underwriting-policies.json",
+    "mortgage": "mortgage-underwriting-policies.json",
+}
+
+
+def get_policy_file_for_persona(storage_root: str, persona: str) -> str:
+    """
+    Get the path to the policy file for a specific persona.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Path to the persona's policy JSON file
+    """
+    policy_file = PERSONA_POLICY_FILES.get(persona, PERSONA_POLICY_FILES["underwriting"])
+    return os.path.join(storage_root, policy_file)
+
+
+def load_policies_for_persona(
+    storage_root: str,
+    persona: str,
+    use_cache: bool = True,
+) -> Dict[str, Any]:
+    """
+    Load policies from the JSON file for a specific persona.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        use_cache: Whether to use cached policies if available
+        
+    Returns:
+        Dictionary containing the full policies structure
+    """
+    cache_key = f"{storage_root}:{persona}"
+    
+    if use_cache and cache_key in _policy_cache:
+        return _policy_cache[cache_key]
+    
+    policy_file = get_policy_file_for_persona(storage_root, persona)
+    
+    try:
+        if os.path.exists(policy_file):
+            with open(policy_file, 'r', encoding='utf-8') as f:
+                policies = json.load(f)
+                
+            # Validate basic structure
+            if "policies" not in policies or not isinstance(policies["policies"], list):
+                logger.warning(f"Invalid policy file structure for {persona}. Expected 'policies' array.")
+                return _get_empty_policies()
+            
+            logger.info(
+                "Loaded %d %s policies from %s",
+                len(policies["policies"]),
+                persona,
+                policy_file
+            )
+            
+            if use_cache:
+                _policy_cache[cache_key] = policies
+                
+            return policies
+        else:
+            logger.warning("Policy file not found for %s: %s", persona, policy_file)
+            return _get_empty_policies()
+            
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error("Failed to load %s policies: %s", persona, str(e))
+        return _get_empty_policies()
+
+
+def format_plan_benefits_for_prompt(plan_benefits: dict) -> str:
+    """
+    Format plan benefit definitions for injection into prompts.
+    
+    Args:
+        plan_benefits: Dictionary of plan_name -> plan_data
+        
+    Returns:
+        Formatted string of plan benefits
+    """
+    if not plan_benefits:
+        return ""
+    
+    formatted_parts = []
+    formatted_parts.append("=" * 60)
+    formatted_parts.append("PLAN BENEFIT REFERENCE")
+    formatted_parts.append("=" * 60)
+    
+    for plan_name, plan_data in plan_benefits.items():
+        formatted_parts.append(f"\n### {plan_name}")
+        formatted_parts.append(f"Plan Type: {plan_data.get('plan_type', 'Unknown')}")
+        formatted_parts.append(f"Network: {plan_data.get('network', 'Unknown')}")
+        
+        # Deductible
+        deductible = plan_data.get("deductible", {})
+        if deductible:
+            formatted_parts.append(f"Deductible: Individual {deductible.get('individual', 'N/A')} / Family {deductible.get('family', 'N/A')}")
+        
+        # OOP Max
+        oop_max = plan_data.get("oop_max", {})
+        if oop_max:
+            formatted_parts.append(f"OOP Max: Individual {oop_max.get('individual', 'N/A')} / Family {oop_max.get('family', 'N/A')}")
+        
+        # Copays
+        copays = plan_data.get("copays", {})
+        if copays:
+            copay_str = ", ".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in copays.items()])
+            formatted_parts.append(f"Copays: {copay_str}")
+        
+        # Coinsurance
+        coinsurance = plan_data.get("coinsurance")
+        if coinsurance:
+            formatted_parts.append(f"Coinsurance: {coinsurance}")
+        
+        # Preventive care
+        preventive = plan_data.get("preventive_care")
+        if preventive:
+            formatted_parts.append(f"Preventive Care: {preventive}")
+        
+        # Exclusions
+        exclusions = plan_data.get("exclusions", [])
+        if exclusions:
+            formatted_parts.append(f"Exclusions: {', '.join(exclusions)}")
+        
+        # Fee schedule
+        fee_schedule = plan_data.get("fee_schedule", {})
+        if fee_schedule:
+            fee_str = ", ".join([f"{code}: {rate}" for code, rate in fee_schedule.items()])
+            formatted_parts.append(f"Fee Schedule: {fee_str}")
+    
+    return "\n".join(formatted_parts)
+
+
+def format_policies_for_persona(storage_root: str, persona: str) -> str:
+    """
+    Format all policies for a specific persona for injection into a prompt.
+    
+    This is the persona-aware version of format_all_policies_for_prompt.
+    For claims personas with unified schema, includes both plan benefits
+    and processing policies.
+    
+    Args:
+        storage_root: Path to the data storage directory
+        persona: Persona type (underwriting, life_health_claims, etc.)
+        
+    Returns:
+        Formatted string containing all policies for the persona
+    """
+    data = load_policies_for_persona(storage_root, persona)
+    
+    formatted_parts = []
+    
+    # Format processing policies
+    policies = data.get("policies", [])
+    if policies:
+        formatted_parts.append(format_policies_for_prompt(policies))
+    
+    # Format plan benefits (for claims personas with unified schema)
+    plan_benefits = data.get("plan_benefits", {})
+    if plan_benefits:
+        formatted_parts.append(format_plan_benefits_for_prompt(plan_benefits))
+    
+    return "\n\n".join(formatted_parts)

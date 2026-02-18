@@ -6,6 +6,10 @@
 # Project-specific
 # ============================================================================
 .specify/
+.github/*
+!.github/workflows/
+underwriting-aps-docs/
+batch-review-output/
 
 # ============================================================================
 # Python
@@ -326,6 +330,9 @@ out/
 # Generated documentation
 docs/_build/
 site/
+
+# Research
+mortgage-research/
 
 # ============================================================================
 # Testing & Quality

@@ -2,10 +2,14 @@
   "name": "underwriting-assistant-frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:prod": "node .next/standalone/server.js",
     "lint": "next lint"
   },
   "dependencies": {

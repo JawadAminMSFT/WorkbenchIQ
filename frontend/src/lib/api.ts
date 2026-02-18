@@ -25,8 +25,44 @@ import type {
   PolicyResponse,
 } from './types';
 
-// Backend API base URL - can be configured via environment variable
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Backend API base URL - uses relative paths to go through Next.js proxy rewrites
+const API_BASE_URL = '';
+
+/**
+ * Get the direct backend API base URL for media requests.
+ * In the browser, derives the API origin from the current hostname
+ * (e.g., workbenchiq.azurewebsites.net → workbenchiq-api.azurewebsites.net).
+ * Falls back to NEXT_PUBLIC_API_URL or localhost for SSR/local dev.
+ */
+function getMediaBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    // Use NEXT_PUBLIC_API_URL if it was injected at build time
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
+    // On Azure: derive API URL from frontend URL (add -api suffix)
+    const host = window.location.hostname;
+    if (host.endsWith('.azurewebsites.net')) {
+      const appName = host.replace('.azurewebsites.net', '');
+      return `https://${appName}-api.azurewebsites.net`;
+    }
+  }
+  return API_BASE_URL;
+}
+
+/**
+ * Get the full direct URL for a media file (image, video, PDF).
+ * Bypasses the Next.js proxy so browsers receive proper Content-Length
+ * and Accept-Ranges headers needed for video/image rendering.
+ */
+export function getMediaUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  const base = getMediaBaseUrl();
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+}
 
 /**
  * Custom error class for API errors
@@ -132,23 +168,45 @@ export async function createApplication(
 
 /**
  * Run content understanding extraction on an application
+ * @param background If true, starts in background and returns immediately
  */
-export async function runContentUnderstanding(appId: string): Promise<ApplicationMetadata> {
-  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/extract`, {
+export async function runContentUnderstanding(
+  appId: string,
+  background: boolean = false
+): Promise<ApplicationMetadata> {
+  const params = background ? '?background=true' : '';
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/extract${params}`, {
     method: 'POST',
   });
 }
 
 /**
  * Run underwriting prompts analysis on an application
+ * @param background If true, starts in background and returns immediately
  */
 export async function runUnderwritingAnalysis(
   appId: string,
-  sections?: string[]
+  sections?: string[],
+  background: boolean = false
 ): Promise<ApplicationMetadata> {
-  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/analyze`, {
+  const params = background ? '?background=true' : '';
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/analyze${params}`, {
     method: 'POST',
     body: JSON.stringify({ sections }),
+  });
+}
+
+/**
+ * Start full processing (extraction + analysis) in background.
+ * Returns immediately. Client should poll getApplication() for status updates.
+ * @param processingMode - 'auto', 'large_document', or 'standard'
+ */
+export async function startProcessing(appId: string, processingMode?: string): Promise<ApplicationMetadata> {
+  const url = processingMode 
+    ? `/api/applications/${appId}/process?processing_mode=${processingMode}`
+    : `/api/applications/${appId}/process`;
+  return apiFetch<ApplicationMetadata>(url, {
+    method: 'POST',
   });
 }
 
@@ -658,7 +716,8 @@ export async function listAnalyzers(): Promise<{ analyzers: AnalyzerInfo[] }> {
 export async function createAnalyzer(
   analyzerId?: string,
   persona?: string,
-  description?: string
+  description?: string,
+  mediaType?: string
 ): Promise<{ message: string; analyzer_id: string; result: Record<string, unknown> }> {
   return apiFetch('/api/analyzer/create', {
     method: 'POST',
@@ -666,6 +725,7 @@ export async function createAnalyzer(
       analyzer_id: analyzerId,
       persona,
       description,
+      media_type: mediaType,
     }),
   });
 }
@@ -735,4 +795,569 @@ export async function deletePolicy(policyId: string): Promise<{ success: boolean
   return apiFetch<{ success: boolean; message: string }>(`/api/policies/${policyId}`, {
     method: 'DELETE',
   });
+}
+
+// ============================================================================
+// RAG Index Management APIs
+// ============================================================================
+
+export interface ReindexResponse {
+  status: string;
+  policies_indexed?: number;
+  chunks_stored?: number;
+  total_time_seconds?: number;
+  error?: string;
+}
+
+export interface IndexStats {
+  status: string;
+  total_chunks?: number;
+  chunk_count?: number;  // Alternative field name used by some endpoints
+  policy_count?: number;
+  chunks_by_type?: Record<string, number>;
+  chunks_by_category?: Record<string, number>;
+  table?: string;
+  last_updated?: string;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Reindex all policies for RAG search (persona-aware)
+ * @param persona - The persona to reindex policies for (underwriting, life_health_claims, automotive_claims, property_casualty_claims)
+ * @param force - Whether to force delete existing chunks before reindexing
+ */
+export async function reindexAllPolicies(force: boolean = true, persona: string = 'underwriting'): Promise<ReindexResponse> {
+  return apiFetch<ReindexResponse>(`/api/admin/policies/reindex?persona=${encodeURIComponent(persona)}`, {
+    method: 'POST',
+    body: JSON.stringify({ force }),
+  });
+}
+
+/**
+ * Reindex a single policy
+ */
+export async function reindexPolicy(policyId: string): Promise<ReindexResponse> {
+  return apiFetch<ReindexResponse>(`/api/admin/policies/${policyId}/reindex`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Get RAG index statistics (persona-aware)
+ * @param persona - The persona to get index stats for
+ */
+export async function getIndexStats(persona: string = 'underwriting'): Promise<IndexStats> {
+  return apiFetch<IndexStats>(`/api/admin/policies/index-stats?persona=${encodeURIComponent(persona)}`);
+}
+
+// ============================================================================
+// Claims Policy Admin APIs (Deprecated - use reindexAllPolicies/getIndexStats with persona param)
+// ============================================================================
+
+/**
+ * @deprecated Use reindexAllPolicies(force, 'automotive_claims') instead
+ */
+export async function reindexClaimsPolicies(force: boolean = true): Promise<ReindexResponse> {
+  return reindexAllPolicies(force, 'automotive_claims');
+}
+
+/**
+ * @deprecated Use getIndexStats('automotive_claims') instead
+ */
+export async function getClaimsIndexStats(): Promise<IndexStats> {
+  return getIndexStats('automotive_claims');
+}
+
+// ============================================================================
+// Glossary APIs
+// ============================================================================
+
+/**
+ * Glossary term structure
+ */
+export interface GlossaryTerm {
+  abbreviation: string;
+  meaning: string;
+  context?: string;
+  examples?: string[];
+  category?: string;
+  category_id?: string;
+}
+
+/**
+ * Glossary category structure
+ */
+export interface GlossaryCategory {
+  id: string;
+  name: string;
+  terms: GlossaryTerm[];
+}
+
+/**
+ * Persona glossary structure
+ */
+export interface PersonaGlossary {
+  persona: string;
+  name: string;
+  description: string;
+  categories: GlossaryCategory[];
+  total_terms: number;
+}
+
+/**
+ * Glossary summary for listing
+ */
+export interface GlossarySummary {
+  persona: string;
+  name: string;
+  description: string;
+  term_count: number;
+  category_count: number;
+}
+
+/**
+ * List all available glossaries
+ */
+export async function listGlossaries(): Promise<{ glossaries: GlossarySummary[] }> {
+  return apiFetch<{ glossaries: GlossarySummary[] }>('/api/glossary');
+}
+
+/**
+ * Get the full glossary for a specific persona
+ */
+export async function getGlossary(persona: string): Promise<PersonaGlossary> {
+  return apiFetch<PersonaGlossary>(`/api/glossary/${persona}`);
+}
+
+/**
+ * Search for terms in a glossary
+ */
+export async function searchGlossary(
+  persona: string,
+  query: string,
+  category?: string
+): Promise<{ results: GlossaryTerm[]; count: number }> {
+  const params = new URLSearchParams({ q: query });
+  if (category) params.append('category', category);
+  return apiFetch<{ results: GlossaryTerm[]; count: number }>(
+    `/api/glossary/${persona}/search?${params.toString()}`
+  );
+}
+
+/**
+ * Create a new glossary category
+ */
+export async function createGlossaryCategory(
+  persona: string,
+  id: string,
+  name: string
+): Promise<{ category: GlossaryCategory; message: string }> {
+  return apiFetch<{ category: GlossaryCategory; message: string }>(
+    `/api/glossary/${persona}/categories`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ id, name }),
+    }
+  );
+}
+
+/**
+ * Update a glossary category
+ */
+export async function updateGlossaryCategory(
+  persona: string,
+  categoryId: string,
+  name: string
+): Promise<{ category: GlossaryCategory; message: string }> {
+  return apiFetch<{ category: GlossaryCategory; message: string }>(
+    `/api/glossary/${persona}/categories/${categoryId}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }
+  );
+}
+
+/**
+ * Delete a glossary category (must be empty)
+ */
+export async function deleteGlossaryCategory(
+  persona: string,
+  categoryId: string
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    `/api/glossary/${persona}/categories/${categoryId}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * Create a new glossary term
+ */
+export async function createGlossaryTerm(
+  persona: string,
+  categoryId: string,
+  term: Omit<GlossaryTerm, 'category' | 'category_id'>
+): Promise<{ term: GlossaryTerm; message: string }> {
+  return apiFetch<{ term: GlossaryTerm; message: string }>(
+    `/api/glossary/${persona}/terms/${categoryId}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(term),
+    }
+  );
+}
+
+/**
+ * Update an existing glossary term
+ */
+export async function updateGlossaryTerm(
+  persona: string,
+  abbreviation: string,
+  updates: Partial<GlossaryTerm>
+): Promise<{ term: GlossaryTerm; message: string }> {
+  return apiFetch<{ term: GlossaryTerm; message: string }>(
+    `/api/glossary/${persona}/terms/${encodeURIComponent(abbreviation)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }
+  );
+}
+
+/**
+ * Delete a glossary term
+ */
+export async function deleteGlossaryTerm(
+  persona: string,
+  abbreviation: string
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    `/api/glossary/${persona}/terms/${encodeURIComponent(abbreviation)}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * Get formatted glossary for prompt injection
+ */
+export async function getFormattedGlossary(
+  persona: string,
+  options?: {
+    maxTerms?: number;
+    categories?: string[];
+    formatType?: 'markdown' | 'list';
+    includeHeaders?: boolean;
+  }
+): Promise<{ formatted: string }> {
+  const params = new URLSearchParams();
+  if (options?.maxTerms) params.append('max_terms', options.maxTerms.toString());
+  if (options?.categories) params.append('categories', options.categories.join(','));
+  if (options?.formatType) params.append('format_type', options.formatType);
+  if (options?.includeHeaders !== undefined) params.append('include_headers', options.includeHeaders.toString());
+  
+  const queryString = params.toString();
+  return apiFetch<{ formatted: string }>(
+    `/api/glossary/${persona}/formatted${queryString ? `?${queryString}` : ''}`
+  );
+}
+
+// ============================================================================
+// Automotive Claims API
+// ============================================================================
+
+/**
+ * Submit a new automotive claim
+ */
+export interface ClaimSubmitRequest {
+  claimant_name: string;
+  policy_number: string;
+  incident_date: string;
+  incident_description: string;
+  vehicle_info?: {
+    make?: string;
+    model?: string;
+    year?: number;
+    vin?: string;
+  };
+}
+
+export interface ClaimSubmitResponse {
+  claim_id: string;
+  status: string;
+  message: string;
+  created_at: string;
+}
+
+export async function submitClaim(data: ClaimSubmitRequest): Promise<ClaimSubmitResponse> {
+  return apiFetch<ClaimSubmitResponse>('/api/claims/submit', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Upload files to a claim
+ */
+export interface FileUploadResponse {
+  claim_id: string;
+  uploaded_files: Array<{
+    file_id: string;
+    filename: string;
+    content_type: string;
+    size: number;
+    status: string;
+  }>;
+  processing_status: string;
+}
+
+export async function uploadClaimFiles(claimId: string, files: File[]): Promise<FileUploadResponse> {
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  // Use relative path to go through Next.js proxy
+  const response = await fetch(`/api/claims/${claimId}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new APIError(
+      response.status,
+      errorData.detail || `Upload failed: ${response.status}`,
+      errorData
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Get claim processing status
+ */
+export interface ProcessingStatusResponse {
+  claim_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  current_step?: string;
+  steps_completed: string[];
+  error?: string;
+}
+
+export async function getClaimProcessingStatus(claimId: string): Promise<ProcessingStatusResponse> {
+  return apiFetch<ProcessingStatusResponse>(`/api/claims/${claimId}/status`);
+}
+
+/**
+ * Get full claim assessment
+ */
+export interface DamageArea {
+  area_id: string;
+  location: string;
+  severity: 'minor' | 'moderate' | 'severe' | 'total_loss';
+  confidence: number;
+  estimated_cost: number;
+  description: string;
+  bounding_box?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  source_media_id?: string;
+}
+
+export interface LiabilityAssessment {
+  fault_determination: string;
+  fault_percentage: number;
+  contributing_factors: string[];
+  liability_notes: string;
+}
+
+export interface FraudIndicator {
+  indicator_type: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  confidence: number;
+}
+
+export interface PolicyCitationClaim {
+  policy_id: string;
+  policy_name: string;
+  section: string;
+  citation_text: string;
+  relevance_score: number;
+  supports_coverage: boolean;
+}
+
+export interface PayoutRecommendation {
+  recommended_amount: number;
+  min_amount: number;
+  max_amount: number;
+  breakdown: Record<string, number>;
+  adjustments: Array<{
+    reason: string;
+    amount: number;
+  }>;
+}
+
+export interface ClaimAssessmentResponse {
+  claim_id: string;
+  status: string;
+  overall_severity: 'minor' | 'moderate' | 'severe' | 'total_loss';
+  total_estimated_damage: number;
+  damage_areas: DamageArea[];
+  liability: LiabilityAssessment;
+  fraud_indicators: FraudIndicator[];
+  policy_citations: PolicyCitationClaim[];
+  payout_recommendation: PayoutRecommendation;
+  adjuster_decision?: {
+    decision: 'approve' | 'adjust' | 'deny' | 'investigate';
+    adjusted_amount?: number;
+    notes?: string;
+    decided_at?: string;
+    decided_by?: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getClaimAssessment(claimId: string): Promise<ClaimAssessmentResponse> {
+  return apiFetch<ClaimAssessmentResponse>(`/api/claims/${claimId}/assessment`);
+}
+
+/**
+ * Update adjuster decision
+ */
+export interface AdjusterDecisionRequest {
+  decision: 'approve' | 'adjust' | 'deny' | 'investigate';
+  adjusted_amount?: number;
+  notes?: string;
+}
+
+export interface AdjusterDecisionResponse {
+  claim_id: string;
+  decision: string;
+  adjusted_amount?: number;
+  notes?: string;
+  decided_at: string;
+  message: string;
+}
+
+export async function updateAdjusterDecision(
+  claimId: string,
+  decision: AdjusterDecisionRequest
+): Promise<AdjusterDecisionResponse> {
+  return apiFetch<AdjusterDecisionResponse>(`/api/claims/${claimId}/assessment/decision`, {
+    method: 'PUT',
+    body: JSON.stringify(decision),
+  });
+}
+
+/**
+ * Search claims policies
+ */
+export interface ClaimsPolicySearchRequest {
+  query: string;
+  category?: string;
+  limit?: number;
+}
+
+export interface ClaimsPolicySearchResult {
+  chunk_id: string;
+  policy_id: string;
+  policy_name: string;
+  category: string;
+  content: string;
+  similarity?: number;  // From backend
+  score?: number;       // Legacy/alias
+  severity?: string;
+  criteria_id?: string;
+  section?: string;     // Legacy field for old components
+}
+
+export interface ClaimsPolicySearchResponse {
+  query: string;
+  results: ClaimsPolicySearchResult[];
+  total_results: number;
+}
+
+export async function searchClaimsPolicies(
+  request: ClaimsPolicySearchRequest
+): Promise<ClaimsPolicySearchResponse> {
+  return apiFetch<ClaimsPolicySearchResponse>('/api/claims/policies/search', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Get claim media list
+ */
+export interface MediaItem {
+  media_id: string;
+  filename: string;
+  content_type: string;
+  media_type: 'image' | 'video' | 'document';
+  size: number;
+  thumbnail_url?: string;
+  url: string;
+  processed: boolean;
+  analysis_summary?: string;
+  uploaded_at: string;
+}
+
+export interface ClaimMediaListResponse {
+  claim_id: string;
+  media_items: MediaItem[];
+  total_count: number;
+}
+
+export async function getClaimMedia(claimId: string): Promise<ClaimMediaListResponse> {
+  return apiFetch<ClaimMediaListResponse>(`/api/claims/${claimId}/media`);
+}
+
+/**
+ * Get video keyframes
+ */
+export interface Keyframe {
+  keyframe_id: string;
+  timestamp: number;
+  timestamp_formatted: string;
+  thumbnail_url: string;
+  description?: string;
+  damage_detected: boolean;
+  damage_areas?: DamageArea[];
+  confidence: number;
+}
+
+export interface KeyframesResponse {
+  media_id: string;
+  duration: number;
+  keyframes: Keyframe[];
+  total_keyframes: number;
+}
+
+export async function getVideoKeyframes(claimId: string, mediaId: string): Promise<KeyframesResponse> {
+  return apiFetch<KeyframesResponse>(`/api/claims/${claimId}/media/${mediaId}/keyframes`);
+}
+
+/**
+ * Get damage areas for specific media
+ */
+export interface MediaDamageAreasResponse {
+  media_id: string;
+  damage_areas: DamageArea[];
+  total_estimated_cost: number;
+}
+
+export async function getMediaDamageAreas(
+  claimId: string,
+  mediaId: string
+): Promise<MediaDamageAreasResponse> {
+  return apiFetch<MediaDamageAreasResponse>(`/api/claims/${claimId}/media/${mediaId}/damage-areas`);
 }

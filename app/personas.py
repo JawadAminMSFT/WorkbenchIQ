@@ -16,10 +16,12 @@ class PersonaType(str, Enum):
     """Available persona types in WorkbenchIQ."""
     UNDERWRITING = "underwriting"
     LIFE_HEALTH_CLAIMS = "life_health_claims"
-    PROPERTY_CASUALTY_CLAIMS = "property_casualty_claims"
-    MORTGAGE = "mortgage"
-    # Legacy alias for backward compatibility
+    AUTOMOTIVE_CLAIMS = "automotive_claims"  # New multimodal automotive claims persona
+    MORTGAGE_UNDERWRITING = "mortgage_underwriting"  # Canadian mortgage underwriting
+    MORTGAGE = "mortgage"  # Legacy alias for MORTGAGE_UNDERWRITING
+    # Legacy aliases for backward compatibility
     CLAIMS = "claims"  # Maps to life_health_claims
+    PROPERTY_CASUALTY_CLAIMS = "property_casualty_claims"  # Alias for automotive_claims
 
 
 @dataclass
@@ -34,6 +36,9 @@ class PersonaConfig:
     default_prompts: Dict[str, Dict[str, str]]
     custom_analyzer_id: str
     enabled: bool = True  # Whether this persona is fully implemented
+    # Multimodal analyzer support (for automotive claims)
+    image_analyzer_id: Optional[str] = None
+    video_analyzer_id: Optional[str] = None
 
 
 # =============================================================================
@@ -1278,21 +1283,23 @@ For each line item assess:
 - Modifier appropriateness
 - Bundle/unbundle issues
 
+IMPORTANT: All monetary fields must be SHORT values like "$520.00" or "Unknown". Never include explanations in monetary fields.
+
 Return STRICT JSON:
 
 {
   "summary": "Overall claim line evaluation.",
-  "total_billed": "Total billed amount",
-  "total_allowed": "Total allowed amount (sum of line allowed amounts)",
-  "total_plan_pays": "Plan liability (or 'Unknown')",
-  "total_member_pays": "Member responsibility (or 'Unknown')",
+  "total_billed": "$X.XX (dollar amount only)",
+  "total_allowed": "$X.XX or 'Unknown'",
+  "total_plan_pays": "$X.XX or 'Unknown'",
+  "total_member_pays": "$X.XX or 'Unknown'",
   "claim_lines": [
     {
       "line_number": 1,
       "code": "CPT/HCPCS code",
       "description": "Service description",
-      "billed": "Billed amount",
-      "allowed": "Allowed amount (from fee_schedule or 'Unknown')",
+      "billed": "$X.XX",
+      "allowed": "$X.XX or 'Unknown'",
       "ai_opinion": "Approve | Deny | Review | Adjust",
       "adjustment_reason": "Reason if adjusting",
       "notes": "Processing notes"
@@ -1321,6 +1328,8 @@ Consider:
 - Coding accuracy
 - Documentation completeness
 
+IMPORTANT: All monetary fields in payment_summary must be SHORT values like "$520.00" or "Unknown". Never include explanations in monetary fields.
+
 Return STRICT JSON:
 
 {
@@ -1328,11 +1337,11 @@ Return STRICT JSON:
   "decision": "Approve | Approve with Adjustment | Pend | Deny",
   "decision_rationale": "Detailed explanation of the decision",
   "payment_summary": {
-    "total_billed": "Amount billed",
-    "total_allowed": "Amount allowed (or 'Unknown')",
-    "plan_pays": "Plan payment (or 'Unknown')",
-    "member_pays": "Member responsibility (or 'Unknown')",
-    "adjustment_amount": "Any adjustments"
+    "total_billed": "$X.XX",
+    "total_allowed": "$X.XX or 'Unknown'",
+    "plan_pays": "$X.XX or 'Unknown'",
+    "member_pays": "$X.XX or 'Unknown'",
+    "adjustment_amount": "$X.XX or '$0.00'"
   },
   "denial_reasons": ["If denying, list specific reasons"],
   "pend_reasons": ["If pending, what additional info needed"],
@@ -2053,6 +2062,822 @@ Return STRICT JSON:
 
 
 # =============================================================================
+# AUTOMOTIVE CLAIMS PERSONA CONFIGURATION (Multimodal)
+# =============================================================================
+
+AUTOMOTIVE_CLAIMS_FIELD_SCHEMA = {
+    "name": "AutomotiveClaimsFields",
+    "description": "Multimodal field schema for automotive claims - supports documents, images, and videos",
+    "fields": {
+        # ===== Claim Identification =====
+        "ClaimNumber": {
+            "type": "string",
+            "description": "Unique claim reference number.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "PolicyNumber": {
+            "type": "string",
+            "description": "Insurance policy number.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "DateOfLoss": {
+            "type": "date",
+            "description": "Date when the incident occurred.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "TimeOfLoss": {
+            "type": "string",
+            "description": "Time when the incident occurred.",
+            "method": "extract",
+            "sources": ["document", "video"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Vehicle Information =====
+        "VehicleVIN": {
+            "type": "string",
+            "description": "Vehicle Identification Number (17 characters).",
+            "method": "extract",
+            "sources": ["document", "image"],
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleMake": {
+            "type": "string",
+            "description": "Vehicle manufacturer (e.g., Toyota, Ford, BMW).",
+            "method": "extract",
+            "sources": ["document", "image"],
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleModel": {
+            "type": "string",
+            "description": "Vehicle model name (e.g., Camry, F-150, X5).",
+            "method": "extract",
+            "sources": ["document", "image"],
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleYear": {
+            "type": "number",
+            "description": "Vehicle model year.",
+            "method": "extract",
+            "sources": ["document", "image"],
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleColor": {
+            "type": "string",
+            "description": "Vehicle exterior color.",
+            "method": "generate",
+            "sources": ["image"],
+            "estimateSourceAndConfidence": True
+        },
+        "LicensePlate": {
+            "type": "string",
+            "description": "Vehicle license plate number.",
+            "method": "extract",
+            "sources": ["document", "image", "video"],
+            "estimateSourceAndConfidence": True
+        },
+        "Mileage": {
+            "type": "string",
+            "description": "Vehicle odometer reading at time of incident.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Incident Information =====
+        "IncidentLocation": {
+            "type": "string",
+            "description": "Location/address where incident occurred.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "WeatherConditions": {
+            "type": "string",
+            "description": "Weather conditions at time of incident.",
+            "method": "extract",
+            "sources": ["document", "video"],
+            "estimateSourceAndConfidence": True
+        },
+        "RoadConditions": {
+            "type": "string",
+            "description": "Road surface conditions (dry, wet, icy, etc.).",
+            "method": "extract",
+            "sources": ["document", "video"],
+            "estimateSourceAndConfidence": True
+        },
+        "IncidentDescription": {
+            "type": "string",
+            "description": "Narrative description of how the incident occurred.",
+            "method": "extract",
+            "sources": ["document", "video"],
+            "estimateSourceAndConfidence": True
+        },
+        "PoliceReportNumber": {
+            "type": "string",
+            "description": "Police report reference number.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "PoliceReportFiled": {
+            "type": "boolean",
+            "description": "Whether a police report was filed.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Damage Assessment (Image-Derived) =====
+        "DamageAreas": {
+            "type": "array",
+            "description": "List of damaged areas detected from vehicle images.",
+            "method": "generate",
+            "sources": ["image"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "Location on vehicle: front, rear, driver_side, passenger_side, roof, hood, trunk"
+                    },
+                    "damageType": {
+                        "type": "string",
+                        "description": "Type of damage: dent, scratch, crack, shattered, crushed, missing_part"
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": "Severity level: minor, moderate, severe"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Affected components: bumper, fender, door, headlight, mirror, windshield, etc."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "AI-generated description of the damage"
+                    }
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "OverallDamageSeverity": {
+            "type": "string",
+            "description": "Aggregated damage severity: Minor, Moderate, Heavy, Total Loss.",
+            "method": "generate",
+            "sources": ["image"],
+            "estimateSourceAndConfidence": True
+        },
+        "EstimatedDamageCategory": {
+            "type": "string",
+            "description": "Estimated damage cost category: Light (<$1000), Moderate ($1K-$5K), Heavy ($5K-$15K), Severe (>$15K).",
+            "method": "generate",
+            "sources": ["image"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Video Evidence (Video-Derived) =====
+        "VideoSegments": {
+            "type": "array",
+            "description": "Video chapter segments with descriptions.",
+            "method": "generate",
+            "sources": ["video"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "timestamp": {
+                        "type": "string",
+                        "description": "Start timestamp (HH:MM:SS)"
+                    },
+                    "duration": {
+                        "type": "string",
+                        "description": "Segment duration"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "AI-generated scene description"
+                    },
+                    "keyframeUrl": {
+                        "type": "string",
+                        "description": "URL to keyframe image"
+                    }
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "Transcript": {
+            "type": "string",
+            "description": "Audio transcript from video if available.",
+            "method": "extract",
+            "sources": ["video"],
+            "estimateSourceAndConfidence": True
+        },
+        "ImpactDetected": {
+            "type": "boolean",
+            "description": "Whether a collision/impact was detected in video.",
+            "method": "generate",
+            "sources": ["video"],
+            "estimateSourceAndConfidence": True
+        },
+        "ImpactTimestamp": {
+            "type": "string",
+            "description": "Timestamp of detected impact in video.",
+            "method": "generate",
+            "sources": ["video"],
+            "estimateSourceAndConfidence": True
+        },
+        "PreIncidentBehavior": {
+            "type": "string",
+            "description": "Description of events before the incident.",
+            "method": "generate",
+            "sources": ["video"],
+            "estimateSourceAndConfidence": True
+        },
+        "PostIncidentBehavior": {
+            "type": "string",
+            "description": "Description of events after the incident.",
+            "method": "generate",
+            "sources": ["video"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Repair Estimate (Document-Derived) =====
+        "EstimateTotal": {
+            "type": "string",
+            "description": "Total repair estimate amount.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "PartsTotal": {
+            "type": "string",
+            "description": "Total parts cost from repair estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "LaborTotal": {
+            "type": "string",
+            "description": "Total labor cost from repair estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "LaborHours": {
+            "type": "number",
+            "description": "Total labor hours from repair estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "LaborRate": {
+            "type": "string",
+            "description": "Hourly labor rate from repair estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "RepairLineItems": {
+            "type": "array",
+            "description": "Individual repair line items from estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "quantity": {"type": "number"},
+                    "unitPrice": {"type": "string"},
+                    "totalPrice": {"type": "string"},
+                    "type": {"type": "string", "description": "parts, labor, paint, other"}
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "RepairShopName": {
+            "type": "string",
+            "description": "Name of the repair facility providing estimate.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Parties Involved =====
+        "Claimant": {
+            "type": "object",
+            "description": "Person filing the claim.",
+            "method": "extract",
+            "sources": ["document"],
+            "properties": {
+                "name": {"type": "string"},
+                "phone": {"type": "string"},
+                "email": {"type": "string"},
+                "role": {"type": "string", "description": "Driver, Passenger, Pedestrian, Property Owner"}
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "OtherParties": {
+            "type": "array",
+            "description": "Other parties involved in the incident.",
+            "method": "extract",
+            "sources": ["document"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "role": {"type": "string"},
+                    "vehicle": {"type": "string"},
+                    "insurance": {"type": "string"}
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "Witnesses": {
+            "type": "array",
+            "description": "Witness information.",
+            "method": "extract",
+            "sources": ["document"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "contact": {"type": "string"},
+                    "statement": {"type": "string"}
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Policy & Coverage =====
+        "CoverageType": {
+            "type": "string",
+            "description": "Type of coverage: Collision, Comprehensive, Liability, etc.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "PolicyLimits": {
+            "type": "string",
+            "description": "Coverage limits from policy.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        "Deductible": {
+            "type": "string",
+            "description": "Applicable deductible amount.",
+            "method": "extract",
+            "sources": ["document"],
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== AI-Computed Fields (Policy Engine Output) =====
+        "SeverityRating": {
+            "type": "string",
+            "description": "AI-computed severity: Low, Medium, High, Critical.",
+            "method": "generate",
+            "sources": ["computed"],
+            "estimateSourceAndConfidence": True
+        },
+        "LiabilityAssessment": {
+            "type": "string",
+            "description": "AI-computed liability: Clear Liability, Shared, Disputed.",
+            "method": "generate",
+            "sources": ["computed"],
+            "estimateSourceAndConfidence": True
+        },
+        "LiabilityPercentage": {
+            "type": "number",
+            "description": "Insured's liability percentage (0-100).",
+            "method": "generate",
+            "sources": ["computed"],
+            "estimateSourceAndConfidence": True
+        },
+        "PayoutRecommendation": {
+            "type": "object",
+            "description": "AI-computed payout recommendation.",
+            "method": "generate",
+            "sources": ["computed"],
+            "properties": {
+                "minAmount": {"type": "string"},
+                "maxAmount": {"type": "string"},
+                "recommendedAmount": {"type": "string"}
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "PolicyRulesApplied": {
+            "type": "array",
+            "description": "List of policy rules that were applied.",
+            "method": "generate",
+            "sources": ["computed"],
+            "items": {"type": "string"},
+            "estimateSourceAndConfidence": True
+        },
+        "FraudIndicators": {
+            "type": "array",
+            "description": "Red flags identified by fraud detection policies.",
+            "method": "generate",
+            "sources": ["computed"],
+            "items": {"type": "string"},
+            "estimateSourceAndConfidence": True
+        },
+        "AdjusterNotes": {
+            "type": "string",
+            "description": "AI-generated summary notes for the adjuster.",
+            "method": "generate",
+            "sources": ["computed"],
+            "estimateSourceAndConfidence": True
+        }
+    }
+}
+
+# Image-specific field schema for damage detection
+AUTOMOTIVE_CLAIMS_IMAGE_FIELD_SCHEMA = {
+    "name": "AutomotiveClaimsImageFields",
+    "description": "Field schema for automotive claims image analyzer - damage detection from photos",
+    "fields": {
+        "DamageAreas": {
+            "type": "array",
+            "description": "List of detected damage areas on the vehicle",
+            "method": "generate",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "Location on vehicle: front, rear, driver_side, passenger_side, roof, hood, trunk"
+                    },
+                    "damageType": {
+                        "type": "string",
+                        "description": "Type of damage: dent, scratch, crack, shattered, crushed, missing_part"
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": "Severity level: minor, moderate, severe"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Affected components: bumper, fender, door, hood, headlight, taillight, mirror, window, tire, wheel"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description of the damage"
+                    }
+                }
+            },
+            "estimateSourceAndConfidence": True
+        },
+        "OverallDamageSeverity": {
+            "type": "string",
+            "description": "Overall damage severity assessment: minor, moderate, severe, total_loss",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleType": {
+            "type": "string",
+            "description": "Type of vehicle visible: sedan, SUV, truck, van, motorcycle, other",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "VehicleColor": {
+            "type": "string",
+            "description": "Primary color of the vehicle",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "LicensePlateVisible": {
+            "type": "boolean",
+            "description": "Whether a license plate is visible in the image",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "LicensePlateNumber": {
+            "type": "string",
+            "description": "License plate number if visible and readable",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        }
+    }
+}
+
+# Video-specific field schema for incident analysis
+AUTOMOTIVE_CLAIMS_VIDEO_FIELD_SCHEMA = {
+    "name": "AutomotiveClaimsVideoFields",
+    "description": "Field schema for automotive claims video analyzer - dashcam and incident footage analysis",
+    "fields": {
+        "IncidentDetected": {
+            "type": "boolean",
+            "description": "Whether a collision or incident is detected in the video",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "IncidentTimestamp": {
+            "type": "string",
+            "description": "Timestamp of the detected incident in HH:MM:SS format",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "IncidentType": {
+            "type": "string",
+            "description": "Type of incident: rear_end, sideswipe, head_on, single_vehicle, parking, unknown",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "PreIncidentBehavior": {
+            "type": "string",
+            "description": "Description of driving behavior in the 10 seconds before incident",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "PostIncidentBehavior": {
+            "type": "string",
+            "description": "Description of events immediately after the incident",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "WeatherConditions": {
+            "type": "string",
+            "description": "Weather conditions visible: clear, rain, snow, fog, night",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "RoadType": {
+            "type": "string",
+            "description": "Type of road: highway, city_street, parking_lot, intersection, residential",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "SpeedEstimate": {
+            "type": "string",
+            "description": "Estimated speed of the recording vehicle if determinable",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "OtherVehicles": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Other vehicles involved in the incident",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        }
+    }
+}
+
+AUTOMOTIVE_CLAIMS_DEFAULT_PROMPTS = {
+    "damage_assessment": {
+        "visual_damage_analysis": """
+You are an expert automotive claims adjuster analyzing vehicle damage.
+
+From the extracted damage information and images, provide a comprehensive VISUAL DAMAGE ANALYSIS.
+
+Focus on:
+- All visible damage areas with location and severity
+- Affected vehicle components
+- Estimated repair complexity
+- Safety-related damage (airbags, structural)
+
+Return STRICT JSON:
+
+{
+  "summary": "2-3 sentence overview of total damage.",
+  "damage_areas": [
+    {
+      "location": "Location on vehicle (front, rear, driver_side, etc.)",
+      "damage_type": "dent | scratch | crack | shattered | crushed | missing_part",
+      "severity": "minor | moderate | severe",
+      "components": ["List of affected components"],
+      "repair_method": "PDR | Panel Repair | Panel Replace | etc.",
+      "estimated_cost_range": "$X - $Y"
+    }
+  ],
+  "overall_severity": "Minor | Moderate | Heavy | Total Loss",
+  "safety_concerns": ["Any safety-related damage"],
+  "structural_damage": true | false,
+  "airbag_deployment": true | false,
+  "inline_links": ["References to supporting images"]
+}
+        """,
+        "estimate_validation": """
+You are an expert claims adjuster validating a repair estimate against visible damage.
+
+Compare the repair estimate to the damage assessment and identify discrepancies.
+
+Evaluate:
+- Does the estimate match the visible damage?
+- Are labor rates reasonable for the market?
+- Are parts priced appropriately (OEM vs aftermarket)?
+- Any items that seem inflated or missing?
+
+Return STRICT JSON:
+
+{
+  "summary": "Estimate validation summary.",
+  "estimate_total": "Total from estimate",
+  "damage_assessment_estimate": "Expected range based on damage",
+  "variance": "Percentage difference",
+  "variance_acceptable": true | false,
+  "line_item_analysis": [
+    {
+      "item": "Line item description",
+      "quoted_price": "$X",
+      "market_rate": "$Y",
+      "variance": "+X% | -X% | OK",
+      "flag": "none | review | concern"
+    }
+  ],
+  "labor_rate_analysis": {
+    "quoted_rate": "$X/hr",
+    "market_rate": "$Y/hr",
+    "acceptable": true | false
+  },
+  "recommendations": ["List of recommendations"],
+  "inline_links": ["Document references"]
+}
+        """
+    },
+    "liability_assessment": {
+        "fault_determination": """
+You are an expert claims adjuster determining liability for an automotive incident.
+
+From all available evidence (documents, images, video), assess fault and liability.
+
+Consider:
+- Type of collision and applicable traffic laws
+- Evidence from dashcam/video footage
+- Police report findings
+- Witness statements
+- Damage patterns (point of impact, direction)
+
+Return STRICT JSON:
+
+{
+  "summary": "Liability determination summary.",
+  "collision_type": "Rear-end | Side-impact | Head-on | Parking lot | Single vehicle | etc.",
+  "liability_determination": {
+    "insured_percentage": 0-100,
+    "other_party_percentage": 0-100,
+    "confidence": "High | Medium | Low",
+    "basis": "Explanation of determination"
+  },
+  "evidence_analysis": [
+    {
+      "evidence_type": "Video | Police Report | Photos | Witness | etc.",
+      "source": "Document/file name",
+      "finding": "What it shows",
+      "supports": "Insured | Other Party | Neutral"
+    }
+  ],
+  "traffic_violations": ["Any identified violations"],
+  "disputed_facts": ["Facts that are unclear or contested"],
+  "liability_status": "Clear Liability | Comparative | Disputed | Under Investigation",
+  "inline_links": ["Evidence references"]
+}
+        """,
+        "video_evidence_analysis": """
+You are an expert claims analyst reviewing video evidence from a vehicle incident.
+
+Analyze the video segments and keyframes to understand what happened.
+
+Focus on:
+- Events leading up to the incident
+- The moment of impact/collision
+- Actions of all parties involved
+- Environmental factors visible
+- Any contributing factors
+
+Return STRICT JSON:
+
+{
+  "summary": "Video evidence summary.",
+  "timeline": [
+    {
+      "timestamp": "HH:MM:SS",
+      "event": "Description of what's happening",
+      "significance": "Why this matters for the claim"
+    }
+  ],
+  "impact_analysis": {
+    "impact_detected": true | false,
+    "impact_timestamp": "HH:MM:SS",
+    "impact_description": "How the collision occurred",
+    "speed_estimate": "Approximate speed if determinable"
+  },
+  "party_actions": [
+    {
+      "party": "Insured | Other Vehicle | Pedestrian",
+      "pre_incident": "Actions before incident",
+      "at_incident": "Actions at time of incident",
+      "post_incident": "Actions after incident"
+    }
+  ],
+  "environmental_factors": {
+    "weather_visible": "Conditions shown in video",
+    "road_visible": "Road conditions shown",
+    "visibility": "Good | Reduced | Poor",
+    "traffic_conditions": "Light | Moderate | Heavy"
+  },
+  "liability_indicators": "What the video suggests about fault",
+  "inline_links": ["Video segment references"]
+}
+        """
+    },
+    "fraud_detection": {
+        "red_flag_analysis": """
+You are an expert claims fraud investigator analyzing an automotive claim.
+
+Review all claim information for fraud indicators and red flags.
+
+Look for:
+- Timing anomalies (new policy, recent coverage changes)
+- Damage inconsistencies (damage doesn't match narrative)
+- Estimate irregularities (inflated, specific shop insistence)
+- Documentation gaps (no police report, missing info)
+- Pattern indicators (multiple claims, prior loss history)
+
+Return STRICT JSON:
+
+{
+  "summary": "Fraud analysis summary.",
+  "risk_level": "Low | Moderate | High",
+  "red_flags": [
+    {
+      "category": "Timing | Damage | Estimate | Documentation | Pattern",
+      "indicator": "Specific red flag identified",
+      "severity": "Low | Moderate | High",
+      "evidence": "What triggered this flag",
+      "recommended_action": "What to do about it"
+    }
+  ],
+  "damage_narrative_consistency": {
+    "consistent": true | false,
+    "discrepancies": ["List any discrepancies between damage and story"]
+  },
+  "estimate_concerns": ["Any concerns with the repair estimate"],
+  "siu_referral_recommended": true | false,
+  "investigation_steps": ["Recommended investigative actions"],
+  "inline_links": ["Evidence references"]
+}
+        """
+    },
+    "payout_recommendation": {
+        "settlement_analysis": """
+You are an expert claims adjuster preparing a payout recommendation.
+
+Based on the damage assessment, estimate validation, and policy terms, recommend a fair settlement.
+
+Consider:
+- Validated repair costs
+- Policy limits and deductibles
+- Liability determination
+- Betterment/depreciation if applicable
+- Any coverage exclusions
+
+Return STRICT JSON:
+
+{
+  "summary": "Settlement recommendation summary.",
+  "claim_valuation": {
+    "repair_estimate": "$X",
+    "validated_amount": "$X (after adjustments)",
+    "adjustments": [
+      {"type": "Labor rate adjustment | Betterment | etc.", "amount": "$X"}
+    ]
+  },
+  "policy_application": {
+    "coverage_type": "Collision | Comprehensive | etc.",
+    "policy_limit": "$X",
+    "deductible": "$X",
+    "applicable_limit": "$X"
+  },
+  "liability_impact": {
+    "insured_liability": "X%",
+    "reduction_amount": "$X (if comparative)"
+  },
+  "payout_recommendation": {
+    "gross_amount": "$X",
+    "less_deductible": "$X",
+    "less_liability_reduction": "$X",
+    "net_payout": "$X",
+    "payout_range": {"min": "$X", "max": "$Y"}
+  },
+  "policy_rules_applied": ["List of policy rules that informed this recommendation"],
+  "adjuster_notes": "Additional notes for the reviewing adjuster",
+  "inline_links": ["Supporting document references"]
+}
+        """
+    }
+}
+
+
+# =============================================================================
 # LEGACY CLAIMS SCHEMA (for backward compatibility)
 # =============================================================================
 
@@ -2065,54 +2890,269 @@ CLAIMS_DEFAULT_PROMPTS = LIFE_HEALTH_CLAIMS_DEFAULT_PROMPTS
 # =============================================================================
 
 MORTGAGE_FIELD_SCHEMA = {
-    "name": "MortgageFields",
+    "name": "MortgageUnderwritingFields",
     "fields": {
+        # ===== Borrower Information =====
         "BorrowerName": {
             "type": "string",
-            "description": "Full name of the mortgage applicant/borrower.",
+            "description": "Full legal name of the primary mortgage borrower as it appears on government-issued ID. Format: FirstName LastName or LastName, FirstName.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "PropertyAddress": {
+        "BorrowerSIN": {
             "type": "string",
-            "description": "Address of the property being financed.",
+            "description": "Social Insurance Number of the primary borrower (Canadian SIN format: XXX-XXX-XXX). Redact if present for privacy.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "LoanAmount": {
-            "type": "string",
-            "description": "Requested mortgage loan amount.",
+        "DateOfBirth": {
+            "type": "date",
+            "description": "Borrower's date of birth in format YYYY-MM-DD or DD/MM/YYYY.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "PropertyValue": {
+        "CoBorrowerName": {
             "type": "string",
-            "description": "Appraised value of the property.",
+            "description": "Full legal name of the co-borrower/co-applicant if present.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "AnnualIncome": {
+        "MaritalStatus": {
             "type": "string",
-            "description": "Borrower's annual income.",
-            "method": "extract",
-            "estimateSourceAndConfidence": True
-        },
-        "EmploymentStatus": {
-            "type": "string",
-            "description": "Current employment status of the borrower.",
+            "description": "Marital status: Single, Married, Common-law, Separated, Divorced, Widowed.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
         "CreditScore": {
             "type": "number",
-            "description": "Borrower's credit score.",
+            "description": "Borrower's credit score (Equifax or TransUnion). Canadian scores range 300-900.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
-        "DebtToIncomeRatio": {
+        
+        # ===== Employment & Income =====
+        "EmploymentStatus": {
             "type": "string",
-            "description": "Calculated debt-to-income ratio.",
+            "description": "Current employment status: Permanent Full-Time, Permanent Part-Time, Contract, Self-Employed, Retired, Other.",
             "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EmployerName": {
+            "type": "string",
+            "description": "Name of current employer or business name if self-employed.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "OccupationTitle": {
+            "type": "string",
+            "description": "Job title or occupation of the borrower.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EmploymentStartDate": {
+            "type": "date",
+            "description": "Start date of current employment in YYYY-MM-DD format.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AnnualIncome": {
+            "type": "string",
+            "description": "Total annual gross income of borrower in CAD. May include salary, bonus, commissions, rental income.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BaseSalary": {
+            "type": "string",
+            "description": "Base annual salary excluding bonuses and commissions.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BonusIncome": {
+            "type": "string",
+            "description": "Annual bonus income (subject to 50% haircut per policy).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CommissionIncome": {
+            "type": "string",
+            "description": "Annual commission income (subject to 50% haircut per policy).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "RentalIncome": {
+            "type": "string",
+            "description": "Monthly or annual rental income from investment properties.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "OtherIncome": {
+            "type": "string",
+            "description": "Other income sources: pension, disability, child support, investment income.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Property Information =====
+        "PropertyAddress": {
+            "type": "string",
+            "description": "Full civic address of the property being financed including street number, street name, unit, city, province, postal code.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyType": {
+            "type": "string",
+            "description": "Type of property: Single-Family Detached, Semi-Detached, Townhouse, Condominium, Multi-Unit (2-4 units), Mobile Home.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyOccupancy": {
+            "type": "string",
+            "description": "Intended occupancy: Owner-Occupied, Second Home, Investment/Rental Property.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PurchasePrice": {
+            "type": "string",
+            "description": "Purchase price of the property in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AppraisedValue": {
+            "type": "string",
+            "description": "Professional appraisal value of the property in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyTaxesAnnual": {
+            "type": "string",
+            "description": "Annual property taxes in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CondoFees": {
+            "type": "string",
+            "description": "Monthly condominium fees (if applicable).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "HeatingCostsMonthly": {
+            "type": "string",
+            "description": "Estimated monthly heating costs.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Loan Details =====
+        "RequestedLoanAmount": {
+            "type": "string",
+            "description": "Requested mortgage amount in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentAmount": {
+            "type": "string",
+            "description": "Down payment amount in CAD.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentPercentage": {
+            "type": "string",
+            "description": "Down payment as percentage of purchase price.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "DownPaymentSource": {
+            "type": "string",
+            "description": "Source of down payment: Savings, Gift, RRSP Withdrawal (HBP), Sale of Property, Other.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "LoanType": {
+            "type": "string",
+            "description": "Loan type: Conventional (>=20% down), High-Ratio (<20% down, requires CMHC insurance), Refinance.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AmortizationYears": {
+            "type": "number",
+            "description": "Requested amortization period in years (max 30 for uninsured, 25 for insured per OSFI B-20).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ContractRate": {
+            "type": "string",
+            "description": "Mortgage interest rate offered (contract rate) as percentage.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "RateTerm": {
+            "type": "string",
+            "description": "Interest rate term: Variable, 1-year, 2-year, 3-year, 5-year, 7-year, 10-year fixed.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Liabilities & Debts =====
+        "OtherDebtsMonthly": {
+            "type": "string",
+            "description": "Total monthly debt obligations: car loans, credit cards, lines of credit, student loans, other mortgages.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CreditCardBalances": {
+            "type": "string",
+            "description": "Outstanding credit card balances.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AutoLoanPayment": {
+            "type": "string",
+            "description": "Monthly auto loan payment.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "StudentLoanPayment": {
+            "type": "string",
+            "description": "Monthly student loan payment.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        
+        # ===== Calculated Ratios (Generated) =====
+        "GrossDebtServiceRatio": {
+            "type": "string",
+            "description": "GDS ratio: (PITH)/Gross Income. OSFI B-20 limit is 39%.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "TotalDebtServiceRatio": {
+            "type": "string",
+            "description": "TDS ratio: (PITH + Other Debts)/Gross Income. OSFI B-20 limit is 44%.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "LoanToValueRatio": {
+            "type": "string",
+            "description": "LTV ratio: Loan Amount/Property Value. Max 80% for conventional, 95% for insured.",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "QualifyingRate": {
+            "type": "string",
+            "description": "OSFI Mortgage Qualifying Rate (MQR): greater of (contract rate + 2%) or floor rate (5.25%).",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "StressTestGDS": {
+            "type": "string",
+            "description": "GDS calculated at the qualifying rate (stress test).",
+            "method": "generate",
+            "estimateSourceAndConfidence": True
+        },
+        "StressTestTDS": {
+            "type": "string",
+            "description": "TDS calculated at the qualifying rate (stress test).",
+            "method": "generate",
             "estimateSourceAndConfidence": True
         }
     }
@@ -2120,15 +3160,88 @@ MORTGAGE_FIELD_SCHEMA = {
 
 MORTGAGE_DEFAULT_PROMPTS = {
     "application_summary": {
-        "borrower_profile": """
-You are an expert mortgage underwriter.
+        "system": """You are an expert Canadian mortgage underwriter with deep knowledge of OSFI B-20 guidelines 
+and residential mortgage underwriting best practices. You analyze mortgage applications for Canadian 
+residential properties with expertise in:
 
-Given the mortgage application documents, extract a comprehensive borrower profile.
+- OSFI B-20 compliance (GDS ≤39%, TDS ≤44%, MQR stress test)
+- Income qualification and haircut rules
+- Debt service ratio calculations  
+- Risk assessment and fraud detection
+- Canadian real estate and mortgage regulations
 
-Return STRICT JSON with borrower details, income verification, and initial assessment.
-        """
+Provide thorough, accurate analysis while maintaining a professional and helpful tone.""",
+        
+        "borrower_profile": """Analyze the mortgage application documents and extract a comprehensive borrower profile including:
+
+- Personal information (name, DOB, SIN, credit score)
+- Employment details and income sources
+- Property information and purchase details
+- Loan characteristics and down payment
+- Existing debts and liabilities
+
+Return structured JSON with complete borrower details.""",
+        
+        "income_analysis": """Analyze all income documentation (paystubs, T4s, employment letters, NOAs) and provide:
+
+- Verified base salary
+- Variable income (bonus, commission) with applicable haircuts
+- Self-employment income (2-year average if applicable)  
+- Rental or other income
+- Monthly qualifying income calculation
+- Income consistency check across documents
+
+Flag any discrepancies between stated and verified income.""",
+        
+        "ratio_calculation": """Calculate the following debt service ratios per OSFI B-20:
+
+1. GDS (Gross Debt Service): PITH / Gross Income
+   - P&I: Principal & Interest payment
+   - Property Taxes (monthly)
+   - Heating costs
+   - 50% of condo fees (if applicable)
+
+2. TDS (Total Debt Service): (PITH + Other Debts) / Gross Income
+
+3. LTV (Loan-to-Value): Loan Amount / Property Value
+
+4. MQR Stress Test: Use qualifying rate = MAX(contract_rate + 2%, 5.25%)
+   - Recalculate payment at MQR
+   - Compute stress-tested GDS and TDS
+
+Return all ratios as percentages with comparison to limits (GDS ≤39%, TDS ≤44%).""",
+        
+        "risk_assessment": """Perform comprehensive risk assessment including:
+
+- Income consistency verification
+- Fraud detection signals (round numbers, employment discrepancies)
+- AML considerations (large cash deposits, structured transactions)
+- Credit risk factors (score, derogatory items, utilization)
+- Property risk (rapid price appreciation, non-arms-length)
+
+Aggregate risk signals and provide overall risk level: Low, Medium, or High.""",
+        
+        "recommendation": """Based on the complete analysis, provide an underwriting recommendation:
+
+DECISION: APPROVE | REFER | DECLINE
+
+RATIONALE:
+- GDS ratio: [value]% (limit 39%)
+- TDS ratio: [value]% (limit 44%)
+- LTV ratio: [value]%
+- Stress test qualification: PASS/FAIL at [MQR]%
+- Risk level: Low/Medium/High
+
+CONDITIONS (if applicable):
+- List any approval conditions
+
+NEXT STEPS:
+- Actions required from borrower/broker/underwriter
+
+Be specific and reference OSFI B-20 guidelines where applicable."""
     }
 }
+
 
 
 # =============================================================================
@@ -2158,16 +3271,30 @@ PERSONA_CONFIGS: Dict[PersonaType, PersonaConfig] = {
         custom_analyzer_id="lifeHealthClaimsAnalyzer",
         enabled=True,
     ),
-    PersonaType.PROPERTY_CASUALTY_CLAIMS: PersonaConfig(
-        id="property_casualty_claims",
-        name="Property & Casualty Claims",
-        description="P&C claims processing workbench for auto, liability, and property damage claims with liability assessment and settlement negotiation",
+    PersonaType.AUTOMOTIVE_CLAIMS: PersonaConfig(
+        id="automotive_claims",
+        name="Automotive Claims",
+        description="Multimodal automotive claims workbench for vehicle damage assessment with image, video, and document processing",
         icon="🚗",
         color="#dc2626",  # Red
-        field_schema=PROPERTY_CASUALTY_CLAIMS_FIELD_SCHEMA,
-        default_prompts=PROPERTY_CASUALTY_CLAIMS_DEFAULT_PROMPTS,
-        custom_analyzer_id="propertyCasualtyClaimsAnalyzer",
+        field_schema=AUTOMOTIVE_CLAIMS_FIELD_SCHEMA,
+        default_prompts=AUTOMOTIVE_CLAIMS_DEFAULT_PROMPTS,
+        custom_analyzer_id="autoClaimsDocAnalyzer",
         enabled=True,
+        image_analyzer_id="autoClaimsImageAnalyzer",
+        video_analyzer_id="autoClaimsVideoAnalyzer",
+    ),
+    # Legacy P&C Claims - alias to Automotive Claims
+    PersonaType.PROPERTY_CASUALTY_CLAIMS: PersonaConfig(
+        id="property_casualty_claims",
+        name="Property & Casualty Claims (Legacy)",
+        description="Legacy P&C claims - use Automotive Claims instead",
+        icon="🚗",
+        color="#dc2626",  # Red
+        field_schema=AUTOMOTIVE_CLAIMS_FIELD_SCHEMA,
+        default_prompts=AUTOMOTIVE_CLAIMS_DEFAULT_PROMPTS,
+        custom_analyzer_id="autoClaimsDocAnalyzer",
+        enabled=False,  # Disabled - replaced by Automotive Claims
     ),
     PersonaType.CLAIMS: PersonaConfig(
         id="claims",
@@ -2180,16 +3307,27 @@ PERSONA_CONFIGS: Dict[PersonaType, PersonaConfig] = {
         custom_analyzer_id="claimsAnalyzer",
         enabled=False,  # Disabled - replaced by specific claims personas
     ),
-    PersonaType.MORTGAGE: PersonaConfig(
-        id="mortgage",
-        name="Mortgage",
-        description="Mortgage underwriting workbench for loan applications and property documents",
+    PersonaType.MORTGAGE_UNDERWRITING: PersonaConfig(
+        id="mortgage_underwriting",
+        name="Mortgage Underwriting",
+        description="Canadian residential mortgage underwriting with OSFI B-20 compliance",
         icon="🏠",
         color="#059669",  # Emerald
         field_schema=MORTGAGE_FIELD_SCHEMA,
         default_prompts=MORTGAGE_DEFAULT_PROMPTS,
-        custom_analyzer_id="mortgageAnalyzer",
-        enabled=False,  # Coming soon
+        custom_analyzer_id="mortgageDocAnalyzer",
+        enabled=True,  # Now enabled
+    ),
+    PersonaType.MORTGAGE: PersonaConfig(
+        id="mortgage_underwriting",  # Maps to MORTGAGE_UNDERWRITING
+        name="Mortgage Underwriting",
+        description="Canadian residential mortgage underwriting with OSFI B-20 compliance",
+        icon="🏠",
+        color="#059669",  # Emerald
+        field_schema=MORTGAGE_FIELD_SCHEMA,
+        default_prompts=MORTGAGE_DEFAULT_PROMPTS,
+        custom_analyzer_id="mortgageDocAnalyzer",
+        enabled=True,  # Now enabled
     ),
 }
 
@@ -2239,9 +3377,26 @@ def list_personas() -> List[Dict[str, Any]]:
     ]
 
 
-def get_field_schema(persona_id: str) -> Dict[str, Any]:
-    """Get the field extraction schema for a persona."""
+def get_field_schema(persona_id: str, media_type: str = "document") -> Dict[str, Any]:
+    """Get the field extraction schema for a persona.
+    
+    Args:
+        persona_id: The persona ID (e.g., 'automotive_claims')
+        media_type: The media type ('document', 'image', or 'video')
+    
+    Returns:
+        The appropriate field schema for the persona and media type
+    """
     config = get_persona_config(persona_id)
+    
+    # For automotive claims, return media-specific schemas
+    if persona_id == "automotive_claims":
+        if media_type == "image":
+            return AUTOMOTIVE_CLAIMS_IMAGE_FIELD_SCHEMA
+        elif media_type == "video":
+            return AUTOMOTIVE_CLAIMS_VIDEO_FIELD_SCHEMA
+    
+    # Default to the persona's main field schema
     return config.field_schema
 
 
