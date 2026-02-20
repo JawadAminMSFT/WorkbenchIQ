@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUsers, createSessionToken, isAuthEnabled } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   // If auth is not configured, reject
   if (!isAuthEnabled()) {

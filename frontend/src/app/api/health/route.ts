@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   // Scan for AUTH_USER_* env vars
   const allKeys = Object.keys(process.env);

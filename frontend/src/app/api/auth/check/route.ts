@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateSessionToken, isAuthEnabled } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   // If no auth configured, return as if authenticated (auth disabled)
   if (!isAuthEnabled()) {
