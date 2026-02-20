@@ -41,6 +41,8 @@ jobs:
 
       - name: Build Next.js app
         run: npm run build
+        env:
+          COMMIT_SHA: ${{ github.sha }}
 
       - name: Copy static assets
         run: cp -r .next/static .next/standalone/.next/

@@ -1,4 +1,16 @@
 /** @type {import('next').NextConfig} */
+const { execSync } = require('child_process');
+
+// Capture git commit SHA at build time
+let commitSha = process.env.COMMIT_SHA || '';
+if (!commitSha) {
+  try {
+    commitSha = execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    commitSha = 'unknown';
+  }
+}
+
 const nextConfig = {
   // Use standalone output for Azure Web App deployment
   output: 'standalone',
@@ -17,6 +29,7 @@ const nextConfig = {
   // so we don't need to set a separate NEXT_PUBLIC_ env var in Azure
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || '',
+    NEXT_PUBLIC_COMMIT_SHA: commitSha,
   },
   
   // API proxying is handled by API routes in src/app/api/[...path]/route.ts
