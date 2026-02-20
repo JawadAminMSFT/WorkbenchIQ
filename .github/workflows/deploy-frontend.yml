@@ -99,11 +99,11 @@ jobs:
       - name: Health check staging
         run: |
           STAGING_URL="https://${{ env.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net"
-          echo "Checking health at $STAGING_URL/"
+          echo "Checking health at $STAGING_URL/api/health"
           
           # Retry health check up to 5 times
           for i in {1..5}; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/" || echo "000")
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/health" || echo "000")
             if [ "$HTTP_STATUS" = "200" ]; then
               echo "Staging health check passed!"
               exit 0
@@ -148,11 +148,11 @@ jobs:
       - name: Health check production
         run: |
           PROD_URL="https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
-          echo "Checking health at $PROD_URL/"
+          echo "Checking health at $PROD_URL/api/health"
           
           # Retry health check up to 5 times
           for i in {1..5}; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/" || echo "000")
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/api/health" || echo "000")
             if [ "$HTTP_STATUS" = "200" ]; then
               echo "Production health check passed!"
               exit 0
