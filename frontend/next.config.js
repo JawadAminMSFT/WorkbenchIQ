@@ -31,6 +31,12 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || '',
     NEXT_PUBLIC_COMMIT_SHA: commitSha,
   },
+
+  // Make AUTH_SECRET available in Edge middleware runtime
+  // AUTH_USER_* vars are automatically available via process.env scans
+  serverRuntimeConfig: {
+    authSecret: process.env.AUTH_SECRET,
+  },
   
   // API proxying is handled by API routes in src/app/api/[...path]/route.ts
   // This avoids build-time URL baking issues with rewrites
