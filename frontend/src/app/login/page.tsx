@@ -1,10 +1,8 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,8 +21,9 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push('/');
-        router.refresh();
+        // Hard redirect to force full page reload so TopNav picks up session
+        window.location.href = '/';
+        return;
       } else {
         const data = await res.json();
         setError(data.error || 'Invalid credentials');

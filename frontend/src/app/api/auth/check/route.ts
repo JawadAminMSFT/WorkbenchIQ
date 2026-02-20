@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
 
   const token = request.cookies.get('session')?.value;
   if (!token) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+    return NextResponse.json({ authenticated: false, authEnabled: true }, { status: 401 });
   }
 
   const username = validateSessionToken(token);
   if (!username) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+    return NextResponse.json({ authenticated: false, authEnabled: true }, { status: 401 });
   }
 
   return NextResponse.json({ authenticated: true, authEnabled: true, username });
