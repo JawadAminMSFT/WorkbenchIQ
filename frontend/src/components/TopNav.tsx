@@ -8,10 +8,13 @@ import {
   FileStack,
   Settings,
   ChevronDown,
+  LogOut,
+  User,
 } from 'lucide-react';
 import type { ApplicationListItem, ApplicationMetadata } from '@/lib/types';
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import PersonaSelector from './PersonaSelector';
 import GlossaryDropdown from './GlossaryDropdown';
 import { usePersona } from '@/lib/PersonaContext';
@@ -37,6 +40,32 @@ export default function TopNav({
 }: TopNavProps) {
   const [appDropdownOpen, setAppDropdownOpen] = useState(false);
   const { personaConfig } = usePersona();
+  const router = useRouter();
+  const [authUser, setAuthUser] = useState<string | null>(null);
+  const [authEnabled, setAuthEnabled] = useState(false);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/check');
+      const data = await res.json();
+      if (data.authEnabled) {
+        setAuthEnabled(true);
+        setAuthUser(data.username || null);
+      }
+    } catch {
+      // Auth check failed silently
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  }
   
   const hasDocuments = selectedApp?.files && selectedApp.files.length > 0;
   const hasSourcePages = selectedApp?.markdown_pages && selectedApp.markdown_pages.length > 0;
@@ -148,6 +177,25 @@ export default function TopNav({
             <Settings className="w-4 h-4" />
             <span>Admin</span>
           </Link>
+
+          {/* Auth: username & logout */}
+          {authEnabled && (
+            <div className="flex items-center gap-2 ml-2 pl-2 border-l border-slate-200">
+              {authUser && (
+                <span className="flex items-center gap-1.5 text-sm text-slate-500">
+                  <User className="w-3.5 h-3.5" />
+                  {authUser}
+                </span>
+              )}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
