@@ -316,12 +316,12 @@ export async function pollForAnalysisCompletion(
     const app = await getApplication(appId);
     
     // Check for backend error state
-    if (app.status === 'error' || (app as any).processing_error) {
+    if (app.status === 'error' || app.processing_status === 'error' || (app as any).processing_error) {
       throw new Error((app as any).processing_error || 'Analysis failed');
     }
     
-    // Check if completed or failed
-    if (app.status === 'completed' || app.processing_status === 'completed') {
+    // Check if completed - processing_status should be null when done
+    if (app.status === 'completed') {
       return app;
     }
     
