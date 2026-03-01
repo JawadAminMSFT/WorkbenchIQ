@@ -34,11 +34,17 @@ def init_storage_provider(settings: Optional[StorageSettings] = None) -> None:
     if settings.backend == StorageBackend.AZURE_BLOB:
         from app.storage_providers.azure_blob import AzureBlobStorageProvider
         _storage_provider = AzureBlobStorageProvider(settings)
-        logger.info("Initialized Azure Blob Storage provider")
+        logger.info(
+            "Initialized Azure Blob Storage provider  auth=%s  "
+            "container='%s'  allow_create=%s",
+            _storage_provider._resolved_auth,
+            settings.azure_container_name,
+            settings.azure_storage_allow_create_container,
+        )
     else:
         from app.storage_providers.local import LocalStorageProvider
         _storage_provider = LocalStorageProvider(settings)
-        logger.info("Initialized Local Storage provider")
+        logger.info("Initialized Local Storage provider  root='%s'", settings.local_root)
 
 
 def get_storage_provider() -> Union["LocalStorageProvider", "AzureBlobStorageProvider"]:

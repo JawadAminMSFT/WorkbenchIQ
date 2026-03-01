@@ -28,6 +28,12 @@ class StorageSettings:
     azure_timeout_seconds: int = 30
     azure_retry_total: int = 3
     
+    # Auth mode: "default" (DAC-first with fallback), "connection_string", or "key"
+    azure_storage_auth_mode: str = "default"
+    # When False (default), the provider will NOT attempt to create missing containers.
+    # Set to True only in dev / migration scenarios where the identity has create perms.
+    azure_storage_allow_create_container: bool = False
+    
     # Optional public URL for file access
     public_base_url: Optional[str] = None
 
@@ -40,6 +46,14 @@ class StorageSettings:
         except ValueError:
             backend = StorageBackend.LOCAL
         
+        auth_mode = os.getenv("AZURE_STORAGE_AUTH_MODE", "default").lower()
+        if auth_mode not in ("default", "connection_string", "key"):
+            auth_mode = "default"
+        
+        allow_create = os.getenv(
+            "AZURE_STORAGE_ALLOW_CREATE_CONTAINER", "false"
+        ).lower() in ("true", "1", "yes")
+        
         return cls(
             backend=backend,
             local_root=os.getenv("UW_APP_STORAGE_ROOT", "data"),
@@ -49,6 +63,8 @@ class StorageSettings:
             azure_connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
             azure_timeout_seconds=int(os.getenv("AZURE_STORAGE_TIMEOUT_SECONDS", "30")),
             azure_retry_total=int(os.getenv("AZURE_STORAGE_RETRY_TOTAL", "3")),
+            azure_storage_auth_mode=auth_mode,
+            azure_storage_allow_create_container=allow_create,
             public_base_url=os.getenv("PUBLIC_FILES_BASE_URL"),
         )
 

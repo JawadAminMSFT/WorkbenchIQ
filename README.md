@@ -327,10 +327,10 @@ AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4-1
 
 ```bash
 # Windows
-run_frontend.bat
+scripts/run_frontend.bat
 
 # Linux/Mac
-./run_frontend.sh
+./scripts/run_frontend.sh
 ```
 
 **Option 2: Run servers separately**
@@ -508,10 +508,12 @@ workbenchiq/
 | `UW_APP_STORAGE_ROOT` | No | `data` | Local storage path for application data |
 | `UW_APP_PROMPTS_ROOT` | No | `prompts` | Path to prompts and policies directory |
 | `STORAGE_BACKEND` | No | `local` | Storage backend (`local` or `azure_blob`) |
-| `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | - | Azure storage account name (if using azure_blob) |
-| `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if using azure_blob) |
-| `AZURE_STORAGE_CONNECTION_STRING` | Conditional | - | Azure storage connection string (alternative to account name/key) |
+| `AZURE_STORAGE_AUTH_MODE` | No | `default` | Auth method: `default` (DAC→conn str→key), `connection_string`, or `key` |
+| `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | - | Azure storage account name (required for DAC and key auth) |
+| `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if not using DAC) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Conditional | - | Azure storage connection string (alternative auth) |
 | `AZURE_STORAGE_CONTAINER_NAME` | No | `workbenchiq-data` | Azure blob container name |
+| `AZURE_STORAGE_ALLOW_CREATE_CONTAINER` | No | `false` | Auto-create container on startup (set `true` for dev only) |
 | `DATABASE_BACKEND` | No | `json` | Database backend (`json` or `postgresql`) |
 | `POSTGRESQL_HOST` | Conditional | - | PostgreSQL host (if using postgresql backend) |
 | `POSTGRESQL_PORT` | No | `5432` | PostgreSQL port |
@@ -542,23 +544,54 @@ UW_APP_STORAGE_ROOT=data
 
 **Azure Blob Storage**
 
-For production deployments, you can use Azure Blob Storage:
+For production deployments, use Azure Blob Storage. Authentication follows a
+**DAC-first** strategy: `DefaultAzureCredential → Connection String → Account Key`.
 
 ```env
 STORAGE_BACKEND=azure_blob
 
-# Option 1: Account name and key
-AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
-AZURE_STORAGE_ACCOUNT_KEY=your-storage-account-key
+# Auth mode — "default" tries DAC first, then connection string, then key.
+# You can also force a specific mode: "connection_string" or "key".
+AZURE_STORAGE_AUTH_MODE=default
 
-# Option 2: Connection string (alternative)
+# Account name (required for DAC and key auth)
+AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+
+# Option A: Managed identity / DefaultAzureCredential (recommended)
+#   No secret needed — ensure the identity has the
+#   "Storage Blob Data Contributor" role on the container.
+
+# Option B: Account key
+# AZURE_STORAGE_ACCOUNT_KEY=your-storage-account-key
+
+# Option C: Connection string
 # AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
 
 # Container name (optional, defaults to workbenchiq-data)
 AZURE_STORAGE_CONTAINER_NAME=workbenchiq-data
+
+# Container auto-creation (default: false — least-privilege)
+# Set to true only in dev/migration scenarios.
+AZURE_STORAGE_ALLOW_CREATE_CONTAINER=false
 ```
 
-The container will be automatically created if it doesn't exist. See [quickstart.md](specs/003-azure-blob-storage-integration/quickstart.md) for detailed setup instructions.
+**RBAC Prerequisites for managed identity (DAC):**
+
+| Role | Scope | Purpose |
+|------|-------|---------|
+| Storage Blob Data Contributor | Container | Read/write blobs |
+| Storage Blob Data Reader | Container | Read-only access |
+
+Assign via Azure CLI:
+
+```bash
+az role assignment create \
+  --assignee <principal-id> \
+  --role "Storage Blob Data Contributor" \
+  --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<account>/blobServices/default/containers/<container>
+```
+
+See [quickstart.md](specs/003-azure-blob-storage-integration/quickstart.md) for detailed setup instructions.
 
 ### PostgreSQL RAG Configuration *(Optional)*
 

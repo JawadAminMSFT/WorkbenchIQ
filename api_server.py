@@ -99,7 +99,13 @@ async def startup_event():
     try:
         storage_settings = StorageSettings.from_env()
         init_storage_provider(storage_settings)
-        logger.info("Storage provider initialized: %s", storage_settings.backend.value)
+        logger.info(
+            "Storage provider initialized: backend=%s  auth_mode=%s  "
+            "allow_create_container=%s",
+            storage_settings.backend.value,
+            storage_settings.azure_storage_auth_mode,
+            storage_settings.azure_storage_allow_create_container,
+        )
     except Exception as e:
         logger.error("Failed to initialize storage provider: %s", e)
         raise
