@@ -507,11 +507,10 @@ workbenchiq/
 | `AZURE_OPENAI_API_VERSION` | No | `2024-10-21` | Azure OpenAI API version |
 | `UW_APP_STORAGE_ROOT` | No | `data` | Local storage path for application data |
 | `UW_APP_PROMPTS_ROOT` | No | `prompts` | Path to prompts and policies directory |
-| `STORAGE_BACKEND` | No | `local` | Storage backend (`local` or `azure_blob`) |
-| `AZURE_STORAGE_AUTH_MODE` | No | `default` | Auth method: `default` (DAC→conn str→key), `connection_string`, or `key` |
+| `STORAGE_BACKEND` | No | `azure_blob` | Storage backend (`azure_blob` or `local`) |
+| `AZURE_STORAGE_AUTH_MODE` | No | `default` | Auth method: `default` (DAC only) or `key` (account key only) — no fallback |
 | `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | - | Azure storage account name (required for DAC and key auth) |
 | `AZURE_STORAGE_ACCOUNT_KEY` | Conditional | - | Azure storage account key (if not using DAC) |
-| `AZURE_STORAGE_CONNECTION_STRING` | Conditional | - | Azure storage connection string (alternative auth) |
 | `AZURE_STORAGE_CONTAINER_NAME` | No | `workbenchiq-data` | Azure blob container name |
 | `AZURE_STORAGE_ALLOW_CREATE_CONTAINER` | No | `false` | Auto-create container on startup (set `true` for dev only) |
 | `DATABASE_BACKEND` | No | `json` | Database backend (`json` or `postgresql`) |
@@ -533,25 +532,16 @@ workbenchiq/
 
 WorkbenchIQ supports two storage backends:
 
-**Local Storage (Default)**
+**Azure Blob Storage (Default)**
 
-No additional configuration needed. Files are stored in the local `data/` directory.
-
-```env
-STORAGE_BACKEND=local
-UW_APP_STORAGE_ROOT=data
-```
-
-**Azure Blob Storage**
-
-For production deployments, use Azure Blob Storage. Authentication follows a
-**DAC-first** strategy: `DefaultAzureCredential → Connection String → Account Key`.
+For production deployments, use Azure Blob Storage. Set `AZURE_STORAGE_AUTH_MODE`
+to choose your auth method explicitly — there is **no automatic fallback**.
 
 ```env
 STORAGE_BACKEND=azure_blob
 
-# Auth mode — "default" tries DAC first, then connection string, then key.
-# You can also force a specific mode: "connection_string" or "key".
+# Auth mode — "default" uses DefaultAzureCredential only.
+# Set to "key" to use account name + key instead.
 AZURE_STORAGE_AUTH_MODE=default
 
 # Account name (required for DAC and key auth)
@@ -564,15 +554,21 @@ AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
 # Option B: Account key
 # AZURE_STORAGE_ACCOUNT_KEY=your-storage-account-key
 
-# Option C: Connection string
-# AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
-
 # Container name (optional, defaults to workbenchiq-data)
 AZURE_STORAGE_CONTAINER_NAME=workbenchiq-data
 
 # Container auto-creation (default: false — least-privilege)
 # Set to true only in dev/migration scenarios.
 AZURE_STORAGE_ALLOW_CREATE_CONTAINER=false
+```
+
+**Local Storage**
+
+For local development, you can use filesystem storage.
+
+```env
+STORAGE_BACKEND=local
+UW_APP_STORAGE_ROOT=data
 ```
 
 **RBAC Prerequisites for managed identity (DAC):**

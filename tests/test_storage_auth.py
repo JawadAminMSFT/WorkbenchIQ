@@ -1,9 +1,9 @@
-"""Tests for DAC-first Azure Blob Storage auth resolution and container policy.
+"""Tests for Azure Blob Storage auth resolution and container policy.
 
 Covers:
 - StorageSettings.from_env  auth_mode / allow_create_container parsing
-- AzureBlobStorageProvider auth selection (DAC → conn str → key)
-- DAC failure with automatic fallback
+- AzureBlobStorageProvider auth selection (DAC-only or key-only, no fallback)
+- DAC failure raises instead of falling back
 - Container auto-creation disabled/enabled behaviour
 """
 
@@ -33,6 +33,7 @@ class TestStorageSettingsFromEnv:
         monkeypatch.delenv("STORAGE_BACKEND", raising=False)
 
         settings = StorageSettings.from_env()
+        assert settings.backend == StorageBackend.AZURE_BLOB
         assert settings.azure_storage_auth_mode == "default"
         assert settings.azure_storage_allow_create_container is False
 
@@ -41,10 +42,10 @@ class TestStorageSettingsFromEnv:
         [
             ("default", "default"),
             ("DEFAULT", "default"),
-            ("connection_string", "connection_string"),
-            ("CONNECTION_STRING", "connection_string"),
             ("key", "key"),
             ("KEY", "key"),
+            ("connection_string", "default"),  # no longer valid → falls back to default
+            ("CONNECTION_STRING", "default"),  # no longer valid → falls back to default
             ("bogus", "default"),  # invalid → falls back to default
         ],
     )
@@ -106,7 +107,6 @@ def _base_settings(**overrides: Any) -> StorageSettings:
         azure_account_name="testaccount",
         azure_account_key="dGVzdGtleQ==",  # base64 placeholder
         azure_container_name="test-container",
-        azure_connection_string=None,
         azure_storage_auth_mode="default",
         azure_storage_allow_create_container=False,
     )
@@ -128,24 +128,7 @@ def _mock_blob_service() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 class TestAuthResolution:
-    """Verify auth selection and fallback behaviour."""
-
-    @patch("app.storage_providers.azure_blob.AzureBlobStorageProvider._ensure_container_exists")
-    def test_explicit_connection_string(self, _ensure: MagicMock) -> None:
-        """auth_mode=connection_string forces connection-string auth."""
-        settings = _base_settings(
-            azure_storage_auth_mode="connection_string",
-            azure_connection_string="DefaultEndpointsProtocol=https;AccountName=x;AccountKey=y;EndpointSuffix=core.windows.net",
-        )
-
-        with patch(
-            "azure.storage.blob.BlobServiceClient.from_connection_string",
-            return_value=_mock_blob_service(),
-        ):
-            from app.storage_providers.azure_blob import AzureBlobStorageProvider
-            provider = AzureBlobStorageProvider(settings)
-
-        assert provider._resolved_auth == "connection_string"
+    """Verify auth selection — no automatic fallback between methods."""
 
     @patch("app.storage_providers.azure_blob.AzureBlobStorageProvider._ensure_container_exists")
     def test_explicit_key(self, _ensure: MagicMock) -> None:
@@ -167,7 +150,6 @@ class TestAuthResolution:
         settings = _base_settings(
             azure_storage_auth_mode="default",
             azure_account_key=None,  # no key – DAC only
-            azure_connection_string=None,
         )
 
         mock_svc = _mock_blob_service()
@@ -185,102 +167,37 @@ class TestAuthResolution:
         assert provider._resolved_auth == "DefaultAzureCredential"
 
     @patch("app.storage_providers.azure_blob.AzureBlobStorageProvider._ensure_container_exists")
-    def test_default_mode_dac_failure_falls_back_to_conn_str(
+    def test_default_mode_dac_failure_raises(
         self, _ensure: MagicMock
     ) -> None:
-        """When DAC probe fails and a connection string is available, fall back."""
+        """When DAC probe fails in default mode, raise ValueError (no fallback to key)."""
         settings = _base_settings(
             azure_storage_auth_mode="default",
-            azure_account_key=None,
-            azure_connection_string="DefaultEndpointsProtocol=https;AccountName=x;AccountKey=y;EndpointSuffix=core.windows.net",
         )
 
         mock_dac_svc = _mock_blob_service()
         mock_dac_svc.get_account_information.side_effect = Exception("DAC failed")
 
-        mock_conn_svc = _mock_blob_service()
-
-        call_count = {"n": 0}
-        original_init = None
-
-        def blob_service_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return mock_dac_svc  # first call = DAC attempt
-            return mock_conn_svc
-
         with (
             patch("azure.identity.DefaultAzureCredential", return_value=MagicMock()),
             patch(
                 "azure.storage.blob.BlobServiceClient",
-                side_effect=blob_service_side_effect,
+                return_value=mock_dac_svc,
             ),
-            patch(
-                "azure.storage.blob.BlobServiceClient.from_connection_string",
-                return_value=mock_conn_svc,
-            ),
+            pytest.raises(ValueError, match="DefaultAzureCredential authentication failed"),
         ):
             from app.storage_providers.azure_blob import AzureBlobStorageProvider
-            provider = AzureBlobStorageProvider(settings)
-
-        assert provider._resolved_auth == "connection_string"
-
-    @patch("app.storage_providers.azure_blob.AzureBlobStorageProvider._ensure_container_exists")
-    def test_default_mode_dac_failure_falls_back_to_key(
-        self, _ensure: MagicMock
-    ) -> None:
-        """When DAC and conn str both unavailable, fall back to account key."""
-        settings = _base_settings(
-            azure_storage_auth_mode="default",
-            azure_connection_string=None,
-        )
-
-        mock_dac_svc = _mock_blob_service()
-        mock_dac_svc.get_account_information.side_effect = Exception("DAC failed")
-
-        mock_key_svc = _mock_blob_service()
-
-        call_count = {"n": 0}
-
-        def blob_service_side_effect(*args: Any, **kwargs: Any) -> MagicMock:
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return mock_dac_svc
-            return mock_key_svc
-
-        with (
-            patch("azure.identity.DefaultAzureCredential", return_value=MagicMock()),
-            patch(
-                "azure.storage.blob.BlobServiceClient",
-                side_effect=blob_service_side_effect,
-            ),
-        ):
-            from app.storage_providers.azure_blob import AzureBlobStorageProvider
-            provider = AzureBlobStorageProvider(settings)
-
-        assert provider._resolved_auth == "account_key"
+            AzureBlobStorageProvider(settings)
 
     def test_no_credentials_at_all_raises(self) -> None:
-        """When no credentials are available, raise ValueError."""
+        """When no account name is set in default mode, raise ValueError."""
         settings = _base_settings(
             azure_storage_auth_mode="default",
             azure_account_name=None,
             azure_account_key=None,
-            azure_connection_string=None,
         )
 
-        with pytest.raises(ValueError, match="No valid Azure Blob Storage credentials"):
-            from app.storage_providers.azure_blob import AzureBlobStorageProvider
-            AzureBlobStorageProvider(settings)
-
-    def test_explicit_conn_str_missing_raises(self) -> None:
-        """auth_mode=connection_string but no connection string → ValueError."""
-        settings = _base_settings(
-            azure_storage_auth_mode="connection_string",
-            azure_connection_string=None,
-        )
-
-        with pytest.raises(ValueError, match="AZURE_STORAGE_CONNECTION_STRING is not set"):
+        with pytest.raises(ValueError, match="AZURE_STORAGE_ACCOUNT_NAME is not set"):
             from app.storage_providers.azure_blob import AzureBlobStorageProvider
             AzureBlobStorageProvider(settings)
 

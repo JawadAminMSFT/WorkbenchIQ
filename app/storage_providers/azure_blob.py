@@ -1,14 +1,13 @@
 """Azure Blob Storage provider implementation.
 
-Supports three authentication methods with automatic fallback:
+Supports two explicit authentication methods:
 
 1. **DefaultAzureCredential (DAC)** – Managed identity / developer credentials.
-   No secrets required; relies on ``azure-identity``.
-2. **Connection string** – ``AZURE_STORAGE_CONNECTION_STRING``.
-3. **Account key** – ``AZURE_STORAGE_ACCOUNT_NAME`` + ``AZURE_STORAGE_ACCOUNT_KEY``.
+   No secrets required; relies on ``azure-identity``.  This is the default.
+2. **Account key** – ``AZURE_STORAGE_ACCOUNT_NAME`` + ``AZURE_STORAGE_ACCOUNT_KEY``.
 
-The precedence is DAC → Connection String → Account Key.  Override with
-``AZURE_STORAGE_AUTH_MODE`` (``default``, ``connection_string``, ``key``).
+Set ``AZURE_STORAGE_AUTH_MODE`` to ``default`` (DAC) or ``key`` (account key).
+There is no automatic fallback between the two methods.
 """
 
 from __future__ import annotations
@@ -31,13 +30,13 @@ class AzureBlobStorageProvider:
         {container}/applications/{app_id}/metadata.json
         {container}/applications/{app_id}/content_understanding.json
 
-    Authentication precedence (when auth_mode="default"):
-        DefaultAzureCredential → connection string → account key.
+    Authentication (controlled by auth_mode):
+        "default" → DefaultAzureCredential only.
+        "key"     → account key only.
     """
 
     # Friendly labels for log messages (no secrets)
     _AUTH_LABEL_DAC = "DefaultAzureCredential"
-    _AUTH_LABEL_CONN_STR = "connection_string"
     _AUTH_LABEL_KEY = "account_key"
     
     def __init__(
@@ -98,15 +97,12 @@ class AzureBlobStorageProvider:
     def _resolve_blob_service(
         cls, settings: StorageSettings, retry_policy: Any
     ) -> tuple:
-        """Return (BlobServiceClient, auth_label) using the configured precedence.
+        """Return (BlobServiceClient, auth_label) for the configured auth mode.
 
-        When ``auth_mode == "default"`` the order is:
-            1. DefaultAzureCredential (requires account name)
-            2. Connection string
-            3. Account key
+        ``auth_mode == "default"`` uses DefaultAzureCredential exclusively.
+        ``auth_mode == "key"`` uses account name + key exclusively.
 
-        Explicit modes (``connection_string``, ``key``) skip directly to
-        the requested method.
+        There is no automatic fallback between methods.
         """
         from azure.storage.blob import BlobServiceClient
 
@@ -118,18 +114,6 @@ class AzureBlobStorageProvider:
             connection_timeout=timeout,
             read_timeout=timeout,
         )
-
-        # --- explicit: connection_string ---
-        if mode == "connection_string":
-            if not settings.azure_connection_string:
-                raise ValueError(
-                    "AZURE_STORAGE_AUTH_MODE is 'connection_string' but "
-                    "AZURE_STORAGE_CONNECTION_STRING is not set."
-                )
-            client = BlobServiceClient.from_connection_string(
-                settings.azure_connection_string, **common_kwargs
-            )
-            return client, cls._AUTH_LABEL_CONN_STR
 
         # --- explicit: key ---
         if mode == "key":
@@ -147,78 +131,53 @@ class AzureBlobStorageProvider:
             )
             return client, cls._AUTH_LABEL_KEY
 
-        # --- default: DAC → connection string → account key ---
-        return cls._resolve_default_chain(settings, common_kwargs)
+        # --- default: DAC only ---
+        return cls._resolve_dac(settings, common_kwargs)
 
     @classmethod
-    def _resolve_default_chain(
+    def _resolve_dac(
         cls, settings: StorageSettings, common_kwargs: dict
     ) -> tuple:
-        """Try DAC first, then fall back through connection string and key."""
+        """Authenticate using DefaultAzureCredential only (no fallback)."""
         from azure.storage.blob import BlobServiceClient
 
-        # 1) DefaultAzureCredential
-        if settings.azure_account_name:
-            try:
-                from azure.identity import DefaultAzureCredential
-
-                account_url = (
-                    f"https://{settings.azure_account_name}.blob.core.windows.net"
-                )
-                credential = DefaultAzureCredential()
-                client = BlobServiceClient(
-                    account_url=account_url,
-                    credential=credential,
-                    **common_kwargs,
-                )
-                # Probe connectivity – a lightweight call that validates the
-                # credential without requiring list/create permissions.
-                client.get_account_information()
-                logger.info("Authenticated via DefaultAzureCredential")
-                return client, cls._AUTH_LABEL_DAC
-            except ImportError:
-                logger.debug(
-                    "azure-identity not installed; skipping DefaultAzureCredential"
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "DefaultAzureCredential failed (%s); trying fallback auth",
-                    exc,
-                )
-
-        # 2) Connection string
-        if settings.azure_connection_string:
-            try:
-                client = BlobServiceClient.from_connection_string(
-                    settings.azure_connection_string, **common_kwargs
-                )
-                logger.info("Authenticated via connection string")
-                return client, cls._AUTH_LABEL_CONN_STR
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Connection-string auth failed (%s); trying account key",
-                    exc,
-                )
-
-        # 3) Account key
-        if settings.azure_account_name and settings.azure_account_key:
-            account_url = (
-                f"https://{settings.azure_account_name}.blob.core.windows.net"
+        if not settings.azure_account_name:
+            raise ValueError(
+                "AZURE_STORAGE_AUTH_MODE is 'default' (DefaultAzureCredential) "
+                "but AZURE_STORAGE_ACCOUNT_NAME is not set."
             )
-            client = BlobServiceClient(
-                account_url=account_url,
-                credential=settings.azure_account_key,
-                **common_kwargs,
-            )
-            logger.info("Authenticated via account key")
-            return client, cls._AUTH_LABEL_KEY
 
-        raise ValueError(
-            "No valid Azure Blob Storage credentials found. Provide one of: "
-            "DefaultAzureCredential (AZURE_STORAGE_ACCOUNT_NAME), "
-            "AZURE_STORAGE_CONNECTION_STRING, or "
-            "AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY."
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError:
+            raise ImportError(
+                "azure-identity is required for DefaultAzureCredential auth. "
+                "Install it with: pip install azure-identity  "
+                "Or set AZURE_STORAGE_AUTH_MODE=key to use account key auth."
+            )
+
+        account_url = (
+            f"https://{settings.azure_account_name}.blob.core.windows.net"
         )
+        credential = DefaultAzureCredential()
+        client = BlobServiceClient(
+            account_url=account_url,
+            credential=credential,
+            **common_kwargs,
+        )
+        # Probe connectivity – a lightweight call that validates the
+        # credential without requiring list/create permissions.
+        try:
+            client.get_account_information()
+        except Exception as exc:
+            raise ValueError(
+                f"DefaultAzureCredential authentication failed: {exc}. "
+                "Ensure the identity has the 'Storage Blob Data Contributor' "
+                "role, or set AZURE_STORAGE_AUTH_MODE=key to use account key."
+            ) from exc
+
+        logger.info("Authenticated via DefaultAzureCredential")
+        return client, cls._AUTH_LABEL_DAC
 
     # ------------------------------------------------------------------
     # Container lifecycle
