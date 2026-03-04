@@ -469,7 +469,7 @@ def _try_repair_truncated_json(text: str) -> Dict[str, Any]:
 # Per-subsection max_tokens overrides for prompts that produce large JSON.
 # Subsections not listed here use the chat_completion default (1200).
 _SUBSECTION_MAX_TOKENS: Dict[str, int] = {
-    "body_system_review": 8000,  # Multi-system structured JSON for 100+ page docs
+    "body_system_review": 16000,  # Multi-system structured JSON for 100+ page docs
     "pending_investigations": 4000,  # Can be lengthy for large APS docs
     "abnormal_labs": 4000,  # Many abnormal labs in complex cases
     "last_office_visit": 2000,

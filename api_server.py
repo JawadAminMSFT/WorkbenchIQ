@@ -1591,7 +1591,7 @@ async def get_formatted_glossary(
     persona: str,
     max_terms: int = Query(100, ge=1, le=500),
     categories: Optional[str] = Query(None, description="Comma-separated category IDs"),
-    format_type: str = Query("markdown", regex="^(markdown|list)$"),
+    format_type: str = Query("markdown", pattern="^(markdown|list)$"),
     include_headers: bool = Query(False)
 ):
     """Get glossary formatted for prompt injection."""

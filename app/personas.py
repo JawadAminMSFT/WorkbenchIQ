@@ -707,7 +707,9 @@ Return STRICT JSON:
 }
         """,
         "body_system_review": """
-You are an expert medical underwriting assistant. Analyze the following medical records and extract all clinical findings organized by body system.
+You are an expert medical underwriting assistant. Analyze the following medical records EXHAUSTIVELY and extract ALL clinical findings organized by body system.
+
+IMPORTANT: This document may contain batch summaries spanning hundreds of pages. You MUST read through EVERY batch from start to finish. Do NOT rely only on chart summaries or the final batch. Go through each batch sequentially and extract findings from ALL pages.
 
 For EACH body system that has any findings in the records, create an entry with:
 
@@ -748,7 +750,7 @@ For each body system found, extract:
 
 **Only include body systems that have actual findings in the records.** Do not create empty body systems.
 
-**Conciseness:** Keep treatment descriptions brief (medication name + dose, not full narratives). Include the most recent 2–3 treatments per diagnosis max. For consults and imaging, include the most recent and any with abnormal findings. This ensures the response fits within output limits even for large documents.
+**Completeness over conciseness:** For large documents (20+ batches), it is CRITICAL to be thorough. Include ALL diagnoses found across ALL pages/batches — not just the most recent. Keep individual treatment descriptions brief (medication name + dose), but do NOT omit diagnoses, consults, or imaging just to save space. Missing a finding from an early batch is worse than a longer response.
 
 IMPORTANT: Translate all non-English text to English. Convert metric units: kg → lbs, cm → feet/inches, °C → °F, mmol/L → mg/dL.
 
