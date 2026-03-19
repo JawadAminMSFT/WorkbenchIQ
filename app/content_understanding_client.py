@@ -939,13 +939,20 @@ def ensure_custom_analyzer_exists(
         return settings.analyzer_id
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Check if an exception is caused by a rate limit (429/TPM quota)."""
+    err_str = str(exc).lower()
+    return "ratelimit" in err_str or "rate limit" in err_str or "429" in err_str
+
+
 def analyze_document_with_confidence(
     settings: ContentUnderstandingSettings,
     file_path: str,
     file_bytes: Optional[bytes] = None,
     output_markdown: bool = True,
-    max_retries: int = 3,
+    max_retries: int = 5,
     retry_backoff: float = 1.5,
+    rate_limit_wait: float = 90.0,
 ) -> Dict[str, Any]:
     """Analyze a document using the custom analyzer with confidence scores.
     
@@ -961,6 +968,7 @@ def analyze_document_with_confidence(
         output_markdown: Whether to include markdown output
         max_retries: Number of retry attempts
         retry_backoff: Backoff multiplier between retries
+        rate_limit_wait: Seconds to wait before retrying after a rate limit error
     
     Returns:
         Analysis result including fields with confidence scores
@@ -992,6 +1000,11 @@ def analyze_document_with_confidence(
     last_err: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
+            # Re-authenticate on retries in case token expired during long waits
+            if attempt > 1:
+                token, headers = _get_auth_token_and_headers(settings)
+                headers["Content-Type"] = "application/octet-stream"
+
             resp = requests.post(
                 url,
                 params=params,
@@ -1006,13 +1019,24 @@ def analyze_document_with_confidence(
 
         except Exception as exc:
             last_err = exc
+            is_rate_limit = _is_rate_limit_error(exc)
             logger.warning(
-                "Content Understanding analyze_document_with_confidence attempt %s failed: %s",
+                "Content Understanding analyze_document_with_confidence attempt %s/%s failed%s: %s",
                 attempt,
+                max_retries,
+                " (rate limit)" if is_rate_limit else "",
                 str(exc),
             )
             if attempt < max_retries:
-                time.sleep(retry_backoff**attempt)
+                if is_rate_limit:
+                    wait = rate_limit_wait
+                    logger.info(
+                        "Rate limit detected, waiting %.0fs before retry %s/%s",
+                        wait, attempt + 1, max_retries,
+                    )
+                else:
+                    wait = retry_backoff ** attempt
+                time.sleep(wait)
 
     raise ContentUnderstandingError(
         f"Content Understanding analyze_document_with_confidence failed after {max_retries} attempts: {last_err}"

@@ -249,6 +249,10 @@ def application_to_dict(app_md: ApplicationMetadata) -> dict:
 # Background Processing Helpers
 # ============================================================================
 
+# Limit concurrent CU/LLM processing to avoid rate-limiting the shared
+# GPT-4.1 deployment used by the Content Understanding analyzer.
+_processing_semaphore = asyncio.Semaphore(1)
+
 def _handle_task_exception(task: asyncio.Task):
     """Callback to log exceptions from background tasks."""
     try:
@@ -261,89 +265,91 @@ def _handle_task_exception(task: asyncio.Task):
 
 async def run_extraction_background(app_id: str):
     """Run content extraction in background and update status."""
-    try:
-        logger.info("Starting background extraction for application %s", app_id)
-        settings = load_settings()
-        app_md = load_application(settings.app.storage_root, app_id)
-        if not app_md:
-            logger.error("Background extraction: Application %s not found", app_id)
-            return
-
-        # Update status to extracting
-        app_md.processing_status = "extracting"
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-
-        # Run extraction in thread pool
-        logger.info("Running content understanding for application %s", app_id)
-        app_md = await asyncio.to_thread(
-            run_content_understanding_for_files, settings, app_md
-        )
-        
-        # Update status and save
-        app_md.processing_status = None
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-        
-        logger.info("Background extraction completed for application %s", app_id)
-
-    except Exception as e:
-        logger.error("Background extraction failed for %s: %s", app_id, e, exc_info=True)
+    async with _processing_semaphore:
         try:
+            logger.info("Starting background extraction for application %s", app_id)
             settings = load_settings()
             app_md = load_application(settings.app.storage_root, app_id)
-            if app_md:
-                app_md.processing_status = "error"
-                app_md.processing_error = str(e)
-                save_application_metadata(settings.app.storage_root, app_md)
-        except Exception:
-            pass
+            if not app_md:
+                logger.error("Background extraction: Application %s not found", app_id)
+                return
+
+            # Update status to extracting
+            app_md.processing_status = "extracting"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+
+            # Run extraction in thread pool
+            logger.info("Running content understanding for application %s", app_id)
+            app_md = await asyncio.to_thread(
+                run_content_understanding_for_files, settings, app_md
+            )
+            
+            # Update status and save
+            app_md.processing_status = None
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Background extraction completed for application %s", app_id)
+
+        except Exception as e:
+            logger.error("Background extraction failed for %s: %s", app_id, e, exc_info=True)
+            try:
+                settings = load_settings()
+                app_md = load_application(settings.app.storage_root, app_id)
+                if app_md:
+                    app_md.processing_status = "error"
+                    app_md.processing_error = str(e)
+                    save_application_metadata(settings.app.storage_root, app_md)
+            except Exception:
+                pass
 
 
 async def run_analysis_background(app_id: str, sections: Optional[List[str]] = None, processing_mode: Optional[str] = None):
     """Run analysis in background and update status."""
-    try:
-        logger.info("Starting background analysis for application %s (mode: %s)", app_id, processing_mode or "auto")
-        settings = load_settings()
-        app_md = load_application(settings.app.storage_root, app_id)
-        if not app_md:
-            logger.error("Background analysis: Application %s not found", app_id)
-            return
-
-        # Update status to analyzing
-        app_md.processing_status = "analyzing"
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-
-        # Run analysis in thread pool
-        logger.info("Running underwriting prompts for application %s", app_id)
-        app_md = await asyncio.to_thread(
-            run_underwriting_prompts,
-            settings,
-            app_md,
-            sections_to_run=sections,
-            max_workers_per_section=4,
-            processing_mode_override=processing_mode,
-        )
-        
-        # Update status and save
-        app_md.processing_status = None
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-        
-        logger.info("Background analysis completed for application %s (mode: %s)", app_id, app_md.processing_mode)
-
-    except Exception as e:
-        logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
+    async with _processing_semaphore:
         try:
+            logger.info("Starting background analysis for application %s (mode: %s)", app_id, processing_mode or "auto")
             settings = load_settings()
             app_md = load_application(settings.app.storage_root, app_id)
-            if app_md:
-                app_md.processing_status = "error"
-                app_md.processing_error = str(e)
-                save_application_metadata(settings.app.storage_root, app_md)
-        except Exception:
-            pass
+            if not app_md:
+                logger.error("Background analysis: Application %s not found", app_id)
+                return
+
+            # Update status to analyzing
+            app_md.processing_status = "analyzing"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+
+            # Run analysis in thread pool
+            logger.info("Running underwriting prompts for application %s", app_id)
+            app_md = await asyncio.to_thread(
+                run_underwriting_prompts,
+                settings,
+                app_md,
+                sections_to_run=sections,
+                max_workers_per_section=4,
+                processing_mode_override=processing_mode,
+            )
+            
+            # Update status and save
+            app_md.processing_status = None
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Background analysis completed for application %s (mode: %s)", app_id, app_md.processing_mode)
+
+        except Exception as e:
+            logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
+            try:
+                settings = load_settings()
+                app_md = load_application(settings.app.storage_root, app_id)
+                if app_md:
+                    app_md.processing_status = "error"
+                    app_md.processing_error = str(e)
+                    save_application_metadata(settings.app.storage_root, app_md)
+            except Exception:
+                pass
 
 
 async def run_extract_and_analyze_background(app_id: str, processing_mode: Optional[str] = None):
