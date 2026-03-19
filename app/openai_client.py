@@ -47,9 +47,10 @@ def _call_openai_endpoint(
     params: Dict[str, str],
     body: Dict[str, Any],
     endpoint_name: str = "primary",
+    timeout: int = 120,
 ) -> Dict[str, Any]:
     """Make a single call to an OpenAI endpoint."""
-    resp = requests.post(url, headers=headers, params=params, json=body, timeout=60)
+    resp = requests.post(url, headers=headers, params=params, json=body, timeout=timeout)
     if resp.status_code >= 400:
         raise OpenAIClientError(
             f"OpenAI API error {resp.status_code}: {resp.text}"
@@ -79,6 +80,7 @@ def chat_completion(
     deployment_override: str | None = None,
     model_override: str | None = None,
     api_version_override: str | None = None,
+    timeout: int | None = None,
 ) -> Dict[str, Any]:
     """Call Azure OpenAI / Foundry chat completions with retry logic and fallback.
 
@@ -98,6 +100,8 @@ def chat_completion(
         deployment_override: Optional deployment name to use instead of settings.deployment_name
         model_override: Optional model name to use instead of settings.model_name
         api_version_override: Optional API version to use instead of settings.api_version
+        timeout: HTTP request timeout in seconds. If None, scales with max_tokens
+                 (120s base + 1s per 100 tokens over 1200).
     """
     # Validate settings - api_key is optional when using Azure AD
     if not settings.endpoint or not settings.deployment_name:
@@ -152,6 +156,12 @@ def chat_completion(
         "model": model,
     }
 
+    # Compute HTTP timeout: explicit value, or scale with max_tokens
+    if timeout is None:
+        # 120s base; add 1s per 100 tokens above 1200 (e.g. 16000 → 120+148 = 268s)
+        timeout = 120 + max(0, (max_tokens - 1200)) // 100
+    logger.debug("chat_completion timeout=%ds (max_tokens=%d)", timeout, max_tokens)
+
     last_err: Exception | None = None
     used_fallback = False
     used_mini = False
@@ -188,13 +198,13 @@ def chat_completion(
         try:
             # Try mini model if both primary and fallback are rate limited
             if used_mini:
-                return _call_openai_endpoint(mini_url, mini_headers, mini_params, mini_body, "mini")
+                return _call_openai_endpoint(mini_url, mini_headers, mini_params, mini_body, "mini", timeout=timeout)
             # Try primary endpoint first
             elif not used_fallback:
-                return _call_openai_endpoint(primary_url, primary_headers, primary_params, body, "primary")
+                return _call_openai_endpoint(primary_url, primary_headers, primary_params, body, "primary", timeout=timeout)
             else:
                 # Already switched to fallback
-                return _call_openai_endpoint(fallback_url, fallback_headers, fallback_params, body, "fallback")
+                return _call_openai_endpoint(fallback_url, fallback_headers, fallback_params, body, "fallback", timeout=timeout)
 
         except Exception as exc:  # noqa: BLE001
             last_err = exc
