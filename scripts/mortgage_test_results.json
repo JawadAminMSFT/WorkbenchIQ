@@ -1,0 +1,8 @@
+[
+  {
+    "set": "Set 1 - Typical Couple",
+    "status": "trigger_failed",
+    "app_id": "e3a401e3",
+    "error": "404 Client Error: Not Found for url: https://workbenchiq-api.azurewebsites.net/api/applications/e3a401e3/extract-and-analyze?background=true"
+  }
+]

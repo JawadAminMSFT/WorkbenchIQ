@@ -1,6 +1,0 @@
-<step title="Incoming Request" date="2026-02-08T15:16:59.452" instance="d427c9" url="/api/deployments/temp-756f7a43/log" method="GET" type="request" pid="851,1,5" Host="workbenchiq-api.scm.azurewebsites.net" User-Agent="vscode-azureappservice/0.26.4 core-rest-pipeline/1.20.0 Node/22.21.1 OS/(x64-Linux-6.6.87.2-microsoft-standard-WSL2)" Accept-Encoding="gzip,deflate" Accept-Language="en" Authorization="Bea..." x-ms-correlation-request-id="4e35dc03-bfd4-4342-a6d0-d361bfc6fdc1" x-ms-client-request-id="e651abe5-c015-4b05-9827-09c2066cbe7f" X-ARR-LOG-ID="e651abe5-c015-4b05-9827-09c2066cbe7f" CLIENT-IP="174.93.116.18:53709" X-SITE-DEPLOYMENT-ID="workbenchiq-api" WAS-DEFAULT-HOSTNAME="workbenchiq-api.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/deployments/temp-756f7a43/log" X-Client-IP="174.93.116.18" X-Client-Port="53709" >
-  <step title="DeploymentService.GetLogEntry" date="2026-02-08T15:16:59.455" >
-    <step title="DeploymentManager.GetLogEntries(id:temp-756f7a43)" date="2026-02-08T15:16:59.456" /><!-- duration: 3ms -->
-  </step><!-- duration: 6ms -->
-  <step title="Outgoing response" date="2026-02-08T15:16:59.464" type="response" statusCode="200" statusText="OK" /><!-- duration: 7ms -->
-</step><!-- duration: 22ms -->

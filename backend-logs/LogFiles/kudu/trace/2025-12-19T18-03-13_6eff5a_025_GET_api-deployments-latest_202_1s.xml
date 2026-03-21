@@ -1,9 +1,0 @@
-<step title="Incoming Request" date="2025-12-19T18:03:13.664" instance="6eff5a" url="/api/deployments/latest?deployer=ms-azuretools-vscode&amp;time=2025-12-19_18-02-48Z" method="GET" type="request" pid="853,1,16" Host="workbenchiq-api.scm.azurewebsites.net" User-Agent="vscode-azureappservice/0.26.4 core-rest-pipeline/1.20.0 Node/22.21.1 OS/(x64-Linux-6.6.87.2-microsoft-standard-WSL2)" Accept-Encoding="gzip,deflate" Accept-Language="en" Authorization="Bea..." x-ms-correlation-request-id="290299bb-8374-40a2-a345-e519aa9b1567" x-ms-client-request-id="04284aa7-82b8-47a4-a36a-a48cc5ce5f5d" X-ARR-LOG-ID="04284aa7-82b8-47a4-a36a-a48cc5ce5f5d" CLIENT-IP="142.126.106.205:60410" X-SITE-DEPLOYMENT-ID="workbenchiq-api" WAS-DEFAULT-HOSTNAME="workbenchiq-api.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/deployments/latest?deployer=ms-azuretools-vscode&amp;time=2025-12-19_18-02-48Z" X-Client-IP="142.126.106.205" X-Client-Port="60410" >
-  <step title="Cleanup Xml Logs" date="2025-12-19T18:03:13.703" /><!-- duration: 22ms -->
-  <step title="DeploymentService.GetResult" date="2025-12-19T18:03:13.775" >
-    <step title="DeploymentService.GetLatestDeployment" date="2025-12-19T18:03:13.785" >
-      <step title="DeploymentManager.GetResults" date="2025-12-19T18:03:13.805" /><!-- duration: 287ms -->
-    </step><!-- duration: 326ms -->
-  </step><!-- duration: 357ms -->
-  <step title="Outgoing response" date="2025-12-19T18:03:14.151" type="response" statusCode="202" statusText="Accepted" /><!-- duration: 10ms -->
-</step><!-- duration: 507ms -->

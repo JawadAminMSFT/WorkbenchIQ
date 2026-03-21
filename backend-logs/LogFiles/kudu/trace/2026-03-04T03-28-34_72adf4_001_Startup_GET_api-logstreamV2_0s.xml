@@ -1,5 +1,0 @@
-<step title="Startup Request" date="2026-03-04T03:28:34.504" instance="72adf4" url="/api/logstreamV2/?max=50&amp;nextToken=eyJmaWQiOjYzOTA4MTkxNzA0NDk3MjQxNCwicG9zIjo3NzM3OSwiZmlyc3Rsb2d1dGMiOjYzOTA4MDQ5NTM5NzU3NzIxMX0=&amp;api-version=2016-09-01" method="GET" type="request" pid="851,1,5" ScmType="None" >
-  <step title="Cleanup Xml Logs" date="2026-03-04T03:28:34.543" >
-    <step title="Cleanup Infos" date="2026-03-04T03:28:34.583" totalFiles="225" totalCleanup="65" /><!-- duration: 13ms -->
-  </step><!-- duration: 75ms -->
-</step><!-- duration: 118ms -->

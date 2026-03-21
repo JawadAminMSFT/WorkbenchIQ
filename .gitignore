@@ -286,6 +286,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+backend-logs/
 
 # Runtime data
 pids/
@@ -317,6 +318,7 @@ out/
 *.tar.gz
 *.zip
 *.rar
+*-deploy.zip
 
 # ============================================================================
 # Documentation (Keep docs but not generated)

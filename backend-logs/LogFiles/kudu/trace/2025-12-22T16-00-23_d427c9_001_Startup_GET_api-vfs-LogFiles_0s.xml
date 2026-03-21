@@ -1,3 +1,0 @@
-<step title="Startup Request" date="2025-12-22T16:00:23.501" instance="d427c9" url="/api/vfs/LogFiles/" method="GET" type="request" pid="852,1,5" ScmType="None" >
-  <step title="Cleanup Xml Logs" date="2025-12-22T16:00:23.503" /><!-- duration: 3ms -->
-</step><!-- duration: 9ms -->
