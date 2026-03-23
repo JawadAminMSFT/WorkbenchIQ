@@ -10,6 +10,7 @@ import {
   ChevronDown,
   LogOut,
   User,
+  Users,
 } from 'lucide-react';
 import type { ApplicationListItem, ApplicationMetadata } from '@/lib/types';
 import clsx from 'clsx';
@@ -170,6 +171,13 @@ export default function TopNav({
           {/* Glossary Dropdown - Only in workbench view */}
           {showWorkbenchControls && <GlossaryDropdown />}
           
+          <Link
+            href="/customers"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <Users className="w-4 h-4" />
+            <span>Customer 360</span>
+          </Link>
           <Link
             href="/admin"
             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"

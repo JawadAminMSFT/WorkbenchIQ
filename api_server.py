@@ -3698,7 +3698,12 @@ async def get_mortgage_application(app_id: str):
         if rec_parsed and isinstance(rec_parsed, dict) and not rec_parsed.get("_error"):
             llm_decision = rec_parsed.get("DECISION")
             if llm_decision and isinstance(llm_decision, str):
-                decision = llm_decision
+                decision = llm_decision.upper().strip()
+                # Normalize common decision variations
+                if "CONDITIONAL" in decision:
+                    decision = "REFER"
+                elif decision not in ("APPROVE", "DECLINE", "REFER"):
+                    decision = "REFER"
             
             rationale = rec_parsed.get("RATIONALE", {})
             conditions = rec_parsed.get("CONDITIONS", [])
@@ -3964,6 +3969,70 @@ async def run_property_deep_dive(app_id: str, force: bool = False):
         raise
     except Exception as e:
         logger.error("Property deep dive (POST) failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Customer 360 — Unified Data Layer
+# =============================================================================
+
+from app.customer360 import (
+    list_customers as _list_customers,
+    get_customer_360 as _get_customer_360,
+    load_customer_profile as _load_customer_profile,
+)
+
+
+@app.get("/api/customers")
+async def list_customers():
+    """List all customer profiles."""
+    settings = load_settings()
+    profiles = _list_customers(settings.app.storage_root)
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "date_of_birth": p.date_of_birth,
+            "email": p.email,
+            "phone": p.phone,
+            "address": p.address,
+            "customer_since": p.customer_since,
+            "risk_tier": p.risk_tier,
+            "tags": p.tags,
+            "notes": p.notes,
+        }
+        for p in profiles
+    ]
+
+
+@app.get("/api/customers/{customer_id}")
+async def get_customer_360_view(customer_id: str):
+    """Get full Customer 360 view with profile, journey, and risk correlations."""
+    settings = load_settings()
+    view = _get_customer_360(settings.app.storage_root, customer_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    from dataclasses import asdict
+    return asdict(view)
+
+
+@app.post("/api/customers/seed")
+async def seed_customer_360_data():
+    """Seed sample customer 360 data (development/demo only)."""
+    settings = load_settings()
+    try:
+        from scripts.seed_customer360 import (
+            create_sarah_chen,
+            create_marcus_williams,
+            create_priya_patel,
+        )
+        create_sarah_chen(settings.app.storage_root)
+        create_marcus_williams(settings.app.storage_root)
+        create_priya_patel(settings.app.storage_root)
+        return {"status": "ok", "message": "Seeded 3 customer profiles"}
+    except Exception as e:
+        logger.error("Failed to seed customer 360 data: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

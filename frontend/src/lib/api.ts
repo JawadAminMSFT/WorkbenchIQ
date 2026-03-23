@@ -389,30 +389,55 @@ export function extractPatientInfo(app: ApplicationMetadata): PatientInfo {
   // Try to extract from extracted_fields first, then fall back to llm_outputs
   let name = getValue('ApplicantName');
   let dateOfBirth = getValue('DateOfBirth');
+  let gender = getValue('Gender');
+  let age = getNumericValue('Age');
+  let occupation = getValue('Occupation');
+  let height = getValue('Height');
+  let weight = getValue('Weight');
+  let bmi = getNumericValue('BMI');
   
   // Parse from LLM outputs if not found
   const customerProfile = app.llm_outputs?.application_summary?.customer_profile?.parsed;
   if (customerProfile) {
     const keyFields = customerProfile.key_fields || [];
     for (const kf of keyFields) {
-      if (kf.label.toLowerCase().includes('name') && name === 'N/A') {
+      const label = kf.label.toLowerCase();
+      if (label.includes('name') && name === 'N/A') {
         name = kf.value;
       }
-      if (kf.label.toLowerCase().includes('birth') && dateOfBirth === 'N/A') {
+      if (label.includes('birth') && dateOfBirth === 'N/A') {
         dateOfBirth = kf.value;
+      }
+      if ((label === 'sex' || label === 'gender') && gender === 'N/A') {
+        gender = kf.value;
+      }
+      if (label === 'age' && age === 'N/A') {
+        age = kf.value;
+      }
+      if (label.includes('occupation') && occupation === 'N/A') {
+        occupation = kf.value;
+      }
+      if (label.includes('height') && height === 'N/A') {
+        height = kf.value;
+      }
+      if (label.includes('weight') && weight === 'N/A') {
+        weight = kf.value;
+      }
+      if (label === 'bmi' && bmi === 'N/A') {
+        bmi = kf.value;
       }
     }
   }
 
   return {
     name,
-    gender: getValue('Gender'),
+    gender,
     dateOfBirth,
-    age: getNumericValue('Age'),
-    occupation: getValue('Occupation'),
-    height: getValue('Height'),
-    weight: getValue('Weight'),
-    bmi: getNumericValue('BMI'),
+    age,
+    occupation,
+    height,
+    weight,
+    bmi,
   };
 }
 
