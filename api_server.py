@@ -540,7 +540,7 @@ Always wrap JSON responses in ```json code blocks.
 """
 
 
-@app.get("/")
+@app.get("/", dependencies=[])
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "version": "0.3.0", "name": "WorkbenchIQ"}
