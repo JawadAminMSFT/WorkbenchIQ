@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
+from app.auth import verify_api_key
 from app.config import load_settings, validate_settings
 from app.database.settings import DatabaseSettings
 from app.database.pool import init_pool
@@ -51,6 +52,7 @@ app = FastAPI(
     title="WorkbenchIQ API",
     description="REST API for WorkbenchIQ - Multi-persona document processing workbench",
     version="0.3.0",
+    dependencies=[Depends(verify_api_key)],
 )
 
 # Configure CORS for frontend access
@@ -82,6 +84,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Health check middleware - bypasses auth so Azure probes and CI can reach /
+@app.middleware("http")
+async def health_check_bypass(request: Request, call_next):
+    if request.url.path == "/":
+        return JSONResponse({"status": "ok", "version": "0.3.0", "name": "WorkbenchIQ"})
+    return await call_next(request)
+
+
 # Include modular routers (lazy loading to avoid circular imports)
 try:
     from app.claims.api import router as claims_api_router
@@ -103,6 +114,20 @@ async def startup_event():
     except Exception as e:
         logger.error("Failed to initialize storage provider: %s", e)
         raise
+
+    # Log API key authentication status
+    api_key = os.getenv("API_KEY") or None
+    if api_key:
+        if len(api_key) < 32:
+            logger.error(
+                "API_KEY is set but too short (%d chars). "
+                "Use at least 32 characters for adequate security.",
+                len(api_key),
+            )
+            raise RuntimeError("API_KEY must be at least 32 characters")
+        logger.info("API key authentication enabled")
+    else:
+        logger.warning("API_KEY not set — backend endpoints are UNPROTECTED")
 
     # Initialize database pool if using PostgreSQL
     settings = load_settings()
@@ -522,12 +547,6 @@ Always wrap JSON responses in ```json code blocks.
 5. Use structured JSON formats when they enhance clarity; use plain text for simple answers.
 6. If no relevant policy exists for a topic, say so rather than inventing a policy ID.
 """
-
-
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "version": "0.3.0", "name": "WorkbenchIQ"}
 
 
 # ============================================================================

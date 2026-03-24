@@ -354,6 +354,41 @@ npm run dev
 
 ---
 
+## API Authentication
+
+The backend API supports optional API key authentication via the `X-API-Key` header.
+
+### Setup
+
+Set the `API_KEY` environment variable on **both** the backend and frontend:
+
+```bash
+# In your .env file (must be at least 32 characters)
+API_KEY=your-secret-api-key-at-least-32-characters-long
+```
+
+### Behaviour
+
+| `API_KEY` env var | Result |
+|-------------------|--------|
+| **Not set** | All endpoints are open (development mode). A warning is logged at startup. |
+| **Set** | Every request must include an `X-API-Key` header with the matching key. Invalid/missing keys receive `401 Unauthorized`. |
+
+### How it works
+
+- The frontend Next.js proxy automatically injects the `X-API-Key` header server-side — the key is **never exposed to the browser**.
+- Direct API consumers (scripts, Postman, etc.) must include the header manually:
+
+```bash
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/api/applications
+```
+
+### Production deployment
+
+When deploying to Azure App Service, set `API_KEY` as an app setting. The `scripts/set_webapp_settings.sh` script will pick it up from your `.env` file automatically.
+
+---
+
 ## Usage Guide
 
 ### Underwriter Workflow
@@ -498,6 +533,7 @@ workbenchiq/
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `API_KEY` | No | - | API key for backend authentication (`X-API-Key` header). Must be 32+ chars. Set on both backend and frontend. |
 | `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` | Yes | - | Azure AI Content Understanding endpoint |
 | `AZURE_CONTENT_UNDERSTANDING_API_KEY` | Conditional | - | API key (if not using Azure AD) |
 | `AZURE_CONTENT_UNDERSTANDING_USE_AZURE_AD` | No | `true` | Use Azure AD authentication |

@@ -8,7 +8,18 @@
     },
     "chat.tools.terminal.autoApprove": {
         ".specify/scripts/bash/": true,
-        ".specify/scripts/powershell/": true
+        ".specify/scripts/powershell/": true,
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && python -m pytest tests/test_api_key_auth\\.py -v 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "pip": true,
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && which pip && pip install httpx 2>&1 \\| tail -5$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/home/gizmo/git/WorkbenchIQ/.venv/bin/pip": true,
+        "/home/gizmo/git/WorkbenchIQ/.venv/bin/python": true
     },
     "appService.zipIgnorePattern": [
         "__pycache__{,/**}",

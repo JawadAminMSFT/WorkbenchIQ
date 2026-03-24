@@ -58,6 +58,12 @@ async function proxyRequest(
       'Content-Type': 'application/json',
     };
 
+    // Inject API key for backend authentication (server-side only, never exposed to browser)
+    const apiKey = process.env.API_KEY;
+    if (apiKey) {
+      (headers as Record<string, string>)['X-API-Key'] = apiKey;
+    }
+
     const fetchOptions: RequestInit = {
       method: method || request.method,
       headers,
