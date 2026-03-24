@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import LandingPage from '@/components/LandingPage';
 import WorkbenchView from '@/components/WorkbenchView';
 import TopNav from '@/components/TopNav';
@@ -14,7 +14,24 @@ export default function Home() {
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewType>('landing');
+  const [username, setUsername] = useState<string | null>(null);
   const { currentPersona } = usePersona();
+
+  const fetchUsername = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/check');
+      const data = await res.json();
+      if (data.authEnabled && data.username) {
+        setUsername(data.username);
+      }
+    } catch {
+      // Auth check failed silently
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsername();
+  }, [fetchUsername]);
 
   const fetchApplications = async () => {
     try {
@@ -87,6 +104,7 @@ export default function Home() {
         onSelectApp={handleSelectApp}
         onRefreshApps={fetchApplications}
         loading={loading}
+        username={username}
       />
     </>
   );
