@@ -42,3 +42,14 @@ underwriting-assistant is an AI-powered underwriting assistant for mortgage and 
 **User Preference:**
 - Jawad wants thorough reviews with clear ship/no-ship verdict
 - Concise summaries preferred (2-3 sentences at end, not verbose progress updates)
+
+### 2026-03-25: Backend Engines Wired to API Router
+
+**Status Update:** Ben completed integration of all 4 engines (QuoteExtractor, PlacementEngine, ClientResearchEngine, BrokerStorage helper) into `app/broker/api.py`. Engine stubs previously returning mock data are now fully wired and functional.
+
+**Key Changes:**
+- API response shapes finalized: `POST /api/broker/submissions/{submission_id}/quotes`, `POST /api/broker/submissions/{submission_id}/compare`, `POST /api/broker/clients/{client_id}/research`
+- Error handling: All engines wrapped in try/except for graceful degradation
+- Storage integration: Dict ↔ dataclass conversions working correctly
+
+**Impact on Architecture Review:** MVP now ready for ship (integration gap resolved).

@@ -636,3 +636,100 @@ The Commercial Brokerage persona is **architecturally sound** and **90% complete
 - Adjustable weighting
 
 **Verdict:** This is production-quality scaffolding with fully implemented business logic. The team did excellent work on data modeling, engine design, and frontend components. Just needs final integration wiring.
+
+
+---
+
+
+# Decision: Backend Engine Integration Architecture
+
+**Date:** 2025-01-XX  
+**Author:** Ben (Backend/Scoring Engineer)  
+**Status:** Implemented
+
+## Context
+
+The Commercial Brokerage API endpoints (`app/broker/api.py`) were initially implemented as stubs returning mock data. Real backend engines (QuoteExtractor, PlacementEngine, ClientResearchEngine) existed but were not integrated into the API layer.
+
+## Decision
+
+Wire all backend engines into their respective API endpoints with graceful degradation patterns:
+
+1. **QuoteExtractor** → Quote upload endpoint
+2. **PlacementEngine** → Quote comparison endpoint  
+3. **ClientResearchEngine** → Client research endpoint
+4. **BrokerStorage** → Enhanced with carrier lookup helper
+
+## Implementation Pattern
+
+### Engine Initialization
+- Load `OpenAISettings` once at module level using `load_settings()`
+- Pass settings to engine constructors that require Azure OpenAI access
+- Initialize engines on-demand within endpoints (not as global singletons)
+
+### Data Conversion Layer
+- API endpoints receive/return dicts (JSON-serializable)
+- Engines operate on dataclass instances (type-safe)
+- Convert at API boundary: `dict → dataclass` before engine calls, `dataclass → dict` for responses
+
+### Error Handling Strategy
+- **Graceful degradation**: Wrap engine calls in try/except blocks
+- **Partial success**: Save partial results even if AI features fail
+- **Status tracking**: Use enum values (RAW/EXTRACTED for quotes) to track processing state
+- **Logging**: Log engine failures at ERROR level with full traceback
+- **Fallback responses**: Return basic/mock data if engines unavailable
+
+### Example Pattern (Quote Upload)
+```python
+# Save file and create initial quote with RAW status
+quote = Quote(status=QuoteStatus.RAW.value, ...)
+storage.save_quote(quote)
+
+# Try to extract fields
+try:
+    extractor = QuoteExtractor(settings.openai)
+    fields, confidence = await extractor.extract_quote(...)
+    quote.fields = fields
+    quote.status = QuoteStatus.EXTRACTED.value
+except Exception as e:
+    logger.error(f"Extraction failed: {e}")
+    # Quote stays in RAW status
+
+# Save final state
+storage.save_quote(quote)
+```
+
+## Benefits
+
+1. **Resilience**: API endpoints don't crash if AI engines fail
+2. **Transparency**: Status fields communicate processing state to frontend
+3. **Debuggability**: Full error logging for AI failures
+4. **Progressive enhancement**: Basic functionality works even without AI
+5. **Type safety**: Dataclass validation at engine boundary
+
+## Trade-offs
+
+- **Complexity**: More code vs. "let it crash" approach
+- **Overhead**: Dict ↔ dataclass conversions add some processing
+- **Testing burden**: Must test both success and fallback paths
+
+## Related Files
+
+- `app/broker/api.py` — API endpoints with engine integration
+- `app/broker/quote_extractor.py` — Quote field extraction engine
+- `app/broker/placement_engine.py` — Quote scoring and ranking engine
+- `app/broker/research_engine.py` — Client research engine
+- `app/broker/storage.py` — Data persistence layer
+
+## Open Questions
+
+- Should we add retry logic for transient Azure OpenAI failures?
+- Should we expose engine health status via a separate health check endpoint?
+- Should we track engine performance metrics (latency, success rate)?
+
+## Next Steps
+
+- Monitor production logs for engine failure patterns
+- Consider adding circuit breaker for repeated engine failures
+- Add integration tests for all engine-wired endpoints
+

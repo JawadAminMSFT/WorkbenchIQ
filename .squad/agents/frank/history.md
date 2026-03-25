@@ -31,3 +31,13 @@ underwriting-assistant frontend is a Next.js application with TypeScript and Rea
 - lucide-react for all icons.
 - Tailwind-only styling, no CSS modules.
 - Export pattern: `export { default as X } from './X';` in index.ts.
+
+### 2026-03-25: Backend Engine Integration Complete
+
+**Status Update:** Ben completed wiring of 4 backend engines into API router. Three new endpoints now available for frontend integration:
+- `POST /api/broker/submissions/{submission_id}/quotes` — QuoteExtractor (extracts & saves quote fields)
+- `POST /api/broker/submissions/{submission_id}/compare` — PlacementEngine (returns scored quotes + AI recommendation)
+- `POST /api/broker/clients/{client_id}/research` — ClientResearchEngine (returns research brief markdown)
+
+**For Frontend:** Response shapes finalized. Components can now call real endpoints instead of mock data. BrokerWorkbench, QuoteComparisonTable, and ClientResearchPanel should consume these endpoints (see orchestration log for exact contract).
+
