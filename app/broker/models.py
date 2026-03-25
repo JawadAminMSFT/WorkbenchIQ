@@ -201,6 +201,64 @@ class CarrierProfile:
 
 
 @dataclass
+class ResearchBrief:
+    """Structured client research brief per spec US-2."""
+
+    company_name: str = ""
+
+    # Business Overview
+    business_description: str = ""
+    headquarters: str = ""
+    year_founded: Optional[int] = None
+    employee_count: Optional[int] = None
+    ownership_type: str = ""  # Public, Private, Mutual, etc.
+    key_operations: List[str] = field(default_factory=list)
+
+    # Financial Summary
+    annual_revenue: str = ""
+    revenue_trend: str = ""  # Growing, Stable, Declining
+    credit_rating: str = ""
+    financial_highlights: List[str] = field(default_factory=list)
+
+    # Industry Risk Profile
+    naics_code: str = ""
+    industry_sector: str = ""
+    common_perils: List[str] = field(default_factory=list)
+    loss_frequency: str = ""  # Low, Moderate, High
+    risk_factors: List[str] = field(default_factory=list)
+
+    # Insurance Needs (estimated by line)
+    insurance_needs: List[Dict[str, str]] = field(default_factory=list)
+    # Each: {"line": "...", "priority": "...", "estimated_premium": "...", "rationale": "..."}
+
+    # Carrier Appetite Matches
+    carrier_matches: List[Dict[str, str]] = field(default_factory=list)
+    # Each: {"carrier": "...", "rating": "...", "appetite": "...", "rationale": "..."}
+
+    # Recent News
+    recent_news: List[Dict[str, str]] = field(default_factory=list)
+    # Each: {"date": "...", "headline": "...", "source": "..."}
+
+    # Metadata
+    citations: List[str] = field(default_factory=list)
+    confidence_level: str = ""  # High, Medium, Low
+    data_sources: List[str] = field(default_factory=list)
+    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+@dataclass
+class ResearchDocument:
+    """A document uploaded for pre-research context (AM Best reports, annual reports, etc.)."""
+
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    client_id: str = ""
+    file_name: str = ""
+    document_type: str = ""  # am_best, annual_report, financial_statement, other
+    file_path: str = ""
+    uploaded_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+@dataclass
 class DashboardMetrics:
     total_accounts: int = 0
     total_bound_premium: str = "$0"
