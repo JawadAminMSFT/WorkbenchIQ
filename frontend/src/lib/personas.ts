@@ -3,10 +3,10 @@
  * This module defines the available personas and their UI configurations.
  */
 
-import { ClipboardList, HeartPulse, Home, Car, Stethoscope } from 'lucide-react';
+import { ClipboardList, HeartPulse, Home, Car, Stethoscope, Briefcase } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-export type PersonaId = 'underwriting' | 'life_health_claims' | 'automotive_claims' | 'property_casualty_claims' | 'mortgage';
+export type PersonaId = 'underwriting' | 'life_health_claims' | 'automotive_claims' | 'property_casualty_claims' | 'mortgage' | 'commercial_brokerage';
 
 export interface Persona {
   id: PersonaId;
@@ -82,6 +82,17 @@ export const PERSONAS: Record<PersonaId, PersonaConfig> = {
     primaryColor: '#059669', // Emerald
     secondaryColor: '#10b981',
     accentColor: '#047857',
+  },
+  commercial_brokerage: {
+    id: 'commercial_brokerage',
+    name: 'Commercial Brokerage',
+    description: 'Commercial insurance brokerage workbench for submissions, quote comparison, and placement recommendations',
+    icon: Briefcase,
+    color: '#d97706',
+    enabled: true,
+    primaryColor: '#d97706', // Amber
+    secondaryColor: '#f59e0b',
+    accentColor: '#b45309',
   },
 };
 

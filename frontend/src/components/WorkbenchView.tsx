@@ -24,6 +24,7 @@ import LifeHealthClaimsOverview from '@/components/claims/LifeHealthClaimsOvervi
 import PropertyCasualtyClaimsOverview from '@/components/claims/PropertyCasualtyClaimsOverview';
 import AutomotiveClaimsOverview from '@/components/claims/AutomotiveClaimsOverview';
 import { MortgageWorkbench } from '@/components/mortgage';
+import { BrokerWorkbench } from '@/components/broker';
 import { usePersona } from '@/lib/PersonaContext';
 import { getApplication } from '@/lib/api';
 import type { ApplicationMetadata, ApplicationListItem } from '@/lib/types';
@@ -130,6 +131,9 @@ export default function WorkbenchView({
         }
         if (currentPersona === 'mortgage') {
           return <MortgageWorkbench applicationId={selectedApp.id} />;
+        }
+        if (currentPersona === 'commercial_brokerage') {
+          return <BrokerWorkbench applicationId={selectedApp.id} />;
         }
         // Default: Underwriting overview
         return renderUnderwritingOverview();

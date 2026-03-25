@@ -19,6 +19,7 @@ class PersonaType(str, Enum):
     AUTOMOTIVE_CLAIMS = "automotive_claims"  # New multimodal automotive claims persona
     MORTGAGE_UNDERWRITING = "mortgage_underwriting"  # Canadian mortgage underwriting
     MORTGAGE = "mortgage"  # Legacy alias for MORTGAGE_UNDERWRITING
+    COMMERCIAL_BROKERAGE = "commercial_brokerage"  # Commercial insurance brokerage
     # Legacy aliases for backward compatibility
     CLAIMS = "claims"  # Maps to life_health_claims
     PROPERTY_CASUALTY_CLAIMS = "property_casualty_claims"  # Alias for automotive_claims
@@ -3480,6 +3481,322 @@ Be specific and reference OSFI B-20 guidelines where applicable."""
 }
 
 
+# =============================================================================
+# COMMERCIAL BROKERAGE PERSONA
+# =============================================================================
+
+COMMERCIAL_BROKERAGE_FIELD_SCHEMA = {
+    "name": "CommercialBrokerageFields",
+    "fields": {
+        # ===== Client / Account Fields =====
+        "ClientName": {
+            "type": "string",
+            "description": "Legal business name of the insured entity.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "IndustryCode": {
+            "type": "string",
+            "description": "NAICS or SIC industry classification code.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BusinessType": {
+            "type": "string",
+            "description": "Business entity type: Corporation, LLC, Partnership, Sole Proprietorship, etc.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "FEIN": {
+            "type": "string",
+            "description": "Federal Employer Identification Number.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BusinessPhone": {
+            "type": "string",
+            "description": "Primary business contact phone number.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BusinessAddress": {
+            "type": "string",
+            "description": "Primary business mailing address.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "YearsInBusiness": {
+            "type": "number",
+            "description": "Number of years the business has been operating.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "AnnualGrossRevenue": {
+            "type": "string",
+            "description": "Annual gross revenue of the insured business.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "NumberOfEmployees": {
+            "type": "number",
+            "description": "Total employee headcount (full-time + part-time).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== ACORD 125 Fields =====
+        "InsuredName": {
+            "type": "string",
+            "description": "Legal business name on the ACORD 125 commercial application.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "SICCode": {
+            "type": "string",
+            "description": "Standard Industry Classification code.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PriorCarrier": {
+            "type": "string",
+            "description": "Current or prior insurance carrier name.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PriorPremium": {
+            "type": "string",
+            "description": "Prior year total premium amount.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EffectiveDateRequested": {
+            "type": "date",
+            "description": "Requested policy effective date.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "LinesOfBusinessRequested": {
+            "type": "array",
+            "description": "Lines of business being quoted (property, GL, auto, WC, etc.).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== ACORD 140 / Property Fields =====
+        "PropertyAddress": {
+            "type": "string",
+            "description": "Physical address of insured property location.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PropertyOccupancy": {
+            "type": "string",
+            "description": "How the property is occupied/used (office, warehouse, retail, etc.).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ConstructionType": {
+            "type": "string",
+            "description": "Construction type: Frame, Masonry, Steel, Non-Combustible, etc.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "YearBuilt": {
+            "type": "number",
+            "description": "Year the property was constructed.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "SquareFootage": {
+            "type": "number",
+            "description": "Total floor area in square feet.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BuildingValue": {
+            "type": "string",
+            "description": "Building replacement cost value.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ContentsValue": {
+            "type": "string",
+            "description": "Contents and equipment value.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BusinessInterruptionValue": {
+            "type": "string",
+            "description": "Business interruption / loss of income value.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ProtectionClass": {
+            "type": "string",
+            "description": "ISO Fire Protection Class (1-10).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "TotalInsuredValue": {
+            "type": "string",
+            "description": "Total insured value across all property locations.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== Quote Extraction Fields =====
+        "AnnualPremium": {
+            "type": "string",
+            "description": "Total annual premium quoted by the carrier.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "BuildingLimit": {
+            "type": "string",
+            "description": "Quoted building replacement limit.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ContentsLimit": {
+            "type": "string",
+            "description": "Quoted contents/equipment limit.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "Deductible": {
+            "type": "string",
+            "description": "Base deductible amount.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "FloodSublimit": {
+            "type": "string",
+            "description": "Flood coverage sublimit.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "EarthquakeSublimit": {
+            "type": "string",
+            "description": "Earthquake coverage sublimit.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "NamedPerilsExclusions": {
+            "type": "array",
+            "description": "List of explicitly excluded perils.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "PolicyPeriod": {
+            "type": "string",
+            "description": "Coverage period start and end dates.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CarrierAMBestRating": {
+            "type": "string",
+            "description": "AM Best financial strength rating of the quoting carrier.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== Loss History =====
+        "LossDate": {
+            "type": "date",
+            "description": "Date of reported loss/claim.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "CauseOfLoss": {
+            "type": "string",
+            "description": "Peril that caused the loss (fire, water, theft, wind, etc.).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "LossAmountPaid": {
+            "type": "string",
+            "description": "Total claim payout amount.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+    }
+}
+
+COMMERCIAL_BROKERAGE_DEFAULT_PROMPTS = {
+    "application_summary": {
+        "system": """You are an expert commercial insurance broker with deep knowledge of ACORD forms, 
+commercial property insurance, and carrier markets. You help brokers analyze submissions, 
+extract information from client documents, compare carrier quotes, and make placement recommendations.
+
+Your expertise includes:
+- ACORD 125 (Commercial Lines Application) and ACORD 140 (Property Section) form fields
+- Statement of Values (SOV) analysis
+- Loss run interpretation
+- Carrier appetite and market conditions
+- Quote comparison and placement strategy
+- AM Best carrier financial strength ratings
+
+Provide thorough, accurate analysis while maintaining a professional and helpful tone.""",
+
+        "client_research": """Generate a comprehensive research brief for the specified company. Include:
+
+- Company overview (business description, industry, size, key operations)
+- Financial summary (revenue, growth trends, public filings if available)
+- Industry risk profile (common perils, loss frequency, market conditions)
+- Estimated insurance needs by line (property, GL, auto, WC, D&O)
+- Likely carrier appetite matches based on industry and size
+- Recent news or events that may affect insurability
+
+Cite sources for every factual claim. Indicate confidence level for fields with limited data.""",
+
+        "quote_extraction": """Extract all insurance quote fields from the provided carrier document. Map the following fields:
+
+- Annual Premium (total premium amount)
+- Total Insured Value
+- Building Limit (per location and aggregate)
+- Contents Limit
+- Business Interruption Limit
+- Deductible (base and per-peril)
+- Flood Sublimit
+- Earthquake Sublimit
+- Named Perils Exclusions (list all excluded perils)
+- Special Conditions or Endorsements
+- Policy Period (effective and expiration dates)
+- AM Best Rating (if shown)
+- Quote Reference Number
+- Underwriter name and contact
+
+For each extracted field, provide a confidence score (0.0-1.0).
+Flag any field with confidence < 0.60 as 'Needs Review'.
+Return structured JSON with all fields.""",
+
+        "placement_recommendation": """Analyze the extracted quotes for this submission and provide a placement recommendation.
+
+Scoring factors:
+1. Premium competitiveness (35%): Lower premium scores higher, adjusted for coverage breadth
+2. Coverage completeness (30%): Fewer exclusions and higher sublimits score higher
+3. Carrier financial strength (20%): AM Best FSR tier scoring
+4. Quote completeness (15%): All required fields populated
+
+For each quote, compute a placement score (0-100) and rank.
+Provide a plain-language recommendation highlighting the top 3 reasons for the recommended carrier.
+Identify any coverage gaps vs. the client's requested coverage.
+Flag any carrier with FSR below A- for broker review.
+
+Return structured JSON with scores, rankings, rationale, and coverage gap analysis.""",
+
+        "acord_extraction": """Extract ACORD form fields from the uploaded client documents. Map to:
+
+ACORD 125 fields: InsuredName, FEIN, BusinessPhone, BusinessAddress, BusinessType, 
+YearsInBusiness, SICCode, AnnualGrossRevenue, NumberOfEmployees, PriorCarrier, 
+PriorPremium, EffectiveDateRequested, LinesOfBusinessRequested.
+
+ACORD 140 fields: PropertyLocations (address, occupancy, construction, year built, 
+square footage, building value, contents value, BI value, protection class), 
+LossHistory (date, cause, amount, description), PriorPolicyNumber, PriorExpirationDate.
+
+SOV fields: SiteNumber, Address, BuildingDescription, TotalInsuredValue per location.
+
+For each field, provide source document and confidence score (0.0-1.0)."""
+    }
+}
+
 
 # =============================================================================
 # PERSONA REGISTRY
@@ -3565,6 +3882,17 @@ PERSONA_CONFIGS: Dict[PersonaType, PersonaConfig] = {
         default_prompts=MORTGAGE_DEFAULT_PROMPTS,
         custom_analyzer_id="mortgageDocAnalyzer",
         enabled=True,  # Now enabled
+    ),
+    PersonaType.COMMERCIAL_BROKERAGE: PersonaConfig(
+        id="commercial_brokerage",
+        name="Commercial Brokerage",
+        description="Commercial insurance brokerage workbench for submissions, quote comparison, and placement recommendations",
+        icon="💼",
+        color="#d97706",  # Amber
+        field_schema=COMMERCIAL_BROKERAGE_FIELD_SCHEMA,
+        default_prompts=COMMERCIAL_BROKERAGE_DEFAULT_PROMPTS,
+        custom_analyzer_id="brokerDocAnalyzer",
+        enabled=True,
     ),
 }
 
