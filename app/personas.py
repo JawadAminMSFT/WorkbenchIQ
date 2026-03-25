@@ -3580,10 +3580,16 @@ def normalize_persona_id(persona_id: str) -> str:
         persona_id: The persona ID to normalize
         
     Returns:
-        The normalized persona ID (e.g., 'claims' -> 'life_health_claims')
+        The normalized persona ID (e.g., 'claims' -> 'life_health_claims',
+        'mortgage' -> 'mortgage_underwriting')
     """
-    if persona_id and persona_id.lower() == 'claims':
+    if not persona_id:
+        return persona_id
+    lower = persona_id.lower()
+    if lower == 'claims':
         return 'life_health_claims'
+    if lower == 'mortgage':
+        return 'mortgage_underwriting'
     return persona_id
 
 

@@ -8,7 +8,46 @@
     },
     "chat.tools.terminal.autoApprove": {
         ".specify/scripts/bash/": true,
-        ".specify/scripts/powershell/": true
+        ".specify/scripts/powershell/": true,
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && python -m pytest tests/test_storage_auth\\.py -v 2>&1 \\| tail -60$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && python -m pytest tests/test_api_key_auth\\.py -v 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "pip": true,
+        "/^source /home/gizmo/git/WorkbenchIQ/\\.venv/bin/activate && pip install pytest 2>&1 \\| tail -5$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^which python && python --version && pip --version 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && which pip && pip install httpx 2>&1 \\| tail -5$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/home/gizmo/git/WorkbenchIQ/.venv/bin/pip": true,
+        "/^cd /home/gizmo/git/WorkbenchIQ && source \\.venv/bin/activate && python -m pytest tests/test_storage_auth\\.py -v 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /home/gizmo/git/WorkbenchIQ && python -m pytest tests/ -v --timeout=60 2>&1 \\| tail -60$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /home/gizmo/git/WorkbenchIQ && python -m pytest tests/ -v 2>&1 \\| tail -80$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /home/gizmo/git/WorkbenchIQ && python -m pytest tests/ -v --ignore=tests/test_auto_claims_phase7_api\\.py --ignore=tests/test_mortgage_phase9_api\\.py 2>&1 \\| tail -30$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/home/gizmo/git/WorkbenchIQ/.venv/bin/python": true
     },
     "appService.zipIgnorePattern": [
         "__pycache__{,/**}",

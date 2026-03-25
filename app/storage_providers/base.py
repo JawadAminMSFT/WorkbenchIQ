@@ -24,9 +24,14 @@ class StorageSettings:
     azure_account_name: Optional[str] = None
     azure_account_key: Optional[str] = None
     azure_container_name: Optional[str] = None
-    azure_connection_string: Optional[str] = None
     azure_timeout_seconds: int = 30
     azure_retry_total: int = 3
+    
+    # Auth mode: "default" (DefaultAzureCredential only) or "key" (account key only)
+    azure_storage_auth_mode: str = "default"
+    # When False (default), the provider will NOT attempt to create missing containers.
+    # Set to True only in dev / migration scenarios where the identity has create perms.
+    azure_storage_allow_create_container: bool = False
     
     # Optional public URL for file access
     public_base_url: Optional[str] = None
@@ -34,11 +39,19 @@ class StorageSettings:
     @classmethod
     def from_env(cls) -> "StorageSettings":
         """Load storage settings from environment variables."""
-        backend_str = os.getenv("STORAGE_BACKEND", "local").lower()
+        backend_str = os.getenv("STORAGE_BACKEND", "azure_blob").lower()
         try:
             backend = StorageBackend(backend_str)
         except ValueError:
-            backend = StorageBackend.LOCAL
+            backend = StorageBackend.AZURE_BLOB
+        
+        auth_mode = os.getenv("AZURE_STORAGE_AUTH_MODE", "default").lower()
+        if auth_mode not in ("default", "key"):
+            auth_mode = "default"
+        
+        allow_create = os.getenv(
+            "AZURE_STORAGE_ALLOW_CREATE_CONTAINER", "false"
+        ).lower() in ("true", "1", "yes")
         
         return cls(
             backend=backend,
@@ -46,9 +59,10 @@ class StorageSettings:
             azure_account_name=os.getenv("AZURE_STORAGE_ACCOUNT_NAME"),
             azure_account_key=os.getenv("AZURE_STORAGE_ACCOUNT_KEY"),
             azure_container_name=os.getenv("AZURE_STORAGE_CONTAINER_NAME"),
-            azure_connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
             azure_timeout_seconds=int(os.getenv("AZURE_STORAGE_TIMEOUT_SECONDS", "30")),
             azure_retry_total=int(os.getenv("AZURE_STORAGE_RETRY_TOTAL", "3")),
+            azure_storage_auth_mode=auth_mode,
+            azure_storage_allow_create_container=allow_create,
             public_base_url=os.getenv("PUBLIC_FILES_BASE_URL"),
         )
 

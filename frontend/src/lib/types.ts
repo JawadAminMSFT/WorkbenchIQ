@@ -585,3 +585,72 @@ export interface PolicyResponse {
   policy: UnderwritingPolicy;
   message?: string;
 }
+
+// ============================================================================
+// Property Deep Dive Types (Mortgage)
+// ============================================================================
+
+export interface PropertyDeepDiveComparable {
+  address: string;
+  sold_price: number;
+  sold_date: string;
+  distance_km: number;
+  bedrooms: number;
+  bathrooms: number;
+  living_area: number;
+  price_psf: number;
+  similarity_score: number;
+}
+
+export interface PropertyPriceTrend {
+  area_name: string;
+  avg_price_current: number;
+  avg_price_1yr_ago: number;
+  avg_price_3yr_ago: number;
+  yoy_change_pct: number;
+  cagr_3yr_pct: number;
+  trend_direction: 'up' | 'down' | 'stable';
+}
+
+export interface PropertyFeature {
+  category: string;
+  feature: string;
+  value: string;
+  data_point_source?: string;
+}
+
+export interface PropertyPhoto {
+  url: string;
+  caption?: string;
+  category: 'exterior' | 'interior' | 'aerial' | 'floorplan';
+}
+
+export interface PropertyDeepDiveData {
+  property_summary: {
+    address: string;
+    property_type: string;
+    purchase_price: number;
+    appraised_value?: number;
+    year_built?: number;
+    lot_size?: string;
+    living_area?: number;
+    bedrooms?: number;
+    bathrooms?: number;
+    garages?: number;
+    parking?: string;
+  };
+  risk_classification: 'low' | 'medium' | 'high';
+  risk_rationale?: string;
+  auto_appraisal_eligible: boolean;
+  auto_appraisal_recommendation: string;
+  comparable_sales: PropertyDeepDiveComparable[];
+  price_trend: PropertyPriceTrend;
+  property_features: PropertyFeature[];
+  appraisal_data_points?: Record<string, string>;
+  mls_listing_url?: string;
+  mls_number?: string;
+  photos: PropertyPhoto[];
+  needs_physical_appraisal: boolean;
+  physical_appraisal_reason?: string;
+  warning?: string;
+}

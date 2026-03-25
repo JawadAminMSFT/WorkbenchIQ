@@ -1,4 +1,14 @@
-"""Azure Blob Storage provider implementation."""
+"""Azure Blob Storage provider implementation.
+
+Supports two explicit authentication methods:
+
+1. **DefaultAzureCredential (DAC)** – Managed identity / developer credentials.
+   No secrets required; relies on ``azure-identity``.  This is the default.
+2. **Account key** – ``AZURE_STORAGE_ACCOUNT_NAME`` + ``AZURE_STORAGE_ACCOUNT_KEY``.
+
+Set ``AZURE_STORAGE_AUTH_MODE`` to ``default`` (DAC) or ``key`` (account key).
+There is no automatic fallback between the two methods.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +29,15 @@ class AzureBlobStorageProvider:
         {container}/applications/{app_id}/files/{filename}
         {container}/applications/{app_id}/metadata.json
         {container}/applications/{app_id}/content_understanding.json
+
+    Authentication (controlled by auth_mode):
+        "default" → DefaultAzureCredential only.
+        "key"     → account key only.
     """
+
+    # Friendly labels for log messages (no secrets)
+    _AUTH_LABEL_DAC = "DefaultAzureCredential"
+    _AUTH_LABEL_KEY = "account_key"
     
     def __init__(
         self, 
@@ -54,47 +72,153 @@ class AzureBlobStorageProvider:
             retry_total=settings.azure_retry_total
         )
         
-        # Create blob service client
-        if settings.azure_connection_string:
-            self._blob_service = BlobServiceClient.from_connection_string(
-                settings.azure_connection_string,
-                retry_policy=retry_policy,
-                connection_timeout=settings.azure_timeout_seconds,
-                read_timeout=settings.azure_timeout_seconds,
-            )
-        elif settings.azure_account_name and settings.azure_account_key:
-            account_url = f"https://{settings.azure_account_name}.blob.core.windows.net"
-            self._blob_service = BlobServiceClient(
-                account_url=account_url,
-                credential=settings.azure_account_key,
-                retry_policy=retry_policy,
-                connection_timeout=settings.azure_timeout_seconds,
-                read_timeout=settings.azure_timeout_seconds,
-            )
-        else:
-            raise ValueError(
-                "Azure Blob Storage requires either AZURE_STORAGE_CONNECTION_STRING "
-                "or both AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY"
-            )
-        
-        # Get container client and ensure it exists
+        # Resolve blob service client using DAC-first strategy
+        self._blob_service, self._resolved_auth = self._resolve_blob_service(
+            settings, retry_policy
+        )
+
+        # Get container client and conditionally ensure it exists
         self._container_client = self._blob_service.get_container_client(self._container_name)
         self._ensure_container_exists()
         
         logger.info(
-            "Initialized Azure Blob Storage provider for container '%s'",
-            self._container_name
+            "Azure Blob Storage provider ready  container='%s'  auth=%s  "
+            "allow_create_container=%s",
+            self._container_name,
+            self._resolved_auth,
+            settings.azure_storage_allow_create_container,
         )
-    
+
+    # ------------------------------------------------------------------
+    # Auth resolution
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _resolve_blob_service(
+        cls, settings: StorageSettings, retry_policy: Any
+    ) -> tuple:
+        """Return (BlobServiceClient, auth_label) for the configured auth mode.
+
+        ``auth_mode == "default"`` uses DefaultAzureCredential exclusively.
+        ``auth_mode == "key"`` uses account name + key exclusively.
+
+        There is no automatic fallback between methods.
+        """
+        from azure.storage.blob import BlobServiceClient
+
+        mode = settings.azure_storage_auth_mode
+        timeout = settings.azure_timeout_seconds
+
+        common_kwargs = dict(
+            retry_policy=retry_policy,
+            connection_timeout=timeout,
+            read_timeout=timeout,
+        )
+
+        # --- explicit: key ---
+        if mode == "key":
+            if not (settings.azure_account_name and settings.azure_account_key):
+                raise ValueError(
+                    "AZURE_STORAGE_AUTH_MODE is 'key' but "
+                    "AZURE_STORAGE_ACCOUNT_NAME and/or AZURE_STORAGE_ACCOUNT_KEY "
+                    "are not set."
+                )
+            account_url = f"https://{settings.azure_account_name}.blob.core.windows.net"
+            client = BlobServiceClient(
+                account_url=account_url,
+                credential=settings.azure_account_key,
+                **common_kwargs,
+            )
+            return client, cls._AUTH_LABEL_KEY
+
+        # --- default: DAC only ---
+        return cls._resolve_dac(settings, common_kwargs)
+
+    @classmethod
+    def _resolve_dac(
+        cls, settings: StorageSettings, common_kwargs: dict
+    ) -> tuple:
+        """Authenticate using DefaultAzureCredential only (no fallback)."""
+        from azure.storage.blob import BlobServiceClient
+
+        if not settings.azure_account_name:
+            raise ValueError(
+                "AZURE_STORAGE_AUTH_MODE is 'default' (DefaultAzureCredential) "
+                "but AZURE_STORAGE_ACCOUNT_NAME is not set."
+            )
+
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError:
+            raise ImportError(
+                "azure-identity is required for DefaultAzureCredential auth. "
+                "Install it with: pip install azure-identity  "
+                "Or set AZURE_STORAGE_AUTH_MODE=key to use account key auth."
+            )
+
+        account_url = (
+            f"https://{settings.azure_account_name}.blob.core.windows.net"
+        )
+        credential = DefaultAzureCredential()
+        client = BlobServiceClient(
+            account_url=account_url,
+            credential=credential,
+            **common_kwargs,
+        )
+        # Probe connectivity – use a data-plane call that only needs
+        # "Storage Blob Data Contributor" (get_account_information requires
+        # the management-plane "Storage Account Contributor" role).
+        try:
+            container = client.get_container_client(
+                settings.azure_container_name
+            )
+            container.get_container_properties()
+        except Exception as exc:
+            raise ValueError(
+                f"DefaultAzureCredential authentication failed: {exc}. "
+                "Ensure the identity has the 'Storage Blob Data Contributor' "
+                "role on the storage account, or set "
+                "AZURE_STORAGE_AUTH_MODE=key to use account key."
+            ) from exc
+
+        logger.info("Authenticated via DefaultAzureCredential")
+        return client, cls._AUTH_LABEL_DAC
+
+    # ------------------------------------------------------------------
+    # Container lifecycle
+    # ------------------------------------------------------------------
+
     def _ensure_container_exists(self) -> None:
-        """Ensure the storage container exists, creating it if necessary."""
-        from azure.core.exceptions import ResourceExistsError
+        """Optionally create the storage container.
+
+        By default (``allow_create_container=False``), this is a no-op so
+        that the identity only needs data-plane permissions (least-privilege).
+        Set ``AZURE_STORAGE_ALLOW_CREATE_CONTAINER=true`` to enable auto-creation.
+        """
+        if not self._settings.azure_storage_allow_create_container:
+            logger.debug(
+                "Container auto-creation disabled; assuming '%s' exists",
+                self._container_name,
+            )
+            return
+
+        from azure.core.exceptions import HttpResponseError, ResourceExistsError
         
         try:
             self._container_client.create_container()
             logger.info("Created container '%s'", self._container_name)
         except ResourceExistsError:
             logger.debug("Container '%s' already exists", self._container_name)
+        except HttpResponseError as exc:
+            if exc.status_code == 403:
+                logger.warning(
+                    "Insufficient permissions to create container '%s' "
+                    "(HTTP 403). Ensure the container already exists or "
+                    "grant the identity the Storage Blob Data Contributor role.",
+                    self._container_name,
+                )
+            else:
+                raise
     
     def _get_blob_path(self, app_id: str, *parts: str) -> str:
         """Construct a blob path for an application."""

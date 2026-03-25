@@ -532,27 +532,33 @@ def _run_single_prompt(
     try:
         parsed = json.loads(content_to_parse)
     except json.JSONDecodeError:
-        # Check if this looks like truncated JSON (max_tokens hit)
-        usage = result.get("usage", {})
-        completion_tokens = usage.get("completion_tokens", 0)
-        is_likely_truncated = (
-            max_tokens
-            and completion_tokens >= max_tokens - 5
-        )
-        if is_likely_truncated:
-            logger.warning(
-                "Prompt %s.%s: response likely truncated at %d tokens "
-                "(max_tokens=%s). Attempting JSON repair.",
-                section, subsection, completion_tokens, max_tokens,
+        # Strip single-line JS-style comments (// ...) that LLMs sometimes add
+        import re
+        stripped = re.sub(r'//[^\n]*', '', content_to_parse)
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            # Check if this looks like truncated JSON (max_tokens hit)
+            usage = result.get("usage", {})
+            completion_tokens = usage.get("completion_tokens", 0)
+            is_likely_truncated = (
+                max_tokens
+                and completion_tokens >= max_tokens - 5
             )
-            parsed = _try_repair_truncated_json(content_to_parse)
-            if "_error" in parsed:
-                parsed["_error"] = (
-                    f"JSON truncated at {completion_tokens} tokens "
-                    f"(max_tokens={max_tokens}). {parsed['_error']}"
+            if is_likely_truncated:
+                logger.warning(
+                    "Prompt %s.%s: response likely truncated at %d tokens "
+                    "(max_tokens=%s). Attempting JSON repair.",
+                    section, subsection, completion_tokens, max_tokens,
                 )
-        else:
-            parsed = {"_raw": raw_content, "_error": "Failed to parse JSON response."}
+                parsed = _try_repair_truncated_json(content_to_parse)
+                if "_error" in parsed:
+                    parsed["_error"] = (
+                        f"JSON truncated at {completion_tokens} tokens "
+                        f"(max_tokens={max_tokens}). {parsed['_error']}"
+                    )
+            else:
+                parsed = {"_raw": raw_content, "_error": "Failed to parse JSON response."}
 
     return {
         "section": section,

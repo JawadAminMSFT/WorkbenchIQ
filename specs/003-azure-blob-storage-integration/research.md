@@ -155,7 +155,7 @@ Note: The `data/` prefix is a local storage root concept; blob storage uses cont
 **Environment Variables**:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `STORAGE_BACKEND` | No | `local` | Backend type: `local` or `azure_blob` |
+| `STORAGE_BACKEND` | No | `azure_blob` | Backend type: `azure_blob` or `local` |
 | `AZURE_STORAGE_ACCOUNT_NAME` | If azure_blob | - | Storage account name |
 | `AZURE_STORAGE_ACCOUNT_KEY` | If azure_blob | - | Storage account key |
 | `AZURE_STORAGE_CONTAINER_NAME` | No | `workbenchiq-data` | Blob container name |

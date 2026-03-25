@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
+from app.auth import verify_api_key
 from app.config import load_settings, validate_settings
 from app.database.settings import DatabaseSettings
 from app.database.pool import init_pool
@@ -51,6 +52,7 @@ app = FastAPI(
     title="WorkbenchIQ API",
     description="REST API for WorkbenchIQ - Multi-persona document processing workbench",
     version="0.3.0",
+    dependencies=[Depends(verify_api_key)],
 )
 
 # Configure CORS for frontend access
@@ -82,6 +84,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Health check middleware - bypasses auth so Azure probes and CI can reach /
+@app.middleware("http")
+async def health_check_bypass(request: Request, call_next):
+    if request.url.path == "/":
+        return JSONResponse({"status": "ok", "version": "0.3.0", "name": "WorkbenchIQ"})
+    return await call_next(request)
+
+
 # Include modular routers (lazy loading to avoid circular imports)
 try:
     from app.claims.api import router as claims_api_router
@@ -99,10 +110,30 @@ async def startup_event():
     try:
         storage_settings = StorageSettings.from_env()
         init_storage_provider(storage_settings)
-        logger.info("Storage provider initialized: %s", storage_settings.backend.value)
+        logger.info(
+            "Storage provider initialized: backend=%s  auth_mode=%s  "
+            "allow_create_container=%s",
+            storage_settings.backend.value,
+            storage_settings.azure_storage_auth_mode,
+            storage_settings.azure_storage_allow_create_container,
+        )
     except Exception as e:
         logger.error("Failed to initialize storage provider: %s", e)
         raise
+
+    # Log API key authentication status
+    api_key = os.getenv("API_KEY") or None
+    if api_key:
+        if len(api_key) < 32:
+            logger.error(
+                "API_KEY is set but too short (%d chars). "
+                "Use at least 32 characters for adequate security.",
+                len(api_key),
+            )
+            raise RuntimeError("API_KEY must be at least 32 characters")
+        logger.info("API key authentication enabled")
+    else:
+        logger.warning("API_KEY not set — backend endpoints are UNPROTECTED")
 
     # Initialize database pool if using PostgreSQL
     settings = load_settings()
@@ -249,6 +280,10 @@ def application_to_dict(app_md: ApplicationMetadata) -> dict:
 # Background Processing Helpers
 # ============================================================================
 
+# Limit concurrent CU/LLM processing to avoid rate-limiting the shared
+# GPT-4.1 deployment used by the Content Understanding analyzer.
+_processing_semaphore = asyncio.Semaphore(1)
+
 def _handle_task_exception(task: asyncio.Task):
     """Callback to log exceptions from background tasks."""
     try:
@@ -261,89 +296,91 @@ def _handle_task_exception(task: asyncio.Task):
 
 async def run_extraction_background(app_id: str):
     """Run content extraction in background and update status."""
-    try:
-        logger.info("Starting background extraction for application %s", app_id)
-        settings = load_settings()
-        app_md = load_application(settings.app.storage_root, app_id)
-        if not app_md:
-            logger.error("Background extraction: Application %s not found", app_id)
-            return
-
-        # Update status to extracting
-        app_md.processing_status = "extracting"
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-
-        # Run extraction in thread pool
-        logger.info("Running content understanding for application %s", app_id)
-        app_md = await asyncio.to_thread(
-            run_content_understanding_for_files, settings, app_md
-        )
-        
-        # Update status and save
-        app_md.processing_status = None
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-        
-        logger.info("Background extraction completed for application %s", app_id)
-
-    except Exception as e:
-        logger.error("Background extraction failed for %s: %s", app_id, e, exc_info=True)
+    async with _processing_semaphore:
         try:
+            logger.info("Starting background extraction for application %s", app_id)
             settings = load_settings()
             app_md = load_application(settings.app.storage_root, app_id)
-            if app_md:
-                app_md.processing_status = "error"
-                app_md.processing_error = str(e)
-                save_application_metadata(settings.app.storage_root, app_md)
-        except Exception:
-            pass
+            if not app_md:
+                logger.error("Background extraction: Application %s not found", app_id)
+                return
+
+            # Update status to extracting
+            app_md.processing_status = "extracting"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+
+            # Run extraction in thread pool
+            logger.info("Running content understanding for application %s", app_id)
+            app_md = await asyncio.to_thread(
+                run_content_understanding_for_files, settings, app_md
+            )
+            
+            # Update status and save
+            app_md.processing_status = None
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Background extraction completed for application %s", app_id)
+
+        except Exception as e:
+            logger.error("Background extraction failed for %s: %s", app_id, e, exc_info=True)
+            try:
+                settings = load_settings()
+                app_md = load_application(settings.app.storage_root, app_id)
+                if app_md:
+                    app_md.processing_status = "error"
+                    app_md.processing_error = str(e)
+                    save_application_metadata(settings.app.storage_root, app_md)
+            except Exception:
+                pass
 
 
 async def run_analysis_background(app_id: str, sections: Optional[List[str]] = None, processing_mode: Optional[str] = None):
     """Run analysis in background and update status."""
-    try:
-        logger.info("Starting background analysis for application %s (mode: %s)", app_id, processing_mode or "auto")
-        settings = load_settings()
-        app_md = load_application(settings.app.storage_root, app_id)
-        if not app_md:
-            logger.error("Background analysis: Application %s not found", app_id)
-            return
-
-        # Update status to analyzing
-        app_md.processing_status = "analyzing"
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-
-        # Run analysis in thread pool
-        logger.info("Running underwriting prompts for application %s", app_id)
-        app_md = await asyncio.to_thread(
-            run_underwriting_prompts,
-            settings,
-            app_md,
-            sections_to_run=sections,
-            max_workers_per_section=4,
-            processing_mode_override=processing_mode,
-        )
-        
-        # Update status and save
-        app_md.processing_status = None
-        app_md.processing_error = None
-        save_application_metadata(settings.app.storage_root, app_md)
-        
-        logger.info("Background analysis completed for application %s (mode: %s)", app_id, app_md.processing_mode)
-
-    except Exception as e:
-        logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
+    async with _processing_semaphore:
         try:
+            logger.info("Starting background analysis for application %s (mode: %s)", app_id, processing_mode or "auto")
             settings = load_settings()
             app_md = load_application(settings.app.storage_root, app_id)
-            if app_md:
-                app_md.processing_status = "error"
-                app_md.processing_error = str(e)
-                save_application_metadata(settings.app.storage_root, app_md)
-        except Exception:
-            pass
+            if not app_md:
+                logger.error("Background analysis: Application %s not found", app_id)
+                return
+
+            # Update status to analyzing
+            app_md.processing_status = "analyzing"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+
+            # Run analysis in thread pool
+            logger.info("Running underwriting prompts for application %s", app_id)
+            app_md = await asyncio.to_thread(
+                run_underwriting_prompts,
+                settings,
+                app_md,
+                sections_to_run=sections,
+                max_workers_per_section=4,
+                processing_mode_override=processing_mode,
+            )
+            
+            # Update status and save
+            app_md.processing_status = None
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            logger.info("Background analysis completed for application %s (mode: %s)", app_id, app_md.processing_mode)
+
+        except Exception as e:
+            logger.error("Background analysis failed for %s: %s", app_id, e, exc_info=True)
+            try:
+                settings = load_settings()
+                app_md = load_application(settings.app.storage_root, app_id)
+                if app_md:
+                    app_md.processing_status = "error"
+                    app_md.processing_error = str(e)
+                    save_application_metadata(settings.app.storage_root, app_md)
+            except Exception:
+                pass
 
 
 async def run_extract_and_analyze_background(app_id: str, processing_mode: Optional[str] = None):
@@ -522,12 +559,6 @@ Always wrap JSON responses in ```json code blocks.
 5. Use structured JSON formats when they enhance clarity; use plain text for simple answers.
 6. If no relevant policy exists for a topic, say so rather than inventing a policy ID.
 """
-
-
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "version": "0.3.0", "name": "WorkbenchIQ"}
 
 
 # ============================================================================
@@ -3212,19 +3243,20 @@ async def list_mortgage_applications():
         settings = load_settings()
         apps = list_applications(settings.app.storage_root)
         
-        # Filter to mortgage persona
+        # Filter to mortgage persona (match both 'mortgage' and 'mortgage_underwriting')
+        mortgage_personas = {'mortgage', 'mortgage_underwriting'}
         mortgage_apps = [
             app for app in apps
-            if getattr(app, 'persona', None) == 'mortgage_underwriting'
+            if (app.get('persona') if isinstance(app, dict) else getattr(app, 'persona', None)) in mortgage_personas
         ]
         
         return {
             "applications": [
                 {
-                    "id": app.id,
-                    "created_at": app.created_at,
-                    "status": app.status,
-                    "external_reference": app.external_reference,
+                    "id": app.get("id") if isinstance(app, dict) else app.id,
+                    "created_at": app.get("created_at") if isinstance(app, dict) else app.created_at,
+                    "status": app.get("status") if isinstance(app, dict) else app.status,
+                    "external_reference": app.get("external_reference") if isinstance(app, dict) else app.external_reference,
                 }
                 for app in mortgage_apps
             ],
@@ -3256,6 +3288,9 @@ def _parse_currency(value) -> float:
         return 0.0
     if isinstance(value, (int, float)):
         return float(value)
+    if isinstance(value, dict):
+        # Handle nested dicts (e.g. Claimant objects) gracefully
+        return 0.0
     if isinstance(value, str):
         # Remove currency symbols, commas, spaces
         cleaned = value.replace("$", "").replace(",", "").replace(" ", "").strip()
@@ -3297,6 +3332,13 @@ async def get_mortgage_application(app_id: str):
         # Extract data from extracted_fields (format: "filename:FieldName" -> {value, confidence, ...})
         ef = app_md.extracted_fields or {}
         
+        # Helper to safely get a value from a field_data entry
+        def _safe_field_value(field_data):
+            """Extract value from field_data, handling dict, float, str, etc."""
+            if isinstance(field_data, dict):
+                return field_data.get("value")
+            return field_data
+        
         # Helper to get field value
         def get_field(field_name: str, default=None):
             return _get_field_value(ef, field_name, default)
@@ -3327,18 +3369,18 @@ async def get_mortgage_application(app_id: str):
         b2_salary = 0.0
         for key, field_data in ef.items():
             if "B1" in key and ":BaseSalary" in key:
-                b1_salary = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+                b1_salary = _parse_currency(_safe_field_value(field_data))
             elif "B2" in key and ":BaseSalary" in key:
-                b2_salary = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+                b2_salary = _parse_currency(_safe_field_value(field_data))
         
         # Use T4 annual income if available for more accuracy
         b1_annual = 0.0
         b2_annual = 0.0
         for key, field_data in ef.items():
             if "T4_B1" in key and ":AnnualIncome" in key:
-                b1_annual = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+                b1_annual = _parse_currency(_safe_field_value(field_data))
             elif "T4_B2" in key and ":AnnualIncome" in key:
-                b2_annual = _parse_currency(field_data.get("value") if isinstance(field_data, dict) else field_data)
+                b2_annual = _parse_currency(_safe_field_value(field_data))
         
         # Use T4 income if available, otherwise use base salary
         primary_income = b1_annual if b1_annual > 0 else b1_salary
@@ -3387,16 +3429,32 @@ async def get_mortgage_application(app_id: str):
             "term": get_field("RateTerm", "5 years Fixed"),
         }
         
-        # Build liabilities info
+        # Build liabilities info - use extracted values when available, fall back to estimates
         other_debts_monthly = _parse_currency(get_field("OtherDebtsMonthly", 0))
         
-        # Calculate PITH (Principal, Interest, Taxes, Heating) for housing costs
-        # Using standard assumptions where not provided
-        property_taxes_monthly = purchase_price * 0.01 / 12 if purchase_price else 0  # ~1% annually
-        heating_monthly = 150  # Standard assumption
-        condo_fees = 0
-        if "condo" in (property_info.get("property_type", "") or "").lower():
-            condo_fees = 500  # Typical condo fee
+        # Property taxes: prefer extracted value, else estimate ~1% annually
+        extracted_property_tax = _parse_currency(get_field("PropertyTaxesAnnual", 0))
+        if extracted_property_tax > 0:
+            property_taxes_monthly = extracted_property_tax / 12
+        else:
+            extracted_property_tax_monthly = _parse_currency(get_field("PropertyTaxesMonthly", 0))
+            if extracted_property_tax_monthly > 0:
+                property_taxes_monthly = extracted_property_tax_monthly
+            else:
+                property_taxes_monthly = purchase_price * 0.01 / 12 if purchase_price else 0
+        
+        # Heating: prefer extracted value, else standard assumption
+        extracted_heating = _parse_currency(get_field("HeatingMonthly", 0))
+        heating_monthly = extracted_heating if extracted_heating > 0 else 150
+        
+        # Condo fees: prefer extracted value, else estimate if property type is condo
+        extracted_condo_fees = _parse_currency(get_field("CondoFeesMonthly", 0))
+        if extracted_condo_fees > 0:
+            condo_fees = extracted_condo_fees
+        elif "condo" in (property_info.get("property_type", "") or "").lower():
+            condo_fees = 500
+        else:
+            condo_fees = 0
         
         liabilities = {
             "property_taxes_monthly": property_taxes_monthly,
@@ -3468,61 +3526,120 @@ async def get_mortgage_application(app_id: str):
         
         if gds_stress > 39:
             findings.append({
-                "type": "warning", 
+                "type": "warning",
+                "severity": "fail",
+                "rule_id": "OSFI-B20-GDS-001",
                 "message": f"Stressed GDS ({gds_stress:.1f}%) exceeds 39% limit",
                 "category": "Income Ratio",
                 "sources": ["T4/Paystub", "Mortgage Application"],
+                "evidence": {"calculated_value": round(gds_stress, 2), "limit": 39},
             })
             risk_signals.append({"level": "high", "category": "income", "message": "GDS ratio above guideline"})
         elif gds_stress > 35:
             findings.append({
-                "type": "info", 
+                "type": "info",
+                "severity": "warning",
+                "rule_id": "OSFI-B20-GDS-001",
                 "message": f"Stressed GDS ({gds_stress:.1f}%) approaching 39% limit",
                 "category": "Income Ratio",
+                "evidence": {"calculated_value": round(gds_stress, 2), "limit": 39},
+            })
+        else:
+            findings.append({
+                "type": "success",
+                "severity": "pass",
+                "rule_id": "OSFI-B20-GDS-001",
+                "message": f"Stressed GDS ({gds_stress:.1f}%) within 39% limit",
+                "category": "Income Ratio",
+                "evidence": {"calculated_value": round(gds_stress, 2), "limit": 39},
             })
             
         if tds_stress > 44:
             findings.append({
-                "type": "warning", 
+                "type": "warning",
+                "severity": "fail",
+                "rule_id": "OSFI-B20-TDS-001",
                 "message": f"Stressed TDS ({tds_stress:.1f}%) exceeds 44% limit",
                 "category": "Debt Ratio",
                 "sources": ["Credit Report", "Mortgage Application"],
+                "evidence": {"calculated_value": round(tds_stress, 2), "limit": 44},
             })
             risk_signals.append({"level": "high", "category": "debt", "message": "TDS ratio above guideline"})
         elif tds_stress > 40:
             findings.append({
-                "type": "info", 
+                "type": "info",
+                "severity": "warning",
+                "rule_id": "OSFI-B20-TDS-001",
                 "message": f"Stressed TDS ({tds_stress:.1f}%) approaching 44% limit",
                 "category": "Debt Ratio",
+                "evidence": {"calculated_value": round(tds_stress, 2), "limit": 44},
+            })
+        else:
+            findings.append({
+                "type": "success",
+                "severity": "pass",
+                "rule_id": "OSFI-B20-TDS-001",
+                "message": f"Stressed TDS ({tds_stress:.1f}%) within 44% limit",
+                "category": "Debt Ratio",
+                "evidence": {"calculated_value": round(tds_stress, 2), "limit": 44},
             })
             
         if ltv > 80:
             findings.append({
-                "type": "warning", 
+                "type": "warning",
+                "severity": "warning",
+                "rule_id": "OSFI-B20-LTV-001",
                 "message": f"LTV ({ltv:.1f}%) exceeds 80% - mortgage insurance required",
                 "category": "Loan-to-Value",
                 "sources": ["Appraisal", "Mortgage Application"],
+                "evidence": {"calculated_value": round(ltv, 2), "limit": 80},
             })
             risk_signals.append({"level": "medium", "category": "ltv", "message": "High LTV requires insurance"})
+        else:
+            findings.append({
+                "type": "success",
+                "severity": "pass",
+                "rule_id": "OSFI-B20-LTV-001",
+                "message": f"LTV ({ltv:.1f}%) within 80% conventional limit",
+                "category": "Loan-to-Value",
+                "evidence": {"calculated_value": round(ltv, 2), "limit": 80},
+            })
         
         # Credit score finding with source
         credit_citation = get_field_citation("CreditScore")
         if credit_score < 680:
             findings.append({
-                "type": "warning", 
+                "type": "warning",
+                "severity": "warning",
+                "rule_id": "OSFI-B20-CREDIT-001",
                 "message": f"Credit score ({credit_score}) below preferred threshold",
                 "category": "Credit",
                 "source_file": credit_citation.get("source_file"),
                 "confidence": credit_citation.get("confidence"),
+                "evidence": {"calculated_value": credit_score, "limit": 680},
             })
             risk_signals.append({"level": "medium", "category": "credit", "message": "Credit score needs review"})
         elif credit_score >= 750:
             findings.append({
-                "type": "success", 
+                "type": "success",
+                "severity": "pass",
+                "rule_id": "OSFI-B20-CREDIT-001",
                 "message": f"Excellent credit score ({credit_score})",
                 "category": "Credit",
                 "source_file": credit_citation.get("source_file"),
                 "confidence": credit_citation.get("confidence"),
+                "evidence": {"calculated_value": credit_score, "limit": 680},
+            })
+        else:
+            findings.append({
+                "type": "success",
+                "severity": "pass",
+                "rule_id": "OSFI-B20-CREDIT-001",
+                "message": f"Credit score ({credit_score}) meets minimum threshold",
+                "category": "Credit",
+                "source_file": credit_citation.get("source_file"),
+                "confidence": credit_citation.get("confidence"),
+                "evidence": {"calculated_value": credit_score, "limit": 680},
             })
             
         # Determine overall decision
@@ -3543,85 +3660,117 @@ async def get_mortgage_application(app_id: str):
             parsed = ratio_calc.get("parsed", {})
             if parsed and not parsed.get("_error"):
                 calcs = parsed.get("calculations", {})
-                if calcs:
-                    # Use LLM-calculated ratios if available
-                    gds_calc = calcs.get("GDS", {})
-                    tds_calc = calcs.get("TDS", {})
-                    ltv_calc = calcs.get("LTV", {})
-                    stress_calc = calcs.get("stress_test", {})
+                if calcs and isinstance(calcs, dict):
+                    # LLM may return ratios as {"GDS": {"value": 28.5}} or as {"GDS": 28.5}
+                    def _extract_calc_value(calc_entry):
+                        if isinstance(calc_entry, dict):
+                            return calc_entry.get("value")
+                        if isinstance(calc_entry, (int, float)):
+                            return calc_entry
+                        return None
                     
-                    if gds_calc.get("value"):
-                        ratios["gds"] = gds_calc.get("value", ratios["gds"])
-                    if tds_calc.get("value"):
-                        ratios["tds"] = tds_calc.get("value", ratios["tds"])
-                    if ltv_calc.get("value"):
-                        ratios["ltv"] = ltv_calc.get("value", ratios["ltv"])
+                    gds_val = _extract_calc_value(calcs.get("GDS"))
+                    tds_val = _extract_calc_value(calcs.get("TDS"))
+                    ltv_val = _extract_calc_value(calcs.get("LTV"))
+                    ltv_pct = _extract_calc_value(calcs.get("LTV_percent"))
+                    
+                    if gds_val is not None:
+                        ratios["gds"] = gds_val
+                    if tds_val is not None:
+                        ratios["tds"] = tds_val
+                    if ltv_pct is not None:
+                        ratios["ltv"] = ltv_pct
+                    elif ltv_val is not None:
+                        # Convert ratio to percentage if needed
+                        ratios["ltv"] = ltv_val * 100 if ltv_val < 1 else ltv_val
                     
                     # Update stress ratios from LLM
-                    if stress_calc:
-                        stress_gds = stress_calc.get("GDS", {})
-                        stress_tds = stress_calc.get("TDS", {})
-                        if stress_gds.get("value"):
-                            stress_ratios["gds"] = stress_gds.get("value", stress_ratios["gds"])
-                        if stress_tds.get("value"):
-                            stress_ratios["tds"] = stress_tds.get("value", stress_ratios["tds"])
+                    stress_calc = calcs.get("stress_test")
+                    if isinstance(stress_calc, dict):
+                        stress_gds = _extract_calc_value(stress_calc.get("GDS"))
+                        stress_tds = _extract_calc_value(stress_calc.get("TDS"))
+                        if stress_gds is not None:
+                            stress_ratios["gds"] = stress_gds
+                        if stress_tds is not None:
+                            stress_ratios["tds"] = stress_tds
         
         # Get risk assessment from LLM
         risk_data = app_summary.get("risk_assessment", {})
-        risk_parsed = risk_data.get("parsed", {})
-        if risk_parsed and not risk_parsed.get("_error"):
+        if isinstance(risk_data, dict):
+            risk_parsed = risk_data.get("parsed", {})
+        else:
+            risk_parsed = {}
+        if risk_parsed and isinstance(risk_parsed, dict) and not risk_parsed.get("_error"):
             ra = risk_parsed.get("risk_assessment", {})
-            overall_risk = ra.get("overall_risk_level", "Medium")
-            aggregate = ra.get("aggregate_risk_signals", {})
-            
-            for category, level in aggregate.items():
-                if "low" not in level.lower():
-                    risk_signals.append({
-                        "level": "high" if "high" in level.lower() else "medium",
-                        "category": category,
-                        "message": f"{category.replace('_', ' ').title()}: {level}"
-                    })
+            if isinstance(ra, dict):
+                overall_risk = ra.get("overall_risk_level", "Medium")
+                aggregate = ra.get("aggregate_risk_signals", {})
+                if isinstance(aggregate, dict):
+                    for category, level in aggregate.items():
+                        if isinstance(level, str) and "low" not in level.lower():
+                            risk_signals.append({
+                                "level": "high" if "high" in level.lower() else "medium",
+                                "category": category,
+                                "message": f"{category.replace('_', ' ').title()}: {level}"
+                            })
         
         # Get recommendation from LLM
         recommendation = app_summary.get("recommendation", {})
-        rec_parsed = recommendation.get("parsed", {})
-        if rec_parsed and not rec_parsed.get("_error"):
+        if isinstance(recommendation, dict):
+            rec_parsed = recommendation.get("parsed", {})
+        else:
+            rec_parsed = {}
+        if rec_parsed and isinstance(rec_parsed, dict) and not rec_parsed.get("_error"):
             llm_decision = rec_parsed.get("DECISION")
-            if llm_decision:
-                decision = llm_decision
+            if llm_decision and isinstance(llm_decision, str):
+                decision = llm_decision.upper().strip()
+                # Normalize common decision variations
+                if "CONDITIONAL" in decision:
+                    decision = "REFER"
+                elif decision not in ("APPROVE", "DECLINE", "REFER"):
+                    decision = "REFER"
             
             rationale = rec_parsed.get("RATIONALE", {})
             conditions = rec_parsed.get("CONDITIONS", [])
             
             # Add conditions as findings
-            for condition in conditions:
-                findings.append({
-                    "type": "condition",
-                    "message": condition,
-                })
+            if isinstance(conditions, list):
+                for condition in conditions:
+                    if isinstance(condition, str):
+                        findings.append({
+                            "type": "condition",
+                            "severity": "warning",
+                            "category": "Conditions",
+                            "message": condition,
+                        })
         
         # Build AI narrative from recommendation rationale
         narrative_parts = []
-        if rec_parsed and not rec_parsed.get("_error"):
+        if rec_parsed and isinstance(rec_parsed, dict) and not rec_parsed.get("_error"):
             rationale = rec_parsed.get("RATIONALE", {})
-            details = rationale.get("Details", [])
-            if details:
-                narrative_parts.append("**Key observations:**")
-                for detail in details[:5]:  # Limit to 5
-                    narrative_parts.append(f"• {detail}")
-            
-            refs = rationale.get("OSFI_B20_References", [])
-            if refs:
-                narrative_parts.append("")
-                narrative_parts.append(f"**OSFI B-20 Compliance:** All {len(refs)} policy checks passed")
+            if isinstance(rationale, dict):
+                details = rationale.get("Details", [])
+                if isinstance(details, list) and details:
+                    narrative_parts.append("**Key observations:**")
+                    for detail in details[:5]:  # Limit to 5
+                        if isinstance(detail, str):
+                            narrative_parts.append(f"• {detail}")
+                
+                refs = rationale.get("OSFI_B20_References", [])
+                if isinstance(refs, list) and refs:
+                    narrative_parts.append("")
+                    narrative_parts.append(f"**OSFI B-20 Compliance:** All {len(refs)} policy checks passed")
         
         narrative = "\n".join(narrative_parts) if narrative_parts else None
         
         # Count policy checks from OSFI references
         policy_checks_count = 0
-        if rec_parsed and not rec_parsed.get("_error"):
-            refs = rec_parsed.get("RATIONALE", {}).get("OSFI_B20_References", [])
-            policy_checks_count = len(refs)
+        if rec_parsed and isinstance(rec_parsed, dict) and not rec_parsed.get("_error"):
+            rationale_obj = rec_parsed.get("RATIONALE", {})
+            if isinstance(rationale_obj, dict):
+                refs = rationale_obj.get("OSFI_B20_References", [])
+                if isinstance(refs, list):
+                    policy_checks_count = len(refs)
         
         # Merge mortgage-specific data with base data
         return {
@@ -3650,7 +3799,7 @@ async def get_mortgage_application(app_id: str):
                     "bounding_box": field_data.get("bounding_box"),
                 }
                 for key, field_data in ef.items()
-                if isinstance(field_data, dict)
+                if isinstance(field_data, dict) and "confidence" in field_data
             },
             "documents": [
                 {
@@ -3759,6 +3908,156 @@ When answering questions:
         
     except Exception as e:
         logger.error("Chat failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Property Deep Dive endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/mortgage/applications/{app_id}/property-deep-dive")
+async def get_property_deep_dive(app_id: str):
+    """Run property deep dive analysis for a mortgage application."""
+    try:
+        from app.mortgage.property_deep_dive import PropertyDeepDiveEngine
+
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        ef = app_md.extracted_fields or {}
+
+        address = _get_field_value(ef, "PropertyAddress", "")
+        purchase_price = _parse_currency(_get_field_value(ef, "PurchasePrice", 0))
+        appraised_value = _parse_currency(_get_field_value(ef, "AppraisedValue", 0))
+        property_type = _get_field_value(ef, "PropertyType", "single_family_detached")
+
+        if not address:
+            raise HTTPException(
+                status_code=400,
+                detail="Property address not found in application data.",
+            )
+
+        engine = PropertyDeepDiveEngine(
+            property_address=address,
+            purchase_price=purchase_price,
+            property_type=property_type or "single_family_detached",
+            appraised_value=appraised_value,
+        )
+
+        result = await asyncio.to_thread(engine.analyze)
+        return result.to_dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Property deep dive failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mortgage/applications/{app_id}/property-deep-dive")
+async def run_property_deep_dive(app_id: str, force: bool = False):
+    """Run (or force re-run) property deep dive analysis for a mortgage application."""
+    try:
+        from app.mortgage.property_deep_dive import PropertyDeepDiveEngine
+
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        ef = app_md.extracted_fields or {}
+
+        address = _get_field_value(ef, "PropertyAddress", "")
+        purchase_price = _parse_currency(_get_field_value(ef, "PurchasePrice", 0))
+        appraised_value = _parse_currency(_get_field_value(ef, "AppraisedValue", 0))
+        property_type = _get_field_value(ef, "PropertyType", "single_family_detached")
+
+        if not address:
+            raise HTTPException(
+                status_code=400,
+                detail="Property address not found in application data.",
+            )
+
+        engine = PropertyDeepDiveEngine(
+            property_address=address,
+            purchase_price=purchase_price,
+            property_type=property_type or "single_family_detached",
+            appraised_value=appraised_value,
+        )
+
+        result = await asyncio.to_thread(engine.analyze)
+        return {"force": force, **result.to_dict()}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Property deep dive (POST) failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Customer 360 — Unified Data Layer
+# =============================================================================
+
+from app.customer360 import (
+    list_customers as _list_customers,
+    get_customer_360 as _get_customer_360,
+    load_customer_profile as _load_customer_profile,
+)
+
+
+@app.get("/api/customers")
+async def list_customers():
+    """List all customer profiles."""
+    settings = load_settings()
+    profiles = _list_customers(settings.app.storage_root)
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "date_of_birth": p.date_of_birth,
+            "email": p.email,
+            "phone": p.phone,
+            "address": p.address,
+            "customer_since": p.customer_since,
+            "risk_tier": p.risk_tier,
+            "tags": p.tags,
+            "notes": p.notes,
+        }
+        for p in profiles
+    ]
+
+
+@app.get("/api/customers/{customer_id}")
+async def get_customer_360_view(customer_id: str):
+    """Get full Customer 360 view with profile, journey, and risk correlations."""
+    settings = load_settings()
+    view = _get_customer_360(settings.app.storage_root, customer_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    from dataclasses import asdict
+    return asdict(view)
+
+
+@app.post("/api/customers/seed")
+async def seed_customer_360_data():
+    """Seed sample customer 360 data (development/demo only)."""
+    settings = load_settings()
+    try:
+        from scripts.seed_customer360 import (
+            create_sarah_chen,
+            create_marcus_williams,
+            create_priya_patel,
+        )
+        create_sarah_chen(settings.app.storage_root)
+        create_marcus_williams(settings.app.storage_root)
+        create_priya_patel(settings.app.storage_root)
+        return {"status": "ok", "message": "Seeded 3 customer profiles"}
+    except Exception as e:
+        logger.error("Failed to seed customer 360 data: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

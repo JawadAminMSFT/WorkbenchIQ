@@ -1,0 +1,93 @@
+[
+  {
+    "set": "Set 1 - Typical Couple",
+    "status": "success",
+    "app_id": "3af97574",
+    "borrower": "Alex Chen",
+    "decision": "APPROVE",
+    "gds": 26.36,
+    "tds": 28.64,
+    "ltv": 80.0,
+    "findings": 8,
+    "documents": 16,
+    "issues": []
+  },
+  {
+    "set": "Set 2 - Typical Couple",
+    "status": "success",
+    "app_id": "c579777a",
+    "borrower": "Sarah Nguyen",
+    "decision": "APPROVE",
+    "gds": 26.93,
+    "tds": 29.59,
+    "ltv": 75.0,
+    "findings": 8,
+    "documents": 17,
+    "issues": []
+  },
+  {
+    "set": "Set 3 - Newcomer Couple",
+    "status": "success",
+    "app_id": "6113782c",
+    "borrower": "Ananya Gupta",
+    "decision": "APPROVE",
+    "gds": 26.58,
+    "tds": 28.61,
+    "ltv": 75.0,
+    "findings": 8,
+    "documents": 18,
+    "issues": []
+  },
+  {
+    "set": "Set 4 - High Income Single Female",
+    "status": "success",
+    "app_id": "157a2838",
+    "borrower": "Emily Park",
+    "decision": "APPROVE",
+    "gds": 45.42,
+    "tds": 47.94,
+    "ltv": 70.0,
+    "findings": 8,
+    "documents": 17,
+    "issues": []
+  },
+  {
+    "set": "Set 5 - Low Income no gift denied",
+    "status": "success",
+    "app_id": "e0716367",
+    "borrower": "Jordan Lee",
+    "decision": "DECLINE",
+    "gds": 4760.36,
+    "tds": 4760.36,
+    "ltv": 91.22,
+    "findings": 4,
+    "documents": 19,
+    "issues": []
+  },
+  {
+    "set": "Set 6 - Single Denied VOE",
+    "status": "success",
+    "app_id": "af9c5874",
+    "borrower": "Maya Roberts",
+    "decision": "DECLINE",
+    "gds": 37.71,
+    "tds": 40.86,
+    "ltv": 79.56,
+    "findings": 4,
+    "documents": 19,
+    "issues": []
+  },
+  {
+    "set": "Set 7 - Self- Employed",
+    "status": "success",
+    "app_id": "46833cc6",
+    "borrower": "Aisha Khan",
+    "decision": "APPROVE",
+    "gds": 0,
+    "tds": 0,
+    "ltv": 75.0,
+    "findings": 9,
+    "documents": 16,
+    "issues": []
+  }
+]

@@ -15,13 +15,13 @@ This guide explains how to configure WorkbenchIQ to use Azure Blob Storage inste
 
 ## Configuration
 
-### Option 1: Local Storage (Default)
+### Option 1: Azure Blob Storage (Default)
 
-No configuration needed. The application uses local filesystem storage by default.
+The application uses Azure Blob Storage by default. Set the following environment variables:
 
 ```bash
-# These are the defaults - no action required
-# STORAGE_BACKEND=local
+# These are the defaults for storage backend
+# STORAGE_BACKEND=azure_blob
 # UW_APP_STORAGE_ROOT=data
 ```
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "accountName": {
+      "type": "string",
+      "defaultValue": "workbenchiq-bing-grounding"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Bing/accounts",
+      "apiVersion": "2020-06-10",
+      "name": "[parameters('accountName')]",
+      "location": "global",
+      "kind": "Bing.Grounding",
+      "sku": {
+        "name": "G1"
+      }
+    }
+  ],
+  "outputs": {
+    "bingAccountName": {
+      "type": "string",
+      "value": "[parameters('accountName')]"
+    },
+    "bingResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Bing/accounts', parameters('accountName'))]"
+    }
+  }
+}

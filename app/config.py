@@ -150,6 +150,7 @@ class AppSettings:
     storage_root: str = "data"
     prompts_root: str = "prompts"  # Git-tracked folder for prompts and policies
     public_files_base_url: Optional[str] = None
+    api_key: Optional[str] = None  # API key for backend authentication (X-API-Key header)
 
 
 @dataclass
@@ -215,6 +216,7 @@ def load_settings() -> Settings:
         storage_root=os.getenv("UW_APP_STORAGE_ROOT", "data"),
         prompts_root=os.getenv("UW_APP_PROMPTS_ROOT", "prompts"),
         public_files_base_url=os.getenv("PUBLIC_FILES_BASE_URL") or None,
+        api_key=os.getenv("API_KEY") or None,
     )
 
     db = DatabaseSettings(

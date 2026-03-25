@@ -23,6 +23,7 @@ import CalculationsPanel from './CalculationsPanel';
 import PolicyChecksPanel from './PolicyChecksPanel';
 import RiskPanel from './RiskPanel';
 import DecisionFooter from './DecisionFooter';
+import PropertyDeepDiveModal from './PropertyDeepDiveModal';
 import PDFViewer from '../claims/PDFViewer';
 
 // Types for mortgage data
@@ -173,6 +174,7 @@ export default function MortgageWorkbench({
   const [error, setError] = useState<string | null>(null);
   const [decisionNotes, setDecisionNotes] = useState('');
   const [selectedDocument, setSelectedDocument] = useState<MortgageDocument | null>(null);
+  const [isPropertyDeepDiveOpen, setIsPropertyDeepDiveOpen] = useState(false);
 
   // Handle document view click
   const handleViewDocument = (doc: MortgageDocument) => {
@@ -331,6 +333,14 @@ export default function MortgageWorkbench({
           <div className="flex items-center gap-3">
             <DecisionBadge decision={application.decision} />
             <button
+              onClick={() => setIsPropertyDeepDiveOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+              title="Property Deep Dive"
+            >
+              <Sparkles className="w-4 h-4" />
+              Property Deep Dive
+            </button>
+            <button
               onClick={fetchApplicationData}
               className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
               title="Refresh"
@@ -439,6 +449,16 @@ export default function MortgageWorkbench({
           url={selectedDocument.url}
           filename={selectedDocument.filename}
           onClose={() => setSelectedDocument(null)}
+        />
+      )}
+
+      {/* Property Deep Dive Modal */}
+      {isPropertyDeepDiveOpen && (
+        <PropertyDeepDiveModal
+          isOpen={isPropertyDeepDiveOpen}
+          onClose={() => setIsPropertyDeepDiveOpen(false)}
+          applicationId={applicationId}
+          propertyAddress={application?.property?.address}
         />
       )}
     </div>

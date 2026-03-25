@@ -217,7 +217,7 @@ Environment variables serve as the configuration contract:
 STORAGE_BACKEND:
   type: enum
   values: [local, azure_blob]
-  default: local
+  default: azure_blob
   description: Storage backend to use
 
 # Required when STORAGE_BACKEND=azure_blob
@@ -244,6 +244,6 @@ AZURE_STORAGE_CONTAINER_NAME:
 This feature maintains full backward compatibility:
 
 1. **No API changes**: All existing endpoints continue to work
-2. **Default behavior unchanged**: Without new environment variables, system uses local storage
+2. **Default behavior**: Without new environment variables, system uses Azure Blob Storage
 3. **Response format unchanged**: API responses have identical structure
 4. **Existing data accessible**: Local data remains accessible when using local backend

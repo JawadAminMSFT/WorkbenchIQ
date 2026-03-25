@@ -59,6 +59,9 @@ from app.mortgage.risk_analysis import (
     RiskReport,
 )
 
+# Phase 8: Property deep dive
+from app.mortgage.property_deep_dive import PropertyDeepDiveEngine, PropertyDeepDiveResult
+
 # Alias for backwards compatibility
 MortgagePolicyEngine = MortgagePolicyEvaluator
 
@@ -106,6 +109,9 @@ __all__ = [
     "RiskSignalAggregator",
     "RiskSignal",
     "RiskReport",
+    # Phase 8: Property deep dive
+    "PropertyDeepDiveEngine",
+    "PropertyDeepDiveResult",
     # Stub classes (to be implemented)
     "MortgagePolicyLoader",
     # Constants

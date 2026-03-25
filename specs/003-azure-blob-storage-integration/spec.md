@@ -104,8 +104,9 @@ As an operations engineer, I want the application to validate storage configurat
 
 ## Assumptions
 
-- Azure Blob Storage authentication will use storage account keys (not Azure AD/Managed Identity) as specified by user requirements.
-- The blob container does not need to be pre-created; the application will create it if missing.
+- Azure Blob Storage authentication supports three methods with automatic fallback: DefaultAzureCredential (managed identity / developer credentials), connection string, and account key. The precedence is DAC → Connection String → Account Key, configurable via `AZURE_STORAGE_AUTH_MODE`.
+- Container auto-creation is disabled by default (least-privilege); enable via `AZURE_STORAGE_ALLOW_CREATE_CONTAINER=true` for dev/migration scenarios.
+- When using DefaultAzureCredential, the identity must be assigned the **Storage Blob Data Contributor** role on the container.
 - Data migration from local storage to Azure Blob Storage is out of scope for this feature.
 - File URLs returned for blob storage will be internal blob paths, not public SAS URLs (public access is not enabled by default).
 - Credential security (protecting storage keys) is an infrastructure/deployment concern outside this feature's scope; the application reads keys from environment variables only.
