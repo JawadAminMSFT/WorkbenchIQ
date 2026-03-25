@@ -250,3 +250,85 @@ underwriting-assistant backend is a Python FastAPI application. Uses Azure OpenA
 - Confidence scores vary realistically (lower for fields with issues)
 - Coverage gaps identified correctly (Zurich has no flood/EQ gaps despite low confidence scores)
 - Premium percentiles computed correctly: Zurich=below_market, AIG/Travelers=market
+
+### 2026-03-25: Systematic Broker API Audit & Fix
+
+**Task:** Audit all 13 broker API endpoints, fix bugs, and produce verified API contract document for Frank's frontend work.
+
+**Bugs Found & Fixed:**
+
+1. **CRITICAL — Compare endpoint 500 error:** `Quote(**dict)` and `Submission(**dict)` don't recursively convert nested dicts (`fields`, `scoring`) to their dataclass types. Caused `'dict' object has no attribute 'annual_premium'` when accessing `q.fields.annual_premium`.
+   - **Fix:** Added `_quote_from_dict()` and `_submission_from_dict()` helpers in `app/broker/api.py` that properly reconstruct `QuoteFields`, `PlacementScoring`, and nested types from storage dicts.
+   - Also handles LLM returning `deductible` as dict instead of string (normalizes to comma-separated string).
+   - Filters to `__dataclass_fields__` keys to prevent `TypeError` from extra storage keys.
+
+2. **Update Client — property_locations dict crash:** `Client(**existing)` would fail if `property_locations` contains plain dicts from storage. Fixed with dict-to-PropertyLocation conversion.
+
+3. **Research endpoint — same Client conversion issue:** Fixed `Client(**client_data)` in research endpoint fallback path.
+
+**Key Files Modified:**
+- `app/broker/api.py` — Added `_quote_from_dict()`, `_submission_from_dict()` helpers; fixed `compare_quotes`, `update_client`, `update_submission`, `research_client` endpoints
+
+**All 13 Endpoints Verified:**
+1. `GET /api/broker/dashboard` → 200 ✓
+2. `GET /api/broker/clients` → 200, array ✓
+3. `POST /api/broker/clients` → 201, full client ✓
+4. `GET /api/broker/clients/{id}` → 200, client dict ✓
+5. `PUT /api/broker/clients/{id}` → 200, updated client ✓
+6. `GET /api/broker/clients/{id}/submissions` → 200, array ✓
+7. `POST /api/broker/submissions` → 201, full submission ✓
+8. `GET /api/broker/submissions/{id}` → 200, with embedded quotes ✓
+9. `POST /api/broker/submissions/{id}/quotes` → 201, multipart upload ✓
+10. `GET /api/broker/submissions/{id}/quotes` → 200, array ✓
+11. `POST /api/broker/submissions/{id}/compare` → 200, comparison+recommendation ✓
+12. `POST /api/broker/clients/{id}/research` → 200, brief+sources ✓
+13. `GET /api/broker/carriers` → 200, array ✓
+
+**Architecture Pattern — Dict↔Dataclass Conversion:**
+- Storage layer returns plain dicts (from JSON files)
+- Engine layer expects dataclass instances (Quote, Submission, CarrierProfile)
+- API layer must bridge this gap with proper conversion helpers
+- Key lesson: Python `dataclasses.asdict()` serializes well, but the reverse (`SomeDataclass(**dict)`) does NOT handle nested dataclass fields — they remain as dicts
+- The `_quote_from_dict()` / `_submission_from_dict()` pattern should be used everywhere dicts from storage are converted to dataclass instances
+
+**Output:**
+- API contract document written to session files for Frank's frontend integration
+
+## 2026-03-25: Systematic Broker API Audit — All 13 Endpoints Verified & Fixed
+
+**Task:** Complete systematic audit of all 13 broker API endpoints. Test each endpoint. Fix bugs. Write API contract document for Frank's frontend work.
+
+**Work Completed:**
+- Tested all 13 endpoints systematically with realistic payloads
+- Fixed critical bug in `compare` endpoint: dict-to-dataclass conversion for nested Quote/Submission types
+- Fixed `update_client` endpoint: property_locations type conversion 
+- Fixed TypeError from extra storage keys not in dataclass fields
+- Generated verified API contract document (218 lines) for frontend integration
+
+**Technical Details:**
+- **Bug Root Cause:** Python `Quote(**dict)` does NOT recursively convert nested dicts (`fields`, `scoring`, `property_locations`) to dataclass types
+- **Solution:** Added `_quote_from_dict()` and `_submission_from_dict()` helpers that:
+  1. Recursively reconstruct nested dataclass types (QuoteFields, PlacementScoring, PropertyLocation, CarrierProfile)
+  2. Normalize LLM-returned types (e.g., deductible dict → comma-separated string)
+  3. Filter keys using `__dataclass_fields__` to prevent TypeError on extra keys
+- **Files Modified:** `app/broker/api.py` (218 lines added)
+
+**All 13 Endpoints Verified:**
+1. GET /api/broker/dashboard → 200 ✓
+2. GET /api/broker/clients → 200 ✓
+3. POST /api/broker/clients → 201 ✓
+4. GET /api/broker/clients/{id} → 200 ✓
+5. PUT /api/broker/clients/{id} → 200 ✓
+6. GET /api/broker/clients/{id}/submissions → 200 ✓
+7. POST /api/broker/submissions → 201 ✓
+8. GET /api/broker/submissions/{id} → 200 ✓
+9. POST /api/broker/submissions/{id}/quotes → 201 ✓
+10. GET /api/broker/submissions/{id}/quotes → 200 ✓
+11. POST /api/broker/submissions/{id}/compare → 200 ✓ (CRITICAL FIX)
+12. POST /api/broker/clients/{id}/research → 200 ✓
+13. GET /api/broker/carriers → 200 ✓
+
+**Key Pattern for Future Work:**
+- All dict-to-dataclass conversions in broker API layer must use the `_quote_from_dict()` / `_submission_from_dict()` helpers
+- These helpers are the single source of truth for safe storage→engine data conversion
+- Pattern ensures consistency across all endpoints and prevents similar 500 errors in future endpoints

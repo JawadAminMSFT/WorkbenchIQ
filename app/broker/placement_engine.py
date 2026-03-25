@@ -19,7 +19,7 @@ logger = setup_logging()
 class PlacementEngine:
     """Scores and ranks carrier quotes for optimal placement."""
 
-    # Financial strength rating scoring
+    # Financial strength rating scoring (per spec OPT-001)
     FSR_SCORES = {
         "A++": 100,
         "A+": 100,
@@ -29,6 +29,14 @@ class PlacementEngine:
         "B+": 25,
     }
     UNRATED_SCORE = 10
+
+    # Combined ratio adjustments (per spec OPT-001)
+    COMBINED_RATIO_BANDS = [
+        (95.0, 10),      # < 95% = +10pts
+        (102.0, 0),      # 95-102% = 0pts
+        (108.0, -10),    # 103-108% = -10pts
+        (float('inf'), -20),  # > 108% = -20pts
+    ]
 
     def score_quotes(
         self,
@@ -235,6 +243,10 @@ class PlacementEngine:
     ) -> float:
         """Calculate carrier financial strength score (0.0-1.0).
 
+        Per spec OPT-001:
+        - FSR tier scoring: A++/A+=100, A=85, A-=70, B++=50, B+=25, unrated=10
+        - Combined ratio adjustments: <95%=+10, 95-102=0, 103-108=-10, >108=-20
+
         Args:
             quote: Quote with carrier information
             carrier_profile: Optional carrier profile with financials
@@ -252,13 +264,18 @@ class PlacementEngine:
                 combined_ratio = float(
                     carrier_profile.combined_ratio.rstrip("%")
                 )
-                # Combined ratio < 100% = bonus, > 100% = penalty
-                if combined_ratio < 100:
-                    ratio_bonus = (100 - combined_ratio) * 0.2
-                    base_score = min(100, base_score + ratio_bonus)
-                elif combined_ratio > 100:
-                    ratio_penalty = (combined_ratio - 100) * 0.15
-                    base_score = max(0, base_score - ratio_penalty)
+                # Apply spec-defined combined ratio bands
+                if combined_ratio < 95.0:
+                    base_score += 10
+                elif 95.0 <= combined_ratio < 102.0:
+                    base_score += 0
+                elif 103.0 <= combined_ratio <= 108.0:
+                    base_score -= 10
+                elif combined_ratio > 108.0:
+                    base_score -= 20
+                
+                # Ensure score stays in 0-100 range
+                base_score = max(0, min(100, base_score))
             except (ValueError, AttributeError):
                 pass
 

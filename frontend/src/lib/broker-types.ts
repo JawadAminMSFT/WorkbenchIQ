@@ -6,130 +6,130 @@
 // Dashboard metrics from GET /api/broker/dashboard
 export interface DashboardMetrics {
   total_accounts: number;
-  total_bound_premium: number;
+  total_bound_premium: string;
   open_submissions: number;
   renewals_due_90_days: number;
+  stale_submissions: number;
 }
 
 // Client from GET /api/broker/clients
 export interface Client {
   id: string;
-  company_name: string;
-  industry: string;
-  contact_name: string;
-  contact_email: string;
-  renewal_date: string;
-  active_submissions: number;
-  total_premium: number;
-  status: 'active' | 'prospect' | 'inactive';
+  name: string;
+  industry_code: string;
+  business_type: string;
+  years_in_business?: number | null;
+  annual_revenue: string;
+  employee_count?: number | null;
+  headquarters_address: string;
+  property_locations: string[];
+  renewal_date?: string | null;
+  broker_notes: string;
+  research_brief?: string | null;
+  contacts: Array<{ name?: string; email?: string; phone?: string; role?: string }>;
   created_at: string;
+  updated_at: string;
 }
 
 export interface CreateClientRequest {
-  company_name: string;
-  industry: string;
-  contact_name: string;
-  contact_email: string;
-  renewal_date: string;
+  name: string;
+  industry_code: string;
+  business_type: string;
+  years_in_business?: number;
+  annual_revenue: string;
+  employee_count?: number;
+  headquarters_address: string;
+  renewal_date?: string;
+  broker_notes?: string;
+  contacts?: Array<{ name?: string; email?: string; phone?: string; role?: string }>;
+}
+
+// Quote fields — values are dollar strings like "$38,750"
+export interface QuoteFields {
+  annual_premium?: string;
+  total_insured_value?: string;
+  building_limit?: string;
+  contents_limit?: string;
+  business_interruption_limit?: string;
+  deductible?: string;
+  flood_sublimit?: string;
+  earthquake_sublimit?: string;
+  named_perils_exclusions?: string[];
+  special_conditions?: string[];
+  policy_period?: string;
+  carrier_am_best_rating?: string;
+  quote_reference_number?: string;
+  expiry_date?: string | null;
+  underwriter?: string;
+  [key: string]: unknown;
+}
+
+export interface QuoteScoring {
+  placement_score: number;
+  placement_rank: number;
+  recommendation_rationale: string;
+  coverage_adequacy: string;
+  coverage_gaps: string[];
+  premium_percentile: string;
+}
+
+// Quote from carrier (nested in submission)
+export interface Quote {
+  id: string;
+  submission_id: string;
+  carrier_name: string;
+  source_format: string;
+  source_file_name: string;
+  received_date: string | null;
+  status: string;
+  fields: QuoteFields;
+  scoring: QuoteScoring;
+  confidence_scores: Record<string, number>;
+  created_at: string;
+}
+
+export interface SubmissionDocument {
+  id: string;
+  filename: string;
+  type: string;
+  uploaded_at: string;
+  status: string;
+  carrier_name?: string;
 }
 
 // Submission from GET /api/broker/submissions/{id}
 export interface Submission {
   id: string;
   client_id: string;
-  client_name: string;
-  status: 'draft' | 'submitted' | 'quoted' | 'bound';
-  coverage_type: string;
+  line_of_business: string;
+  acord_form_types: string[];
+  status: string;
   effective_date: string;
   expiration_date: string;
-  total_insured_value: number;
-  acord_fields: AcordFieldGroup[];
+  total_insured_value: string;
+  coverage_requested: Record<string, unknown>;
+  submitted_carriers: string[];
   documents: SubmissionDocument[];
   quotes: Quote[];
+  submission_date: string | null;
   created_at: string;
   updated_at: string;
+  acord_125_fields: Record<string, unknown>;
+  acord_140_fields: Record<string, unknown>;
+  acord_field_confidence: Record<string, number>;
 }
 
 export interface CreateSubmissionRequest {
   client_id: string;
-  coverage_type: string;
+  line_of_business: string;
   effective_date: string;
   expiration_date: string;
-  total_insured_value: number;
-}
-
-export interface AcordFieldGroup {
-  form_type: 'ACORD 125' | 'ACORD 140';
-  fields: AcordField[];
-}
-
-export interface AcordField {
-  name: string;
-  value: string | number | null;
-  source_document: string;
-  confidence: number;
-  needs_review: boolean;
-}
-
-export interface SubmissionDocument {
-  id: string;
-  filename: string;
-  type: 'application' | 'loss_run' | 'schedule' | 'quote' | 'other';
-  uploaded_at: string;
-  status: 'pending' | 'processed' | 'error';
-  carrier_name?: string;
-}
-
-// Quote from carrier
-export interface Quote {
-  id: string;
-  carrier_name: string;
-  carrier_am_best: string;
-  annual_premium: number;
-  total_insured_value: number;
-  building_limit: number;
-  contents_limit: number;
-  bi_limit: number;
-  deductible: number;
-  flood_sublimit: number;
-  earthquake_sublimit: number;
-  exclusions: string[];
-  policy_period: string;
-  uploaded_at: string;
-}
-
-// Comparison result from POST /api/broker/submissions/{id}/compare
-export interface PlacementScoring {
-  score: number;
-  rank: number;
-  factors: { name: string; impact: 'positive' | 'negative' | 'neutral'; detail: string }[];
-}
-
-export interface ComparisonResult {
-  submission_id: string;
-  carriers: {
-    carrier_name: string;
-    quote: Quote;
-    placement: PlacementScoring;
-  }[];
-  recommendation: {
-    carrier_name: string;
-    rationale: string;
-    confidence: number;
-  };
+  total_insured_value: string;
 }
 
 // Research brief from POST /api/broker/clients/{id}/research
 export interface ResearchBrief {
-  client_id: string;
   company_name: string;
-  sections: ResearchSection[];
-  generated_at: string;
-}
-
-export interface ResearchSection {
-  title: string;
-  content: string;
-  citations: { text: string; url: string }[];
-  confidence: number;
+  brief: string;
+  sources: string[];
 }

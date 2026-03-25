@@ -9,7 +9,6 @@ import type {
   CreateClientRequest,
   Submission,
   CreateSubmissionRequest,
-  ComparisonResult,
   ResearchBrief,
 } from './broker-types';
 
@@ -81,6 +80,10 @@ export async function createClient(
 // Submissions
 // ---------------------------------------------------------------------------
 
+export async function getClientSubmissions(clientId: string): Promise<Submission[]> {
+  return apiFetch<Submission[]>(`/api/broker/clients/${clientId}/submissions`);
+}
+
 export async function getSubmission(
   submissionId: string
 ): Promise<Submission> {
@@ -124,27 +127,19 @@ export async function uploadQuote(
 }
 
 // ---------------------------------------------------------------------------
-// Quote Comparison
-// ---------------------------------------------------------------------------
-
-export async function compareQuotes(
-  submissionId: string
-): Promise<ComparisonResult> {
-  return apiFetch<ComparisonResult>(
-    `/api/broker/submissions/${submissionId}/compare`,
-    { method: 'POST' }
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Client Research
 // ---------------------------------------------------------------------------
 
 export async function runClientResearch(
-  clientId: string
+  clientId: string,
+  companyName: string
 ): Promise<ResearchBrief> {
   return apiFetch<ResearchBrief>(
     `/api/broker/clients/${clientId}/research`,
-    { method: 'POST' }
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_name: companyName }),
+    }
   );
 }

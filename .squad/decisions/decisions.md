@@ -1,5 +1,42 @@
 # Squad Decisions Archive
 
+## Dict-to-Dataclass Conversion Pattern for Broker API
+
+**Date:** 2026-03-25  
+**Author:** Ben (Backend/Scoring)  
+**Status:** Implemented
+
+### Context
+
+The broker storage layer returns plain Python dicts (deserialized from JSON files), but the engine layer (PlacementEngine, QuoteExtractor) expects dataclass instances (Quote, Submission, CarrierProfile). Python's `SomeDataclass(**dict)` does NOT recursively convert nested fields — e.g., `Quote(**q)` leaves `q.fields` as a plain dict instead of a `QuoteFields` dataclass.
+
+This caused a 500 error on the `POST /api/broker/submissions/{id}/compare` endpoint: `'dict' object has no attribute 'annual_premium'`.
+
+### Decision
+
+Added `_quote_from_dict()` and `_submission_from_dict()` helper functions in `app/broker/api.py` that:
+1. Recursively convert nested dicts to their proper dataclass types (QuoteFields, PlacementScoring, PropertyLocation)
+2. Normalize LLM-returned types (e.g., deductible returned as dict → string)
+3. Filter out unexpected keys using `__dataclass_fields__` to prevent TypeError
+
+### Impact for Frank (Frontend)
+
+- The `deductible` field in `QuoteFields` may appear as either a string (e.g., `"$10,000"`) or a dict (e.g., `{"property_damage": "$10,000", "flood": "$50,000"}`) in raw quote data. Frontend should handle both.
+- The compare endpoint normalizes deductible to a string.
+- Full API contract document is available for integration work.
+
+### Files Changed
+
+- `app/broker/api.py` — Added conversion helpers, fixed 4 endpoints
+
+### Pattern for Future Work
+
+- **Single Source of Truth:** All dict-to-dataclass conversions in broker API layer must use `_quote_from_dict()` and `_submission_from_dict()` helpers
+- **Prevents Regressions:** Ensures consistent handling of storage→engine data conversion across all endpoints
+- **LLM Normalization:** These helpers also normalize LLM-returned types (e.g., deductible format) for consistency
+
+---
+
 ## Broker Processing Engines Architecture
 
 **Date:** 2025-01-XX  

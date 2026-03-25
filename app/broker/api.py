@@ -32,20 +32,69 @@ from app.broker.models import (
     CarrierProfile,
     Client,
     Placement,
+    PlacementScoring,
     PropertyLocation,
     Quote,
     QuoteFields,
     Submission,
 )
 from app.broker.storage import BrokerStorage
+from app.broker.quote_extractor import QuoteExtractor
+from app.broker.placement_engine import PlacementEngine
+from app.broker.research_engine import ClientResearchEngine
+from app.config import load_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _quote_from_dict(data: Dict[str, Any]) -> Quote:
+    """Reconstruct a Quote dataclass from a storage dict, handling nested fields."""
+    d = dict(data)
+    # Convert nested 'fields' dict → QuoteFields dataclass
+    if isinstance(d.get("fields"), dict):
+        raw_fields = dict(d["fields"])
+        # Ensure deductible is a string (LLM may return a dict)
+        if isinstance(raw_fields.get("deductible"), dict):
+            raw_fields["deductible"] = ", ".join(
+                f"{k}: {v}" for k, v in raw_fields["deductible"].items()
+            )
+        d["fields"] = QuoteFields(**{
+            k: v for k, v in raw_fields.items()
+            if k in QuoteFields.__dataclass_fields__
+        })
+    # Convert nested 'scoring' dict → PlacementScoring dataclass
+    if isinstance(d.get("scoring"), dict):
+        d["scoring"] = PlacementScoring(**{
+            k: v for k, v in d["scoring"].items()
+            if k in PlacementScoring.__dataclass_fields__
+        })
+    # Drop any extra keys not on the Quote dataclass
+    valid_keys = set(Quote.__dataclass_fields__)
+    return Quote(**{k: v for k, v in d.items() if k in valid_keys})
+
+
+def _submission_from_dict(data: Dict[str, Any]) -> Submission:
+    """Reconstruct a Submission dataclass from a storage dict, handling nested types."""
+    d = dict(data)
+    # Convert embedded quotes dicts → Quote dataclass instances
+    if isinstance(d.get("quotes"), list):
+        d["quotes"] = [
+            _quote_from_dict(q) if isinstance(q, dict) else q
+            for q in d["quotes"]
+        ]
+    # Convert embedded documents (list of dicts) — leave as-is since they serialize cleanly
+    # Convert embedded property locations if present
+    valid_keys = set(Submission.__dataclass_fields__)
+    return Submission(**{k: v for k, v in d.items() if k in valid_keys})
 
 # Create router with prefix
 router = APIRouter(prefix="/api/broker", tags=["Commercial Brokerage"])
 
 # Initialize storage
 storage = BrokerStorage()
+
+# Load settings for engines
+_settings = load_settings()
 
 
 # ============================================================================
@@ -303,8 +352,16 @@ async def update_client(client_id: str, request: UpdateClientRequest):
         existing.update(update_data)
         existing["updated_at"] = datetime.utcnow().isoformat()
         
+        # Convert property_locations dicts → PropertyLocation dataclasses
+        if isinstance(existing.get("property_locations"), list):
+            existing["property_locations"] = [
+                PropertyLocation(**loc) if isinstance(loc, dict) else loc
+                for loc in existing["property_locations"]
+            ]
+        
         # Create Client instance and save
-        client = Client(**existing)
+        valid_keys = set(Client.__dataclass_fields__)
+        client = Client(**{k: v for k, v in existing.items() if k in valid_keys})
         storage.save_client(client)
         
         return asdict(client)
@@ -434,7 +491,7 @@ async def update_submission(submission_id: str, request: UpdateSubmissionRequest
         existing["updated_at"] = datetime.utcnow().isoformat()
         
         # Create Submission instance and save
-        submission = Submission(**existing)
+        submission = _submission_from_dict(existing)
         storage.save_submission(submission)
         
         return asdict(submission)
@@ -504,13 +561,31 @@ async def upload_quote(
             status=QuoteStatus.RAW.value,
         )
         
-        # Save to storage
+        # Save initial quote with RAW status
+        storage.save_quote(quote)
+        
+        # Extract quote fields using QuoteExtractor
+        try:
+            extractor = QuoteExtractor(_settings.openai)
+            extracted_fields, confidence_scores = await extractor.extract_quote(
+                content, file.filename, carrier_name
+            )
+            quote.fields = extracted_fields
+            quote.confidence_scores = confidence_scores
+            quote.status = QuoteStatus.EXTRACTED.value
+            logger.info(f"Successfully extracted fields from quote {quote.id}")
+        except Exception as e:
+            logger.error(f"Quote extraction failed for {quote.id}: {e}", exc_info=True)
+            # Keep quote in RAW status if extraction fails
+            quote.status = QuoteStatus.RAW.value
+        
+        # Save updated quote
         storage.save_quote(quote)
         
         return UploadQuoteResponse(
             quote_id=quote.id,
-            status="uploaded",
-            message=f"Quote from {carrier_name} uploaded successfully",
+            status=quote.status,
+            message=f"Quote from {carrier_name} uploaded and {'extracted' if quote.status == QuoteStatus.EXTRACTED.value else 'saved (extraction pending)'}",
         )
     except HTTPException:
         raise
@@ -558,46 +633,83 @@ async def compare_quotes(submission_id: str):
     """
     try:
         # Verify submission exists
-        submission = storage.get_submission(submission_id)
-        if not submission:
+        submission_data = storage.get_submission(submission_id)
+        if not submission_data:
             raise HTTPException(status_code=404, detail=f"Submission {submission_id} not found")
         
-        quotes = storage.list_quotes_for_submission(submission_id)
+        # Convert to Submission dataclass (with nested types)
+        submission = _submission_from_dict(submission_data)
         
-        # TODO: integrate placement engine
-        # For now, return mock comparison data
+        quotes_data = storage.list_quotes_for_submission(submission_id)
+        
+        if not quotes_data:
+            return CompareResponse(
+                comparison_table=[],
+                recommendation="No quotes available for comparison",
+                placement_scores=[],
+            )
+        
+        # Convert quotes to Quote dataclass instances (with nested fields/scoring)
+        quotes = [_quote_from_dict(q) for q in quotes_data]
+        
+        # Wire in PlacementEngine
+        try:
+            engine = PlacementEngine()
+            
+            # Load carrier profiles for FSR scoring
+            carrier_profiles = {}
+            for quote in quotes:
+                profile_data = storage.get_carrier_profile_by_name(quote.carrier_name)
+                if profile_data:
+                    from app.broker.models import CarrierProfile
+                    carrier_profiles[quote.carrier_name] = CarrierProfile(**profile_data)
+            
+            # Score quotes
+            scored_quotes = engine.score_quotes(quotes, submission, carrier_profiles)
+            
+            # Generate recommendation
+            recommendation = engine.generate_recommendation(scored_quotes)
+            
+            # Save scored quotes back to storage
+            for quote in scored_quotes:
+                storage.save_quote(quote)
+            
+        except Exception as e:
+            logger.error(f"Placement engine failed for submission {submission_id}: {e}", exc_info=True)
+            # Fall back to returning basic data if engine fails
+            scored_quotes = quotes
+            recommendation = (
+                f"Analyzed {len(quotes)} quotes for submission {submission_id}. "
+                "Placement scoring unavailable. Manual review recommended."
+            )
+        
+        # Build response
         comparison_table = [
             {
-                "quote_id": q.get("id", ""),
-                "carrier_name": q.get("carrier_name", ""),
-                "annual_premium": q.get("fields", {}).get("annual_premium", "$0"),
-                "total_insured_value": q.get("fields", {}).get("total_insured_value", "$0"),
-                "deductible": q.get("fields", {}).get("deductible", "$0"),
-                "rating": q.get("fields", {}).get("carrier_am_best_rating", "N/A"),
-                "coverage_adequacy": q.get("scoring", {}).get("coverage_adequacy", "adequate"),
-                "placement_score": q.get("scoring", {}).get("placement_score", 0.0),
+                "quote_id": q.id,
+                "carrier_name": q.carrier_name,
+                "annual_premium": q.fields.annual_premium,
+                "total_insured_value": q.fields.total_insured_value,
+                "deductible": q.fields.deductible,
+                "rating": q.fields.carrier_am_best_rating,
+                "coverage_adequacy": q.scoring.coverage_adequacy,
+                "placement_score": q.scoring.placement_score,
             }
-            for q in quotes
+            for q in scored_quotes
         ]
         
         placement_scores = [
             {
-                "quote_id": q.get("id", ""),
-                "carrier_name": q.get("carrier_name", ""),
-                "placement_score": q.get("scoring", {}).get("placement_score", 0.0),
-                "placement_rank": q.get("scoring", {}).get("placement_rank", 0),
-                "recommendation_rationale": q.get("scoring", {}).get("recommendation_rationale", ""),
-                "coverage_gaps": q.get("scoring", {}).get("coverage_gaps", []),
-                "premium_percentile": q.get("scoring", {}).get("premium_percentile", "market"),
+                "quote_id": q.id,
+                "carrier_name": q.carrier_name,
+                "placement_score": q.scoring.placement_score,
+                "placement_rank": q.scoring.placement_rank,
+                "recommendation_rationale": q.scoring.recommendation_rationale,
+                "coverage_gaps": q.scoring.coverage_gaps,
+                "premium_percentile": q.scoring.premium_percentile,
             }
-            for q in quotes
+            for q in scored_quotes
         ]
-        
-        recommendation = (
-            f"Analyzed {len(quotes)} quotes for submission {submission_id}. "
-            "Placement engine integration pending. "
-            "Manual review recommended for final selection."
-        )
         
         return CompareResponse(
             comparison_table=comparison_table,
@@ -629,46 +741,92 @@ async def research_client(client_id: str, request: ResearchRequest):
     """
     try:
         # Verify client exists
-        client = storage.get_client(client_id)
-        if not client:
+        client_data = storage.get_client(client_id)
+        if not client_data:
             raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
         
-        # TODO: integrate AI research engine
-        # For now, return mock research data
-        mock_brief = f"""
-# Client Research Brief: {request.company_name}
+        # Wire in ClientResearchEngine
+        try:
+            research_engine = ClientResearchEngine(_settings.openai)
+            brief = await research_engine.research_client(request.company_name)
+            
+            # Save the research brief to the client record
+            client_data["research_brief"] = brief
+            # Convert property_locations dicts → PropertyLocation dataclasses
+            if isinstance(client_data.get("property_locations"), list):
+                client_data["property_locations"] = [
+                    PropertyLocation(**loc) if isinstance(loc, dict) else loc
+                    for loc in client_data["property_locations"]
+                ]
+            valid_keys = set(Client.__dataclass_fields__)
+            client = Client(**{k: v for k, v in client_data.items() if k in valid_keys})
+            storage.save_client(client)
+            
+            # Format the response
+            brief_text = f"""# Client Research Brief: {request.company_name}
 
 ## Business Overview
-{request.company_name} is a commercial enterprise operating in the {client.get('industry_code', 'N/A')} sector.
-Based in {client.get('headquarters_address', 'N/A')}, the company has been in business for 
-{client.get('years_in_business', 'N/A')} years.
+{brief.get('company_overview', 'N/A')}
 
 ## Financial Profile
-- Annual Revenue: {client.get('annual_revenue', 'N/A')}
-- Employee Count: {client.get('employee_count', 'N/A')}
-- Business Type: {client.get('business_type', 'N/A')}
+{brief.get('financials_summary', 'N/A')}
+
+## Industry Risk Profile
+{brief.get('industry_risk_profile', 'N/A')}
+
+## Insurance Needs Assessment
+{chr(10).join('- ' + need for need in brief.get('insurance_needs', []))}
+
+## Carrier Appetite Matches
+{chr(10).join('- ' + match for match in brief.get('carrier_appetite_matches', []))}
+
+## Recent News & Developments
+{chr(10).join(f"- [{item.get('date', 'N/A')}] {item.get('headline', 'N/A')}" for item in brief.get('recent_news', []))}
+"""
+            
+            sources = brief.get('citations', [])
+            
+            return ResearchResponse(
+                company_name=request.company_name,
+                brief=brief_text.strip(),
+                sources=sources,
+            )
+            
+        except Exception as e:
+            logger.error(f"Client research failed for {client_id}: {e}", exc_info=True)
+            # Return basic fallback if research engine fails
+            mock_brief = f"""# Client Research Brief: {request.company_name}
+
+## Business Overview
+{request.company_name} is a commercial enterprise operating in the {client_data.get('industry_code', 'N/A')} sector.
+Based in {client_data.get('headquarters_address', 'N/A')}, the company has been in business for 
+{client_data.get('years_in_business', 'N/A')} years.
+
+## Financial Profile
+- Annual Revenue: {client_data.get('annual_revenue', 'N/A')}
+- Employee Count: {client_data.get('employee_count', 'N/A')}
+- Business Type: {client_data.get('business_type', 'N/A')}
 
 ## Risk Profile
-Property locations: {len(client.get('property_locations', []))} locations on file.
-Renewal date: {client.get('renewal_date', 'N/A')}
+Property locations: {len(client_data.get('property_locations', []))} locations on file.
+Renewal date: {client_data.get('renewal_date', 'N/A')}
 
 ## Recommendations
 - Review current coverage adequacy
 - Assess risk management practices
 - Evaluate carrier market appetite
 
-*AI research engine integration pending.*
-        """.strip()
-        
-        return ResearchResponse(
-            company_name=request.company_name,
-            brief=mock_brief,
-            sources=[
-                "Client database records",
-                "Public business registry",
-                "Industry reports (mock)",
-            ],
-        )
+*AI research engine unavailable. Manual research recommended.*
+""".strip()
+            
+            return ResearchResponse(
+                company_name=request.company_name,
+                brief=mock_brief,
+                sources=[
+                    "Client database records",
+                    "Note: AI research unavailable",
+                ],
+            )
     except HTTPException:
         raise
     except Exception as e:

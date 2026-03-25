@@ -6,20 +6,20 @@ import {
   Building2, Briefcase, XCircle,
 } from 'lucide-react';
 import { getSubmission, uploadQuote } from '../../lib/broker-api';
-import type { Submission, AcordFieldGroup, AcordField, SubmissionDocument } from '../../lib/broker-types';
+import type { Submission } from '../../lib/broker-types';
 
 interface SubmissionBuilderProps {
   submissionId: string;
 }
 
-const STATUS_STYLES: Record<Submission['status'], { bg: string; text: string; label: string }> = {
+const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   draft: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'Draft' },
   submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
   quoted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Quoted' },
   bound: { bg: 'bg-green-100', text: 'text-green-700', label: 'Bound' },
 };
 
-const DOC_STATUS_ICON: Record<SubmissionDocument['status'], React.ReactNode> = {
+const DOC_STATUS_ICON: Record<string, React.ReactNode> = {
   pending: <Clock className="w-4 h-4 text-slate-400" />,
   processed: <CheckCircle className="w-4 h-4 text-green-500" />,
   error: <XCircle className="w-4 h-4 text-red-500" />,
@@ -115,20 +115,25 @@ export default function SubmissionBuilder({ submissionId }: SubmissionBuilderPro
     );
   }
 
-  const statusStyle = STATUS_STYLES[submission.status];
+  const statusStyle = STATUS_STYLES[submission.status] ?? { bg: 'bg-slate-100', text: 'text-slate-600', label: submission.status };
+  const acord125Entries = Object.entries(submission.acord_125_fields ?? {});
+  const acord140Entries = Object.entries(submission.acord_140_fields ?? {});
+  const confidenceMap = submission.acord_field_confidence ?? {};
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Client Info Header */}
+      {/* Submission Header */}
       <div className="bg-white rounded-lg border border-slate-200 p-5 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
             <Building2 className="w-5 h-5 text-amber-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">{submission.client_name}</h2>
+            <h2 className="text-base font-semibold text-slate-900">
+              {submission.line_of_business} Submission
+            </h2>
             <p className="text-sm text-slate-500">
-              {submission.coverage_type} • TIV {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(submission.total_insured_value)}
+              TIV {submission.total_insured_value} • {submission.effective_date} to {submission.expiration_date}
             </p>
           </div>
         </div>
@@ -142,12 +147,49 @@ export default function SubmissionBuilder({ submissionId }: SubmissionBuilderPro
         </div>
       </div>
 
-      {/* ACORD Fields */}
-      {submission.acord_fields.length > 0 && (
-        <div className="space-y-4">
-          {submission.acord_fields.map((group) => (
-            <AcordFieldGroupPanel key={group.form_type} group={group} />
-          ))}
+      {/* ACORD 125 Fields */}
+      {acord125Entries.length > 0 && (
+        <div className="bg-white rounded-lg border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+            <Briefcase className="w-4 h-4 text-amber-600" />
+            <h3 className="text-sm font-semibold text-slate-900">ACORD 125 Fields</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {acord125Entries.map(([key, value]) => (
+              <div key={key} className="px-5 py-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">{key}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-900 font-mono">
+                    {value !== null && value !== undefined ? String(value) : '—'}
+                  </span>
+                  {confidenceMap[key] != null && confidenceBadge(confidenceMap[key])}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ACORD 140 Fields */}
+      {acord140Entries.length > 0 && (
+        <div className="bg-white rounded-lg border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+            <Briefcase className="w-4 h-4 text-amber-600" />
+            <h3 className="text-sm font-semibold text-slate-900">ACORD 140 Fields</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {acord140Entries.map(([key, value]) => (
+              <div key={key} className="px-5 py-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">{key}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-900 font-mono">
+                    {value !== null && value !== undefined ? String(value) : '—'}
+                  </span>
+                  {confidenceMap[key] != null && confidenceBadge(confidenceMap[key])}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -156,17 +198,17 @@ export default function SubmissionBuilder({ submissionId }: SubmissionBuilderPro
         <div className="px-5 py-4 border-b border-slate-200">
           <h3 className="text-sm font-semibold text-slate-900">Documents</h3>
         </div>
-        {submission.documents.length === 0 ? (
+        {(submission.documents?.length ?? 0) === 0 ? (
           <div className="flex flex-col items-center py-10 text-slate-400">
             <FileText className="w-8 h-8 mb-2" />
             <p className="text-sm">No documents uploaded yet.</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {submission.documents.map((doc) => (
+            {submission.documents?.map((doc) => (
               <div key={doc.id} className="px-5 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {DOC_STATUS_ICON[doc.status]}
+                  {DOC_STATUS_ICON[doc.status] ?? <Clock className="w-4 h-4 text-slate-400" />}
                   <div>
                     <p className="text-sm font-medium text-slate-700">{doc.filename}</p>
                     <p className="text-xs text-slate-400">
@@ -227,55 +269,6 @@ export default function SubmissionBuilder({ submissionId }: SubmissionBuilderPro
             <p className="text-xs text-amber-600 mt-2">Uploading…</p>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-component: ACORD field group
-// ---------------------------------------------------------------------------
-
-function AcordFieldGroupPanel({ group }: { group: AcordFieldGroup }) {
-  return (
-    <div className="bg-white rounded-lg border border-slate-200">
-      <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
-        <Briefcase className="w-4 h-4 text-amber-600" />
-        <h3 className="text-sm font-semibold text-slate-900">{group.form_type} Fields</h3>
-      </div>
-      <div className="divide-y divide-slate-100">
-        {group.fields.map((field) => (
-          <AcordFieldRow key={field.name} field={field} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AcordFieldRow({ field }: { field: AcordField }) {
-  const lowConfidence = field.confidence < 0.6;
-  return (
-    <div
-      className={`px-5 py-3 flex items-center justify-between ${
-        lowConfidence ? 'bg-amber-50' : ''
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-700">{field.name}</p>
-          <p className="text-xs text-slate-400">Source: {field.source_document}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-900 font-mono">
-          {field.value !== null && field.value !== undefined ? String(field.value) : '—'}
-        </span>
-        {confidenceBadge(field.confidence)}
-        {field.needs_review && (
-          <span className="text-xs font-medium text-amber-700 bg-amber-200 px-1.5 py-0.5 rounded">
-            Needs Review
-          </span>
-        )}
       </div>
     </div>
   );

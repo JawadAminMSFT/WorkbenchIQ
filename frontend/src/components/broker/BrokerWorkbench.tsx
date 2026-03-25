@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Briefcase, BarChart3, FileText, Search, TrendingUp,
-  AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import BrokerDashboard from './BrokerDashboard';
 import SubmissionBuilder from './SubmissionBuilder';
@@ -12,10 +11,10 @@ import ClientResearchPanel from './ClientResearchPanel';
 import { getSubmission } from '../../lib/broker-api';
 import type { Submission } from '../../lib/broker-types';
 
-type BrokerTab = 'dashboard' | 'submission' | 'quotes' | 'research';
+type BrokerTab = 'dashboard' | 'research' | 'submission' | 'quotes';
 
 interface BrokerWorkbenchProps {
-  applicationId: string;
+  applicationId?: string;
 }
 
 export default function BrokerWorkbench({ applicationId }: BrokerWorkbenchProps) {
@@ -24,7 +23,6 @@ export default function BrokerWorkbench({ applicationId }: BrokerWorkbenchProps)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
 
-  // When a submission is selected, pre-fetch it and open the Submission tab
   const handleSelectSubmission = useCallback(async (submissionId: string) => {
     setSelectedSubmissionId(submissionId);
     setActiveTab('submission');
@@ -44,9 +42,9 @@ export default function BrokerWorkbench({ applicationId }: BrokerWorkbenchProps)
 
   const tabs: { id: BrokerTab; label: string; icon: typeof Briefcase; disabled?: boolean }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
+    { id: 'research', label: 'Research', icon: Search, disabled: !selectedClientId },
     { id: 'submission', label: 'Submission', icon: FileText, disabled: !selectedSubmissionId },
     { id: 'quotes', label: 'Quotes', icon: BarChart3, disabled: !selectedSubmissionId },
-    { id: 'research', label: 'Research', icon: Search },
   ];
 
   return (
@@ -63,7 +61,7 @@ export default function BrokerWorkbench({ applicationId }: BrokerWorkbenchProps)
                 Commercial Brokerage Workbench
               </h1>
               <p className="text-sm text-slate-500">
-                Application {applicationId}
+                {applicationId ? `Application ${applicationId}` : 'Manage clients, submissions & quotes'}
                 {selectedSubmissionId && ` • Submission ${selectedSubmissionId}`}
               </p>
             </div>
@@ -104,14 +102,17 @@ export default function BrokerWorkbench({ applicationId }: BrokerWorkbenchProps)
               onSelectSubmission={handleSelectSubmission}
             />
           )}
+          {activeTab === 'research' && (
+            <ClientResearchPanel
+              clientId={selectedClientId ?? undefined}
+              onSelectSubmission={handleSelectSubmission}
+            />
+          )}
           {activeTab === 'submission' && selectedSubmissionId && (
             <SubmissionBuilder submissionId={selectedSubmissionId} />
           )}
           {activeTab === 'quotes' && selectedSubmissionId && (
             <QuoteComparisonTable submissionId={selectedSubmissionId} />
-          )}
-          {activeTab === 'research' && (
-            <ClientResearchPanel clientId={selectedClientId ?? undefined} />
           )}
         </div>
       </div>

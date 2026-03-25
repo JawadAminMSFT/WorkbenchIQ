@@ -3696,6 +3696,24 @@ COMMERCIAL_BROKERAGE_FIELD_SCHEMA = {
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
+        "QuoteReferenceNumber": {
+            "type": "string",
+            "description": "Carrier's internal quote reference number.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "ExpiryDate": {
+            "type": "date",
+            "description": "Quote expiration date (quote valid until).",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "Underwriter": {
+            "type": "string",
+            "description": "Name and contact information of carrier underwriter.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
         # ===== Loss History =====
         "LossDate": {
             "type": "date",
@@ -3712,6 +3730,38 @@ COMMERCIAL_BROKERAGE_FIELD_SCHEMA = {
         "LossAmountPaid": {
             "type": "string",
             "description": "Total claim payout amount.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== SOV Fields =====
+        "SOVSiteNumber": {
+            "type": "string",
+            "description": "Statement of Values site reference number.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "SOVBuildingDescription": {
+            "type": "string",
+            "description": "Property description from Statement of Values.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "SOVTotalInsuredValue": {
+            "type": "string",
+            "description": "Total insured value per location from SOV.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        "TotalSOVValue": {
+            "type": "string",
+            "description": "Sum of all location TIVs from Statement of Values.",
+            "method": "extract",
+            "estimateSourceAndConfidence": True
+        },
+        # ===== Client/Account Fields =====
+        "ClientContacts": {
+            "type": "array",
+            "description": "Array of client contact persons with name, title, email, phone.",
             "method": "extract",
             "estimateSourceAndConfidence": True
         },
@@ -3742,58 +3792,69 @@ Provide thorough, accurate analysis while maintaining a professional and helpful
 - Estimated insurance needs by line (property, GL, auto, WC, D&O)
 - Likely carrier appetite matches based on industry and size
 - Recent news or events that may affect insurability
+- AM Best / S&P carrier data if available (Financial Strength Rating, Issuer Credit Rating, rating outlook, balance sheet strength, operating performance, combined ratio, NWP-to-surplus ratio)
 
-Cite sources for every factual claim. Indicate confidence level for fields with limited data.""",
+Cite sources for every factual claim using grounded citations from SEC filings, annual reports, and news.
+Indicate confidence level (low/medium/high) for fields with limited data or sourcing.""",
 
-        "quote_extraction": """Extract all insurance quote fields from the provided carrier document. Map the following fields:
+        "quote_extraction": """Extract all insurance quote fields from the provided carrier document. Map the following 15 canonical fields:
 
-- Annual Premium (total premium amount)
-- Total Insured Value
-- Building Limit (per location and aggregate)
-- Contents Limit
-- Business Interruption Limit
-- Deductible (base and per-peril)
-- Flood Sublimit
-- Earthquake Sublimit
-- Named Perils Exclusions (list all excluded perils)
-- Special Conditions or Endorsements
-- Policy Period (effective and expiration dates)
-- AM Best Rating (if shown)
-- Quote Reference Number
-- Underwriter name and contact
+1. Annual Premium (total premium amount)
+2. Total Insured Value
+3. Building Limit (per location and aggregate)
+4. Contents Limit
+5. Business Interruption Limit
+6. Deductible (base and per-peril)
+7. Flood Sublimit
+8. Earthquake Sublimit
+9. Named Perils Exclusions (list all excluded perils)
+10. Special Conditions or Endorsements
+11. Policy Period (effective and expiration dates)
+12. AM Best Rating (if shown)
+13. Quote Reference Number
+14. Expiry Date (quote valid until date)
+15. Underwriter (name and contact)
 
 For each extracted field, provide a confidence score (0.0-1.0).
-Flag any field with confidence < 0.60 as 'Needs Review'.
+Flag any field with confidence < 0.60 as 'Needs Review' per FR-020.
 Return structured JSON with all fields.""",
 
         "placement_recommendation": """Analyze the extracted quotes for this submission and provide a placement recommendation.
 
-Scoring factors:
+Scoring factors (OPT-001):
 1. Premium competitiveness (35%): Lower premium scores higher, adjusted for coverage breadth
 2. Coverage completeness (30%): Fewer exclusions and higher sublimits score higher
-3. Carrier financial strength (20%): AM Best FSR tier scoring
+3. Carrier financial strength (20%): FSR tier scoring: A++ or A+ = 100pts; A = 85pts; A- = 70pts; B++ = 50pts; B+ = 25pts; unrated = 10pts
+   - Combined ratio adjustments: < 95% = +10pts; 95-102% = 0pts; 103-108% = -10pts; > 108% = -20pts
 4. Quote completeness (15%): All required fields populated
+
+FSR Gate Rules (FSR-001):
+- A++ / A+ / A with non-negative outlook: Eligible (green badge)
+- A- with stable/positive outlook: Eligible with monitoring (yellow badge)
+- B++ / B+ or negative outlook: Flag for broker review (warning)
+- Below B+ or unrated: Exclude from automated placement (broker override required)
 
 For each quote, compute a placement score (0-100) and rank.
 Provide a plain-language recommendation highlighting the top 3 reasons for the recommended carrier.
 Identify any coverage gaps vs. the client's requested coverage.
-Flag any carrier with FSR below A- for broker review.
 
 Return structured JSON with scores, rankings, rationale, and coverage gap analysis.""",
 
         "acord_extraction": """Extract ACORD form fields from the uploaded client documents. Map to:
 
-ACORD 125 fields: InsuredName, FEIN, BusinessPhone, BusinessAddress, BusinessType, 
+ACORD 125 fields (13 fields): InsuredName, FEIN, BusinessPhone, BusinessAddress, BusinessType, 
 YearsInBusiness, SICCode, AnnualGrossRevenue, NumberOfEmployees, PriorCarrier, 
 PriorPremium, EffectiveDateRequested, LinesOfBusinessRequested.
 
-ACORD 140 fields: PropertyLocations (address, occupancy, construction, year built, 
-square footage, building value, contents value, BI value, protection class), 
-LossHistory (date, cause, amount, description), PriorPolicyNumber, PriorExpirationDate.
+ACORD 140 / Property fields (15+ fields): PropertyLocations array with (address, occupancy, 
+construction, year built, square footage, building value, contents value, BI value, protection class), 
+LossHistory (date, cause, amount, description), PriorPolicyNumber, PriorExpirationDate, 
+TotalInsuredValue, RequestedLimits, Deductibles, SpecialConditions, MortgageeInfo.
 
-SOV fields: SiteNumber, Address, BuildingDescription, TotalInsuredValue per location.
+SOV fields: SOVLocations array with (SiteNumber, Address, BuildingDescription, TotalInsuredValue per location,
+BuildingValue, ContentsValue, BIValue), TotalSOVValue.
 
-For each field, provide source document and confidence score (0.0-1.0)."""
+For each field, provide source document and confidence score (0.0-1.0). Flag fields with confidence < 0.60 per FR-020."""
     }
 }
 

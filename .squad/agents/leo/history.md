@@ -53,3 +53,33 @@ underwriting-assistant is an AI-powered underwriting assistant for mortgage and 
 - Storage integration: Dict ↔ dataclass conversions working correctly
 
 **Impact on Architecture Review:** MVP now ready for ship (integration gap resolved).
+
+### 2026-07-14: Commercial Brokerage UX Redesign
+
+**Context:** The broker UI had a flat tab architecture (Dashboard/Research/Submission/Quotes all at the same level in BrokerWorkbench). This conflicted with the spec's two-level flow: Dashboard → click client → Client Workspace with scoped tabs. Users found the disabled tabs confusing and there was no back navigation.
+
+**Decision:** Restructure to a two-level view: BrokerWorkbench switches between `dashboard` view and `client` view. The `client` view is a new `ClientWorkspace` component containing tabbed sub-views (Research, Submissions, Quote Comparison) all scoped to one `clientId`.
+
+**Architecture Pattern:** Replicate the mortgage workbench pattern — single entity scoping, header with persistent context, tabs within a workspace, props-down/events-up state flow, no global store.
+
+**Key Components:**
+- `ClientWorkspace.tsx` (NEW) — tabbed workspace scoped to a client
+- `ClientHeader.tsx` (NEW) — persistent context bar with back button
+- `ResearchTab.tsx` (NEW) — replaces `ClientResearchPanel.tsx`
+- `SubmissionsTab.tsx` (NEW) — submission list + create + drill-into-detail
+- `QuoteComparisonTab.tsx` (NEW) — wraps existing `QuoteComparisonTable` with submission selector
+- `SubmissionDetail.tsx` (renamed from `SubmissionBuilder.tsx`)
+- `ClientResearchPanel.tsx` — DELETE (replaced by ResearchTab)
+
+**New API Endpoints Needed (Ben):**
+- `POST /api/broker/submissions/{id}/documents` — client doc upload
+- `POST /api/broker/submissions/{id}/generate-package` — ACORD package generation
+
+**Blueprint:** `broker-ux-redesign.md` in session files
+
+**File Paths:**
+- Broker components: `frontend/src/components/broker/`
+- API client: `frontend/src/lib/broker-api.ts`
+- Types: `frontend/src/lib/broker-types.ts`
+- Backend router: `app/broker/api.py`
+- Page integration: `frontend/src/app/page.tsx` (lines 128-146, no changes needed)

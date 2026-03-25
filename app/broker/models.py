@@ -178,11 +178,26 @@ class CarrierProfile:
     combined_ratio: str = ""
     five_year_avg_combined_ratio: str = ""
     report_date: Optional[str] = None
-    # MD&A fields
+    # MD&A fields (16 additional fields per spec)
     direct_written_premium: str = ""
+    dwp_growth_rate: str = ""
+    net_premiums_earned: str = ""
+    total_admitted_assets: str = ""
+    total_invested_assets: str = ""
+    loss_and_lae_reserves: str = ""
+    unearned_premiums: str = ""
+    rbc_total_adjusted_capital: str = ""
+    rbc_control_level: str = ""
     nwp_to_surplus_ratio: str = ""
+    reinsurance_per_risk_retention: str = ""
+    cat_retention: str = ""
+    reinsurance_cession_rate: str = ""
     lines_of_business_written: List[Dict[str, str]] = field(default_factory=list)
     geographic_concentration: List[Dict[str, str]] = field(default_factory=list)
+    mda_year: str = ""
+    net_income: str = ""
+    underwriting_gain_loss: str = ""
+    net_investment_income: str = ""
 
 
 @dataclass

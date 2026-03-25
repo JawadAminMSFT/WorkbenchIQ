@@ -234,6 +234,22 @@ class BrokerStorage:
                 results.append(data)
         return results
 
+    def get_carrier_profile_by_name(self, carrier_name: str) -> Optional[Dict[str, Any]]:
+        """Load a carrier profile by carrier name (case-insensitive).
+        
+        Args:
+            carrier_name: Name of the carrier to search for
+            
+        Returns:
+            Carrier profile dict or None if not found
+        """
+        carrier_name_lower = carrier_name.lower()
+        all_profiles = self.list_carrier_profiles()
+        for profile in all_profiles:
+            if profile.get("carrier_name", "").lower() == carrier_name_lower:
+                return profile
+        return None
+
     # ------------------------------------------------------------------
     # Dashboard metrics (computed on the fly)
     # ------------------------------------------------------------------
