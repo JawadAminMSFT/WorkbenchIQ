@@ -41,3 +41,25 @@ underwriting-assistant frontend is a Next.js application with TypeScript and Rea
 
 **For Frontend:** Response shapes finalized. Components can now call real endpoints instead of mock data. BrokerWorkbench, QuoteComparisonTable, and ClientResearchPanel should consume these endpoints (see orchestration log for exact contract).
 
+### Fix: Commercial Brokerage Persona Routing
+
+**Bug:** Switching to Commercial Brokerage persona showed underwriting data ("Mike Johnson APS Review") because the broker path went through the standard application-selection flow (LandingPage → WorkbenchView → getApplication).
+
+**Root cause:** Broker is a dashboard-first (CRM-style) persona, not a document-first persona. It doesn't need an applicationId — its data comes from `/api/broker/dashboard` and `/api/broker/clients`.
+
+**Fix applied:**
+- `frontend/src/app/page.tsx` — Added early return for `commercial_brokerage` persona that renders `<BrokerWorkbench />` directly with TopNav, bypassing both the LandingPage upload flow and WorkbenchView's application-loading flow.
+- `frontend/src/components/broker/BrokerWorkbench.tsx` — Made `applicationId` optional. Updated subtitle to show contextual text when no applicationId is present.
+
+**Architecture insight:** Personas fall into two categories:
+1. **Document-first** (underwriting, claims, mortgage): LandingPage → upload/select → WorkbenchView → persona workbench
+2. **Dashboard-first** (commercial_brokerage): Render workbench directly on persona switch. No document upload needed.
+
+Future dashboard-first personas should follow the same pattern in `page.tsx`.
+
+**Cross-Agent Coordination (2026-03-25):**
+- Coordinated with Ben on backend validation
+- Ben confirmed all `/api/broker/` endpoints properly registered and returning broker-specific data
+- Seed data (Ridgeview Properties, Meridian Manufacturing clients) confirmed present in `data/broker/`
+- Frontend ready for live API integration testing
+

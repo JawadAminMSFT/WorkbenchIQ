@@ -733,3 +733,113 @@ storage.save_quote(quote)
 - Consider adding circuit breaker for repeated engine failures
 - Add integration tests for all engine-wired endpoints
 
+
+
+
+
+---
+
+# Demo Data Seeding Strategy for Commercial Brokerage
+
+**Date:** 2026-03-25  
+**Author:** Ben (Backend/Scoring)  
+**Status:** Implemented  
+
+## Decision
+
+Created `scripts/seed_broker_data.py` with deterministic UUIDs to populate realistic demo data matching the Commercial Brokerage spec's Ridgeview Properties scenario.
+
+## Context
+
+The Commercial Brokerage feature needs realistic demo data for:
+- Frontend development and testing
+- Demo environments for stakeholders
+- Automated testing scenarios
+- Documentation examples
+
+## Approach
+
+### Fixed UUIDs for Idempotency
+Using deterministic UUIDs (e.g., `c1111111-1111-1111-1111-111111111111` for Ridgeview client) ensures:
+- Script can be run multiple times without creating duplicates
+- Consistent references across demo environments
+- Predictable data for automated tests
+- Easy manual reference in documentation
+
+### Data Architecture
+**Quotes Embedded in Submissions:**
+- Quotes stored as list within submission JSON (`submission.quotes[]`)
+- No separate quote files in storage layer
+- Placement scoring pre-calculated and stored with each quote
+- Enables efficient loading: one file read gets submission + all quotes
+
+**Pre-calculated Placement Scores:**
+- Each quote includes `placement_score`, `placement_rank`, `coverage_gaps`, `recommendation_rationale`
+- Allows frontend to display rankings without running PlacementEngine
+- Confidence scores reflect data quality (low scores flag uncertain fields)
+
+### Demo Scenario Design
+
+**Ridgeview Properties:** 3-location commercial property with diverse quote options:
+1. **Travelers** (Rank #1, Score 93.2): Premium but comprehensive, A++ rated
+2. **AIG** (Rank #2, Score 88.5): Strong coverage, market premium, A+ rated
+3. **Zurich** (Rank #3, Score 72.3): Low price but coverage gaps (mold/cyber exclusions, low sublimits)
+
+This mix demonstrates:
+- Placement scoring differentiation
+- Trade-offs between price and coverage
+- Coverage gap identification
+- Confidence scoring on extracted fields
+
+**Meridian Manufacturing:** Second client for multi-client scenarios (no quotes yet)
+
+## Implications
+
+**For Team:**
+- Frontend can develop against realistic data immediately
+- Demo environments consistent across team members
+- Integration tests can reference known UUIDs
+- Placement scoring algorithm validated against realistic scenarios
+
+**For Future:**
+- Template for additional demo scenarios
+- Consider parameterizing script for different industries/LOBs
+- May need refresh mechanism if data models change significantly
+
+## Files Created
+
+- `scripts/seed_broker_data.py` — Main seed script
+- `data/broker/clients/c1111111-1111-1111-1111-111111111111.json` — Ridgeview Properties
+- `data/broker/clients/c2222222-2222-2222-2222-222222222222.json` — Meridian Manufacturing
+- `data/broker/submissions/s1111111-1111-1111-1111-111111111111.json` — Ridgeview submission (3 quotes embedded)
+- `data/broker/carriers/carr{1,2,3}111-*.json` — AIG, Zurich, Travelers profiles
+
+
+---
+
+# Decision: Dashboard-First Persona Routing Pattern
+
+**Author:** Frank (Frontend)
+**Date:** 2025-07-17
+**Status:** Implemented
+
+## Context
+
+The Commercial Brokerage persona was incorrectly going through the standard application-selection flow (LandingPage → WorkbenchView → getApplication), which loaded underwriting data instead of broker data.
+
+## Decision
+
+Personas now have two routing categories in `page.tsx`:
+
+1. **Document-first** (underwriting, claims, mortgage): Standard flow through LandingPage → upload → WorkbenchView
+2. **Dashboard-first** (commercial_brokerage): Early return in `page.tsx` renders the workbench directly with TopNav, bypassing LandingPage and WorkbenchView entirely
+
+## Implementation
+
+- `page.tsx`: Added `if (currentPersona === 'commercial_brokerage')` check before the workbench/landing view logic
+- `BrokerWorkbench.tsx`: `applicationId` is now optional
+
+## Impact
+
+- Existing underwriting/claims/mortgage flows are unchanged
+- Future dashboard-first personas should follow the same early-return pattern in `page.tsx`
