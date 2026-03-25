@@ -843,3 +843,55 @@ Personas now have two routing categories in `page.tsx`:
 
 - Existing underwriting/claims/mortgage flows are unchanged
 - Future dashboard-first personas should follow the same early-return pattern in `page.tsx`
+
+---
+
+
+# Decision: Frontend Type Alignment with Backend Models
+
+**Date:** 2026-03-25  
+**Author:** Frank (Frontend Dev)  
+**Status:** Implemented
+
+## Context
+
+Tia's QA testing revealed 7 bugs in the commercial brokerage workbench, most stemming from type mismatches between frontend TypeScript interfaces and backend Python dataclasses.
+
+## Problem
+
+The frontend `Client` interface was defined with fields like `company_name`, `industry`, `contact_name`, `active_submissions`, `total_premium`, and `status` that don't exist in the backend `Client` model. The backend uses `name`, `industry_code`, `contacts` (array), and has no computed fields for premium/submissions. This caused:
+- Missing client names (Bug 1)
+- Blank industry/contact fields (Bug 6)  
+- Wrong currency formatting (Bug 2 — backend returns strings like "$125,000")
+
+## Decision
+
+**Frontend types must exactly mirror backend dataclass fields.** No assumptions, no derived fields, no renaming.
+
+Implementation:
+1. Always read `app/{persona}/models.py` before creating frontend types
+2. Use exact field names from Python dataclasses
+3. Match field types (strings stay strings, don't convert to numbers if backend sends formatted strings)
+4. Don't add computed fields to base types — fetch them separately if needed
+
+## Consequences
+
+**Positive:**
+- Type safety catches data shape mismatches at compile time
+- No silent failures where UI doesn't populate because field names are wrong
+- Reduces back-and-forth with backend team to debug "missing data" issues
+
+**Negative:**
+- Backend field names might not be ideal for frontend (e.g., `industry_code` vs `industry`)
+- Can't use TypeScript features like mapped types to transform data shapes
+- Requires reading backend code during frontend development
+
+**Mitigation:**
+- If frontend needs different names, create separate ViewModel types and map explicitly
+- Don't hide the mapping — make it visible in the component so it's obvious data is being transformed
+
+## Related
+
+- Fixes: Bugs 1, 2, 6 from Tia's QA report
+- Pattern applies to all personas (underwriting, mortgage, broker, claims)
+

@@ -63,3 +63,34 @@ Future dashboard-first personas should follow the same pattern in `page.tsx`.
 - Seed data (Ridgeview Properties, Meridian Manufacturing clients) confirmed present in `data/broker/`
 - Frontend ready for live API integration testing
 
+### 2026-03-25: Bug Fix - QA Report from Tia
+
+**Context:** Fixed all 7 bugs from Tia's QA report after testing the commercial brokerage workbench.
+
+**Bugs fixed:**
+
+1. **Bug 1 (P0): Client names missing** — Frontend `Client` interface was using `company_name`, `industry`, `contact_name`, but backend uses `name`, `industry_code`, `contacts` array. Updated `broker-types.ts` to match backend `Client` dataclass exactly.
+
+2. **Bug 2 (P1): "$$0.00" double dollar sign** — Backend `DashboardMetrics.total_bound_premium` returns `"$0"` (string with $), but frontend was passing it through `formatCurrency()` which adds another $. Fixed by changing type to `string` and displaying directly without formatting.
+
+3. **Bug 3 (P0): "New Client" button does nothing** — Added `onClick` handler that opens a modal form with fields: name, industry_code, business_type, headquarters_address, annual_revenue. Calls `createClient()` API and refreshes dashboard.
+
+4. **Bug 4 (P0): Submission tab permanently disabled** — Tab was gated on `selectedSubmissionId` with no way to set it. Added submissions list to `ClientResearchPanel` that displays when a client is selected. Clicking a submission calls `handleSelectSubmission()` which enables the Submission tab.
+
+5. **Bug 5 (P0): Quotes tab permanently disabled** — Same fix as Bug 4. Quotes tab now enables when a submission with quotes is selected.
+
+6. **Bug 6 (P1): Account fields blank** — Overlaps with Bug 1. Fixed by aligning `Client` interface fields with backend model. Display now shows `industry_code`, `business_type`, contacts count, and renewal date properly.
+
+7. **Bug 7 (P2): Revenue corruption on POST** — Inspected `app/broker/api.py` create_client endpoint. No stripping logic found — `annual_revenue` is passed through as-is. Bug may have been pre-emptively fixed or doesn't exist.
+
+**Files modified:**
+- `frontend/src/lib/broker-types.ts` — Updated `Client` and `DashboardMetrics` interfaces to match backend models exactly
+- `frontend/src/lib/broker-api.ts` — Added `getClientSubmissions()` function
+- `frontend/src/components/broker/BrokerDashboard.tsx` — Fixed field references, added new client modal with state and handler
+- `frontend/src/components/broker/BrokerWorkbench.tsx` — Pass `onSelectSubmission` to ClientResearchPanel
+- `frontend/src/components/broker/ClientResearchPanel.tsx` — Added client details and submissions list, load submissions when client selected
+
+**Pattern learned:** Always read backend models first before implementing frontend types. Type mismatches cause silent failures (missing data in UI). The backend is the source of truth.
+
+**Verification:** `npx next build` passed with no TypeScript errors. All 7 bugs addressed.
+
