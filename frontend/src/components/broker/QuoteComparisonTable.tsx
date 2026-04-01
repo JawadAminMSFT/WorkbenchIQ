@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  BarChart3, Star, AlertTriangle, CheckCircle, Shield,
+  BarChart3, Star, AlertTriangle, CheckCircle, Shield, Mail, Copy, X, Info,
 } from 'lucide-react';
 import { getSubmission } from '../../lib/broker-api';
 import type { Submission, Quote } from '../../lib/broker-types';
@@ -32,10 +32,129 @@ const COVERAGE_ROWS: { key: FieldKey; label: string }[] = [
   { key: 'earthquake_sublimit', label: 'Earthquake Sublimit' },
 ];
 
+/* ---------- helpers ---------- */
+
+function confidenceBadge(score: number | undefined) {
+  if (score === undefined || score === null) return null;
+  const pct = Math.round(score * 100);
+  if (score >= 0.8) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-100 text-green-700" title={`${pct}% confidence`}>
+        <CheckCircle className="w-3 h-3" />{pct}%
+      </span>
+    );
+  }
+  if (score >= 0.6) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-700" title={`${pct}% confidence`}>
+        <Info className="w-3 h-3" />{pct}%
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-red-100 text-red-700" title={`${pct}% confidence`}>
+      <AlertTriangle className="w-3 h-3" />{pct}%
+    </span>
+  );
+}
+
+function needsReviewBadge(score: number | undefined) {
+  if (score !== undefined && score !== null && score < 0.6) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-800 border border-amber-300">
+        Needs Review
+      </span>
+    );
+  }
+  return null;
+}
+
+function fieldWithConfidence(value: string | undefined, score: number | undefined) {
+  return (
+    <span className="inline-flex items-center flex-wrap justify-end">
+      <span>{value || '—'}</span>
+      {confidenceBadge(score)}
+      {needsReviewBadge(score)}
+    </span>
+  );
+}
+
+/* ---------- Clarification Modal ---------- */
+
+function ClarificationModal({
+  carrierName,
+  quoteRef,
+  fieldName,
+  onClose,
+}: {
+  carrierName: string;
+  quoteRef: string;
+  fieldName: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const template = `Dear ${carrierName},
+
+Regarding quote ${quoteRef || '[Ref #]'}, we noticed "${fieldName}" is missing from your submission. Could you please provide this information at your earliest convenience?
+
+Thank you for your prompt attention to this matter.
+
+Best regards`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(template).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <Mail className="w-4 h-4 text-amber-600" /> Request Clarification
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={template}
+          className="w-full h-40 text-sm border border-slate-200 rounded-lg p-3 text-slate-700 bg-slate-50 resize-none focus:outline-none"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+          >
+            <Copy className="w-4 h-4" />
+            {copied ? 'Copied!' : 'Copy to Clipboard'}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Main component ---------- */
+
 export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTableProps) {
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Clarification modal state
+  const [clarification, setClarification] = useState<{
+    carrier: string; ref: string; field: string;
+  } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -99,6 +218,16 @@ export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTa
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Clarification Modal */}
+      {clarification && (
+        <ClarificationModal
+          carrierName={clarification.carrier}
+          quoteRef={clarification.ref}
+          fieldName={clarification.field}
+          onClose={() => setClarification(null)}
+        />
+      )}
+
       {/* AI Recommendation */}
       {rationale && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
@@ -158,11 +287,30 @@ export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTa
                   </div>
                 )}
                 {(scoring?.coverage_gaps?.length ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <AlertTriangle className="w-3 h-3 text-red-500" />
-                    <span className="text-slate-600">
-                      Gaps: {scoring?.coverage_gaps?.join(', ')}
-                    </span>
+                  <div className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3 text-red-500" />
+                      <span className="text-slate-600">Coverage Gaps:</span>
+                    </div>
+                    <ul className="mt-1 ml-4 space-y-0.5">
+                      {scoring?.coverage_gaps?.map((gap, i) => (
+                        <li key={i} className="flex items-center gap-1.5">
+                          <span className="text-red-600">{gap}</span>
+                          <button
+                            onClick={() =>
+                              setClarification({
+                                carrier: q.carrier_name,
+                                ref: q.fields?.quote_reference_number || '',
+                                field: gap,
+                              })
+                            }
+                            className="text-[10px] text-amber-600 hover:text-amber-800 underline whitespace-nowrap"
+                          >
+                            Request Clarification
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -200,18 +348,37 @@ export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTa
                     key={q.id}
                     className="px-4 py-3 text-right font-mono text-slate-900"
                   >
-                    {(q.fields?.[row.key] as string) ?? '—'}
+                    {fieldWithConfidence(
+                      q.fields?.[row.key] as string,
+                      q.confidence_scores?.[row.key],
+                    )}
                   </td>
                 ))}
               </tr>
             ))}
+
+            {/* Effective Date */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">Effective Date</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.effective_date ?? undefined,
+                    q.confidence_scores?.effective_date,
+                  )}
+                </td>
+              ))}
+            </tr>
 
             {/* AM Best Rating */}
             <tr>
               <td className="px-4 py-3 font-medium text-slate-700">AM Best Rating</td>
               {sortedQuotes.map((q) => (
                 <td key={q.id} className="px-4 py-3 text-right text-slate-700">
-                  {q.fields?.carrier_am_best_rating ?? '—'}
+                  {fieldWithConfidence(
+                    q.fields?.carrier_am_best_rating,
+                    q.confidence_scores?.carrier_am_best_rating,
+                  )}
                 </td>
               ))}
             </tr>
@@ -221,7 +388,23 @@ export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTa
               <td className="px-4 py-3 font-medium text-slate-700">Policy Period</td>
               {sortedQuotes.map((q) => (
                 <td key={q.id} className="px-4 py-3 text-right text-slate-700">
-                  {q.fields?.policy_period ?? '—'}
+                  {fieldWithConfidence(
+                    q.fields?.policy_period,
+                    q.confidence_scores?.policy_period,
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* Expiry Date */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">Quote Expiry</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.expiry_date ?? undefined,
+                    q.confidence_scores?.expiry_date,
+                  )}
                 </td>
               ))}
             </tr>
@@ -242,6 +425,7 @@ export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTa
                         ))}
                       </ul>
                     )}
+                    {confidenceBadge(q.confidence_scores?.named_perils_exclusions)}
                   </td>
                 );
               })}

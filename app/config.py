@@ -85,6 +85,25 @@ class MortgageUnderwritingSettings:
         )
 
 
+@dataclass
+class BrokerSettings:
+    """Settings for Commercial Brokerage Content Understanding analyzers."""
+    enabled: bool = True
+    quote_analyzer: str = "brokerQuoteAnalyzer"
+    acord_analyzer: str = "brokerAcordAnalyzer"
+    research_analyzer: str = "brokerResearchAnalyzer"
+
+    @classmethod
+    def from_env(cls) -> "BrokerSettings":
+        """Load broker CU settings from environment variables."""
+        return cls(
+            enabled=os.getenv("BROKER_CU_ENABLED", "true").lower() == "true",
+            quote_analyzer=os.getenv("BROKER_QUOTE_ANALYZER", "brokerQuoteAnalyzer"),
+            acord_analyzer=os.getenv("BROKER_ACORD_ANALYZER", "brokerAcordAnalyzer"),
+            research_analyzer=os.getenv("BROKER_RESEARCH_ANALYZER", "brokerResearchAnalyzer"),
+        )
+
+
 
 
 import os
@@ -174,6 +193,7 @@ class Settings:
     rag: RAGSettings
     automotive_claims: AutomotiveClaimsSettings
     mortgage_underwriting: MortgageUnderwritingSettings
+    broker: BrokerSettings
 
 
 def load_settings() -> Settings:
@@ -241,6 +261,7 @@ def load_settings() -> Settings:
 
     auto_claims = AutomotiveClaimsSettings.from_env()
     mortgage = MortgageUnderwritingSettings.from_env()
+    broker = BrokerSettings.from_env()
 
     processing = ProcessingSettings(
         large_doc_threshold_kb=int(os.getenv("LARGE_DOC_THRESHOLD_KB", "1500")),
@@ -258,7 +279,8 @@ def load_settings() -> Settings:
         database=db,
         rag=rag,
         automotive_claims=auto_claims,
-        mortgage_underwriting=mortgage
+        mortgage_underwriting=mortgage,
+        broker=broker,
     )
 
 

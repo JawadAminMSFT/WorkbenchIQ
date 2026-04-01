@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  FileText, Upload, AlertTriangle, CheckCircle, Clock,
-  Building2, Briefcase, XCircle,
+  FileText, Upload, AlertTriangle, CheckCircle,
+  Building2, Briefcase,
 } from 'lucide-react';
 import { getSubmission, uploadQuote } from '../../lib/broker-api';
 import type { Submission } from '../../lib/broker-types';
@@ -17,12 +17,6 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
   submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
   quoted: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Quoted' },
   bound: { bg: 'bg-green-100', text: 'text-green-700', label: 'Bound' },
-};
-
-const DOC_STATUS_ICON: Record<string, React.ReactNode> = {
-  pending: <Clock className="w-4 h-4 text-slate-400" />,
-  processed: <CheckCircle className="w-4 h-4 text-green-500" />,
-  error: <XCircle className="w-4 h-4 text-red-500" />,
 };
 
 function confidenceBadge(confidence: number) {
@@ -208,12 +202,11 @@ export default function SubmissionBuilder({ submissionId }: SubmissionBuilderPro
             {submission.documents?.map((doc) => (
               <div key={doc.id} className="px-5 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {DOC_STATUS_ICON[doc.status] ?? <Clock className="w-4 h-4 text-slate-400" />}
+                  <CheckCircle className="w-4 h-4 text-green-500" />
                   <div>
-                    <p className="text-sm font-medium text-slate-700">{doc.filename}</p>
+                    <p className="text-sm font-medium text-slate-700">{doc.file_name}</p>
                     <p className="text-xs text-slate-400">
-                      {doc.type} • {new Date(doc.uploaded_at).toLocaleDateString()}
-                      {doc.carrier_name && ` • ${doc.carrier_name}`}
+                      {doc.document_type} • {new Date(doc.uploaded_at).toLocaleDateString()}
                     </p>
                   </div>
                 </div>

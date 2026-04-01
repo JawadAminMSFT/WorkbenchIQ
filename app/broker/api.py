@@ -47,6 +47,7 @@ from app.broker.acord_forms import (
     get_acord_form_template,
     map_extracted_to_acord125,
 )
+from app.broker.cu_processor import BrokerCUProcessor
 from app.broker.package_generator import SubmissionPackageGenerator
 from app.broker.storage import BrokerStorage
 from app.broker.quote_extractor import QuoteExtractor
@@ -180,6 +181,17 @@ class UploadQuoteResponse(BaseModel):
     message: str
 
 
+class CompareWeights(BaseModel):
+    premium_weight: float = Field(default=35.0, ge=0, le=100)
+    coverage_weight: float = Field(default=30.0, ge=0, le=100)
+    financial_weight: float = Field(default=20.0, ge=0, le=100)
+    completeness_weight: float = Field(default=15.0, ge=0, le=100)
+
+
+class CompareRequest(BaseModel):
+    weights: Optional[CompareWeights] = None
+
+
 class CompareResponse(BaseModel):
     comparison_table: List[Dict[str, Any]]
     recommendation: str
@@ -214,10 +226,12 @@ class ResearchResponse(BaseModel):
     loss_frequency: str = ""
     risk_factors: List[str] = Field(default_factory=list)
     insurance_needs: List[Dict[str, str]] = Field(default_factory=list)
-    carrier_matches: List[Dict[str, str]] = Field(default_factory=list)
+    carrier_matches: List[Dict[str, Any]] = Field(default_factory=list)
     recent_news: List[Dict[str, str]] = Field(default_factory=list)
     citations: List[str] = Field(default_factory=list)
+    citation_types: Dict[str, str] = Field(default_factory=dict)
     confidence_level: str = ""
+    field_confidence: Dict[str, str] = Field(default_factory=dict)
     data_sources: List[str] = Field(default_factory=list)
     generated_at: str = ""
 
@@ -258,6 +272,31 @@ class GeneratePackageRequest(BaseModel):
 class UpdatePackageEmailRequest(BaseModel):
     """Request body for saving an edited cover email draft."""
     cover_email: str
+
+
+class UpdateResearchBriefRequest(BaseModel):
+    """Request body for saving edits to a research brief."""
+    business_description: Optional[str] = None
+    headquarters: Optional[str] = None
+    year_founded: Optional[int] = None
+    employee_count: Optional[int] = None
+    ownership_type: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    revenue_trend: Optional[str] = None
+    credit_rating: Optional[str] = None
+    financial_highlights: Optional[List[str]] = None
+    naics_code: Optional[str] = None
+    industry_sector: Optional[str] = None
+    loss_frequency: Optional[str] = None
+    risk_factors: Optional[List[str]] = None
+    key_operations: Optional[List[str]] = None
+    common_perils: Optional[List[str]] = None
+    confidence_level: Optional[str] = None
+
+
+class MarkSentRequest(BaseModel):
+    """Request body for marking a submission as sent."""
+    carriers: List[str] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -451,6 +490,40 @@ async def list_client_submissions(client_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/clients/{client_id}/documents")
+async def list_client_documents(client_id: str):
+    """
+    Aggregate all documents from all submissions for a client.
+
+    Args:
+        client_id: Client identifier
+
+    Returns:
+        List of document records across all submissions, each annotated with
+        submission_id and line_of_business.
+    """
+    try:
+        client = storage.get_client(client_id)
+        if not client:
+            raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+        submissions = storage.list_submissions(client_id=client_id)
+        documents: List[Dict[str, Any]] = []
+        for sub in submissions:
+            lob = sub.get("line_of_business", "")
+            for doc in sub.get("documents", []):
+                doc_copy = dict(doc)
+                doc_copy["submission_id"] = sub.get("id", "")
+                doc_copy["line_of_business"] = lob
+                documents.append(doc_copy)
+        return documents
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing documents for client {client_id}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # Submission Endpoints
 # ============================================================================
@@ -619,7 +692,11 @@ async def upload_quote(
         
         # Extract quote fields using QuoteExtractor
         try:
-            extractor = QuoteExtractor(_settings.openai)
+            extractor = QuoteExtractor(
+                _settings.openai,
+                broker_settings=_settings.broker,
+                cu_settings=_settings.content_understanding,
+            )
             extracted_fields, confidence_scores = await extractor.extract_quote(
                 content, file.filename, carrier_name
             )
@@ -674,12 +751,13 @@ async def list_quotes(submission_id: str):
 
 
 @router.post("/submissions/{submission_id}/compare")
-async def compare_quotes(submission_id: str):
+async def compare_quotes(submission_id: str, body: Optional[CompareRequest] = None):
     """
     Run placement engine to compare quotes and generate recommendation.
     
     Args:
         submission_id: Submission identifier
+        body: Optional request body with custom scoring weights
         
     Returns:
         Comparison table, recommendation, and placement scores.
@@ -717,8 +795,16 @@ async def compare_quotes(submission_id: str):
                     from app.broker.models import CarrierProfile
                     carrier_profiles[quote.carrier_name] = CarrierProfile(**profile_data)
             
-            # Score quotes
-            scored_quotes = engine.score_quotes(quotes, submission, carrier_profiles)
+            # Score quotes with optional custom weights
+            weight_kwargs = {}
+            if body and body.weights:
+                weight_kwargs = {
+                    "premium_weight": body.weights.premium_weight,
+                    "coverage_weight": body.weights.coverage_weight,
+                    "financial_weight": body.weights.financial_weight,
+                    "completeness_weight": body.weights.completeness_weight,
+                }
+            scored_quotes = engine.score_quotes(quotes, submission, carrier_profiles, **weight_kwargs)
             
             # Generate recommendation
             recommendation = engine.generate_recommendation(scored_quotes)
@@ -782,6 +868,37 @@ async def compare_quotes(submission_id: str):
 
 VALID_DOCUMENT_TYPES = {dt.value for dt in DocumentType}
 
+# Known carrier names for auto-classification
+_KNOWN_CARRIERS = [
+    "travelers", "aig", "zurich", "hartford", "chubb", "liberty mutual",
+    "nationwide", "allianz", "berkshire", "markel", "everest", "axis",
+]
+
+
+def _auto_classify_document(filename: str) -> Optional[str]:
+    """Rule-based document type classifier based on filename patterns.
+
+    Returns a DocumentType value string if a match is found, else None.
+    """
+    name_lower = filename.lower()
+
+    if "sov" in name_lower or "statement of values" in name_lower:
+        return DocumentType.SOV.value
+    if "loss" in name_lower or "claim" in name_lower:
+        return DocumentType.LOSS_RUNS.value
+    if "dec" in name_lower or "declaration" in name_lower:
+        return DocumentType.PRIOR_DECLARATION.value
+    if "acord" in name_lower or "125" in name_lower:
+        return DocumentType.ACORD_125.value
+    if "140" in name_lower:
+        return DocumentType.ACORD_140.value
+    if "quote" in name_lower or any(c in name_lower for c in _KNOWN_CARRIERS):
+        return DocumentType.CARRIER_QUOTE.value
+    if "endorse" in name_lower:
+        return DocumentType.OTHER.value  # No dedicated endorsement type; keep as other
+
+    return None
+
 
 @router.post("/submissions/{submission_id}/documents", status_code=201)
 async def upload_document(
@@ -791,6 +908,10 @@ async def upload_document(
 ):
     """
     Upload a client document (SOV, loss runs, prior declaration, etc.) to a submission.
+
+    Includes rule-based auto-classification: when the user-provided type is
+    ``other`` and the filename matches a known pattern, the type is overridden
+    automatically.
 
     Args:
         submission_id: Submission identifier
@@ -816,6 +937,16 @@ async def upload_document(
                 status_code=422,
                 detail=f"Invalid document_type '{document_type}'. Must be one of: {sorted(VALID_DOCUMENT_TYPES)}",
             )
+
+        # AC-6.4: Auto-classify when user selected "other"
+        if document_type == DocumentType.OTHER.value:
+            classified = _auto_classify_document(file.filename)
+            if classified:
+                logger.info(
+                    "Auto-classified document '%s' as '%s' (was '%s')",
+                    file.filename, classified, document_type,
+                )
+                document_type = classified
 
         # Save file to data/broker/documents/{submission_id}/
         docs_dir = Path("data") / "broker" / "documents" / submission_id
@@ -891,13 +1022,46 @@ async def extract_acord_fields(submission_id: str):
             )
 
         # Run extraction
-        generator = SubmissionGenerator(_settings.openai)
-        acord_125, acord_140, confidence = await generator.extract_acord_fields(documents)
+        generator = SubmissionGenerator(
+            _settings.openai,
+            broker_settings=_settings.broker,
+            cu_settings=_settings.content_understanding,
+        )
+        acord_125, acord_140, confidence, field_sources = await generator.extract_acord_fields(documents)
+
+        # Flatten loss_history array into individual ACORD 140 canonical fields
+        loss_history = acord_140.get("loss_history", [])
+        if isinstance(loss_history, list):
+            for idx, entry in enumerate(loss_history, start=1):
+                if isinstance(entry, dict):
+                    prefix = f"loss_{idx}"
+                    acord_140[f"{prefix}_date"] = entry.get("date", entry.get("DateOfLoss", ""))
+                    acord_140[f"{prefix}_cause"] = entry.get("cause", entry.get("cause_of_loss", entry.get("CauseOfLoss", "")))
+                    acord_140[f"{prefix}_amount"] = entry.get("amount", entry.get("amount_paid", entry.get("AmountPaid", "")))
+                    acord_140[f"{prefix}_description"] = entry.get("description", entry.get("Description", ""))
+                    acord_140[f"{prefix}_status"] = entry.get("status", entry.get("Status", ""))
+
+        # Flatten property_locations array into individual ACORD 140 fields
+        prop_locs = acord_140.get("property_locations", [])
+        if isinstance(prop_locs, list):
+            for idx, loc in enumerate(prop_locs, start=1):
+                if isinstance(loc, dict):
+                    prefix = f"loc_{idx}"
+                    acord_140[f"{prefix}_address"] = loc.get("Address", loc.get("address", ""))
+                    acord_140[f"{prefix}_occupancy"] = loc.get("OccupancyType", loc.get("occupancy", ""))
+                    acord_140[f"{prefix}_construction"] = loc.get("ConstructionType", loc.get("construction_type", ""))
+                    acord_140[f"{prefix}_year_built"] = loc.get("YearBuilt", loc.get("year_built", ""))
+                    acord_140[f"{prefix}_sqft"] = loc.get("SquareFootage", loc.get("square_footage", ""))
+                    acord_140[f"{prefix}_building_value"] = loc.get("BuildingValue", loc.get("building_value", ""))
+                    acord_140[f"{prefix}_contents_value"] = loc.get("ContentsValue", loc.get("contents_value", ""))
+                    acord_140[f"{prefix}_bi_value"] = loc.get("BusinessInterruptionValue", loc.get("bi_value", ""))
+                    acord_140[f"{prefix}_protection_class"] = loc.get("ProtectionClass", loc.get("protection_class", ""))
 
         # Save to submission
         submission_data["acord_125_fields"] = acord_125
         submission_data["acord_140_fields"] = acord_140
         submission_data["acord_field_confidence"] = confidence
+        submission_data["acord_field_sources"] = field_sources
         submission_data["updated_at"] = datetime.utcnow().isoformat()
         submission = _submission_from_dict(submission_data)
         storage.save_submission(submission)
@@ -907,6 +1071,7 @@ async def extract_acord_fields(submission_id: str):
             "acord_125": acord_125,
             "acord_140": acord_140,
             "confidence": confidence,
+            "field_sources": field_sources,
             "fields_extracted": len(acord_125) + len(acord_140),
         }
     except HTTPException:
@@ -959,11 +1124,57 @@ async def get_acord_forms(submission_id: str):
 
         # Build ACORD 140 form with values
         template_140 = get_acord_form_template("140")
+
+        # Flatten first property location and first loss entry from CU
+        # nested arrays into the template's flat field structure.
+        flat_140 = dict(extracted_140)
+        prop_locs = extracted_140.get("property_locations", [])
+        if isinstance(prop_locs, list) and prop_locs:
+            first = prop_locs[0] if isinstance(prop_locs[0], dict) else {}
+            _PROP_FIELD_MAP = {
+                "Address": "PropertyAddress",
+                "OccupancyType": "PropertyOccupancy",
+                "ConstructionType": "ConstructionType",
+                "YearBuilt": "YearBuilt",
+                "SquareFootage": "SquareFootage",
+                "BuildingValue": "BuildingValue",
+                "ContentsValue": "ContentsValue",
+                "BusinessInterruptionValue": "BusinessInterruptionValue",
+                "SprinklerSystem": "ProtectionClass",
+                "ProtectionClass": "ProtectionClass",
+            }
+            for cu_key, tmpl_key in _PROP_FIELD_MAP.items():
+                val = first.get(cu_key)
+                if val and tmpl_key not in flat_140:
+                    flat_140[tmpl_key] = val
+
+        loss_hist = extracted_140.get("loss_history", [])
+        if isinstance(loss_hist, list) and loss_hist:
+            first_loss = loss_hist[0] if isinstance(loss_hist[0], dict) else {}
+            _LOSS_FIELD_MAP = {
+                "DateOfLoss": "LossDate",
+                "date": "LossDate",
+                "CauseOfLoss": "CauseOfLoss",
+                "cause_of_loss": "CauseOfLoss",
+                "cause": "CauseOfLoss",
+                "AmountPaid": "LossAmountPaid",
+                "amount_paid": "LossAmountPaid",
+                "amount": "LossAmountPaid",
+                "Description": "LossDescription",
+                "description": "LossDescription",
+                "Status": "LossStatus",
+                "status": "LossStatus",
+            }
+            for cu_key, tmpl_key in _LOSS_FIELD_MAP.items():
+                val = first_loss.get(cu_key)
+                if val and tmpl_key not in flat_140:
+                    flat_140[tmpl_key] = val
+
         form_140_fields = {}
         for field_key, meta in template_140["fields"].items():
             form_140_fields[field_key] = {
                 **meta,
-                "value": extracted_140.get(field_key, ""),
+                "value": flat_140.get(field_key, ""),
                 "confidence": confidence.get(field_key, None),
             }
 
@@ -991,6 +1202,7 @@ async def get_acord_forms(submission_id: str):
                 "locations": extracted_140.get("property_locations", []),
             },
             "confidence": confidence,
+            "field_sources": submission_data.get("acord_field_sources", {}),
         }
     except HTTPException:
         raise
@@ -1176,6 +1388,51 @@ async def update_package_email(submission_id: str, request: UpdatePackageEmailRe
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/submissions/{submission_id}/mark-sent")
+async def mark_submission_sent(submission_id: str, request: Optional[MarkSentRequest] = None):
+    """
+    Mark a submission as sent to carriers.
+
+    Updates the submission status to 'submitted', records the sent_at
+    timestamp, and optionally updates the carrier list.
+
+    Args:
+        submission_id: Submission identifier
+        request: Optional request body with carrier list
+
+    Returns:
+        200 with updated submission status and sent_at timestamp.
+    """
+    try:
+        submission_data = storage.get_submission(submission_id)
+        if not submission_data:
+            raise HTTPException(status_code=404, detail=f"Submission {submission_id} not found")
+
+        now = datetime.utcnow().isoformat()
+        submission_data["status"] = SubmissionStatus.SUBMITTED.value
+        submission_data["sent_at"] = now
+        submission_data["submission_date"] = now
+        submission_data["updated_at"] = now
+
+        if request and request.carriers:
+            submission_data["submitted_carriers"] = request.carriers
+
+        submission = _submission_from_dict(submission_data)
+        storage.save_submission(submission)
+
+        return {
+            "submission_id": submission_id,
+            "status": SubmissionStatus.SUBMITTED.value,
+            "sent_at": now,
+            "submitted_carriers": submission_data.get("submitted_carriers", []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking submission {submission_id} as sent", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # Client Research Endpoint
 # ============================================================================
@@ -1203,6 +1460,26 @@ async def research_client(client_id: str, request: ResearchRequest):
 
         # Load uploaded research documents if any IDs provided
         uploaded_docs: List[str] = []
+        carrier_data: List[Dict[str, Any]] = []
+
+        # Check if Content Understanding is available for structured extraction
+        cu_processor = BrokerCUProcessor(
+            _settings.content_understanding, _settings.broker
+        )
+        use_cu = cu_processor.is_available()
+        # Limit CU analysis to avoid timeouts — process at most 3 docs via CU
+        _MAX_CU_DOCS = 3
+        cu_docs_processed = 0
+        if use_cu:
+            logger.info(
+                "Content Understanding available — will extract structured "
+                "carrier data from up to %d research documents", _MAX_CU_DOCS
+            )
+        else:
+            logger.info(
+                "Content Understanding not available — using text extraction fallback"
+            )
+
         if request.document_ids:
             research_docs_dir = Path("data") / "broker" / "research-documents" / client_id
             for doc_id in request.document_ids:
@@ -1214,12 +1491,131 @@ async def research_client(client_id: str, request: ResearchRequest):
                 try:
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
                     file_path = Path(meta.get("file_path", ""))
-                    if file_path.exists():
-                        doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                    if not file_path.exists():
+                        continue
+
+                    # --- CU-based structured extraction (limited to avoid timeouts) ---
+                    cu_succeeded = False
+                    if use_cu and cu_docs_processed < _MAX_CU_DOCS:
+                        try:
+                            file_content = file_path.read_bytes()
+                            doc_type = meta.get("document_type", "other")
+                            cu_result = await cu_processor.analyze_document(
+                                file_content,
+                                meta.get("file_name", file_path.name),
+                                doc_type,
+                                _settings.broker.research_analyzer,
+                            )
+                            if cu_result.get("fields"):
+                                carrier_data.append(cu_result["fields"])
+                                logger.info(
+                                    f"CU extracted {len(cu_result['fields'])} fields "
+                                    f"from research doc {doc_id}"
+                                )
+                            # Prefer CU markdown as doc text (preserves layout/tables)
+                            if cu_result.get("markdown"):
+                                uploaded_docs.append(cu_result["markdown"])
+                                logger.info(
+                                    f"Using CU markdown for doc {doc_id}: "
+                                    f"{len(cu_result['markdown'])} chars"
+                                )
+                                cu_succeeded = True
+                                cu_docs_processed += 1
+                        except Exception as cu_err:
+                            logger.warning(
+                                f"CU analysis failed for {doc_id}, falling back "
+                                f"to text extraction: {cu_err}"
+                            )
+
+                    # --- Fallback text extraction (or when CU not available) ---
+                    if not cu_succeeded:
+                        file_ext = file_path.suffix.lower()
+                        if file_ext == ".pdf":
+                            try:
+                                from PyPDF2 import PdfReader
+                                reader = PdfReader(str(file_path))
+                                pages = [p.extract_text() for p in reader.pages if p.extract_text()]
+                                doc_text = "\n\n".join(pages) if pages else ""
+                            except ImportError:
+                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                            except Exception as pdf_err:
+                                logger.warning(f"PDF parsing failed for {doc_id}: {pdf_err}")
+                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                        elif file_ext == ".docx":
+                            try:
+                                from docx import Document as DocxDocument
+                                ddoc = DocxDocument(str(file_path))
+                                parts = [p.text for p in ddoc.paragraphs if p.text.strip()]
+                                for tbl in ddoc.tables:
+                                    for row in tbl.rows:
+                                        cells = [c.text.strip() for c in row.cells]
+                                        if any(cells):
+                                            parts.append(" | ".join(cells))
+                                doc_text = "\n".join(parts) if parts else ""
+                            except ImportError:
+                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                        else:
+                            doc_text = file_path.read_text(encoding="utf-8", errors="replace")
                         uploaded_docs.append(doc_text)
                         logger.info(f"Loaded research doc {doc_id}: {len(doc_text)} chars")
                 except Exception as doc_err:
                     logger.warning(f"Failed to read research document {doc_id}: {doc_err}")
+
+        # Auto-create carrier profiles from CU-extracted data
+        _CU_TO_CARRIER_FIELD = {
+            "CarrierName": "carrier_name",
+            "AMBNumber": "amb_number",
+            "NAICCode": "naic_code",
+            "FinancialStrengthRating": "financial_strength_rating",
+            "IssuerCreditRating": "issuer_credit_rating",
+            "RatingOutlook": "rating_outlook",
+            "BalanceSheetStrength": "balance_sheet_strength",
+            "OperatingPerformance": "operating_performance",
+            "BusinessProfile": "business_profile",
+            "ERMAssessment": "erm_assessment",
+            "NetPremiumsWritten": "net_premiums_written",
+            "PolicyholdersSurplus": "policyholders_surplus",
+            "CombinedRatio": "combined_ratio",
+            "FiveYearAvgCombinedRatio": "five_year_avg_combined_ratio",
+            "DirectWrittenPremium": "direct_written_premium",
+            "NWPToSurplusRatio": "nwp_to_surplus_ratio",
+            "LinesOfBusinessWritten": "lines_of_business_written",
+            "GeographicConcentration": "geographic_concentration",
+            "ReportDate": "report_date",
+        }
+        for cd in carrier_data:
+            carrier_name = cd.get("CarrierName", "")
+            if not carrier_name:
+                continue
+            existing = storage.get_carrier_profile_by_name(carrier_name)
+            if existing:
+                logger.info(
+                    f"Carrier profile already exists for '{carrier_name}', skipping auto-create"
+                )
+                continue
+            profile_kwargs: Dict[str, Any] = {}
+            for cu_field, model_field in _CU_TO_CARRIER_FIELD.items():
+                value = cd.get(cu_field)
+                if value is None:
+                    continue
+                # Normalize array-of-string → list-of-dict for model compatibility
+                if model_field == "lines_of_business_written" and isinstance(value, list):
+                    value = [
+                        {"line": v} if isinstance(v, str) else v for v in value
+                    ]
+                elif model_field == "geographic_concentration" and isinstance(value, str):
+                    value = [{"region": value}] if value else []
+                profile_kwargs[model_field] = value
+            try:
+                profile = CarrierProfile(**profile_kwargs)
+                storage.save_carrier_profile(profile)
+                logger.info(
+                    f"Auto-created carrier profile for '{carrier_name}' from CU analysis"
+                )
+            except Exception as cp_err:
+                logger.warning(
+                    f"Failed to auto-create carrier profile for '{carrier_name}': {cp_err}"
+                )
 
         # Wire in ClientResearchEngine
         try:
@@ -1227,10 +1623,42 @@ async def research_client(client_id: str, request: ResearchRequest):
             brief = await research_engine.research_client(
                 request.company_name,
                 uploaded_docs=uploaded_docs if uploaded_docs else None,
+                carrier_data=carrier_data if carrier_data else None,
             )
 
-            # Save the research brief to the client record
+            # Save the research brief to the client record and append to history
+            brief.setdefault("generated_at", datetime.utcnow().isoformat())
+
+            # Enrich carrier_matches with stored CarrierProfile metrics
+            carrier_matches = brief.get("carrier_matches", [])
+            for match in carrier_matches:
+                carrier_name = match.get("carrier", "")
+                if not carrier_name:
+                    continue
+                profile = storage.get_carrier_profile_by_name(carrier_name)
+                if profile:
+                    match.setdefault("fsr", profile.get("financial_strength_rating", ""))
+                    match.setdefault("icr", profile.get("issuer_credit_rating", ""))
+                    match.setdefault("outlook", profile.get("rating_outlook", ""))
+                    match.setdefault("balance_sheet_strength", profile.get("balance_sheet_strength", ""))
+                    match.setdefault("operating_performance", profile.get("operating_performance", ""))
+                    match.setdefault("combined_ratio", profile.get("combined_ratio", ""))
+                    match.setdefault("nwp_to_surplus_ratio", profile.get("nwp_to_surplus_ratio", ""))
+            brief["carrier_matches"] = carrier_matches
+
             client_data["research_brief"] = brief
+            # Prepend to research_history (most recent first, cap at 20)
+            history = client_data.get("research_history", [])
+            history_entry = {
+                "id": str(uuid.uuid4()),
+                "generated_at": brief.get("generated_at", datetime.utcnow().isoformat()),
+                "company_name": brief.get("company_name", request.company_name),
+                "confidence_level": brief.get("confidence_level", "Medium"),
+                "data_sources": brief.get("data_sources", []),
+                "brief": brief,
+            }
+            history.insert(0, history_entry)
+            client_data["research_history"] = history[:20]
             # Convert property_locations dicts → PropertyLocation dataclasses
             if isinstance(client_data.get("property_locations"), list):
                 client_data["property_locations"] = [
@@ -1329,6 +1757,70 @@ async def research_client(client_id: str, request: ResearchRequest):
         raise
     except Exception as e:
         logger.error(f"Error researching client {client_id}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clients/{client_id}/research-history")
+async def get_research_history(client_id: str):
+    """
+    Get the list of past research briefs for a client.
+
+    Returns:
+        List of research history entries with id, date, sources, and brief data.
+    """
+    client_data = storage.get_client(client_id)
+    if not client_data:
+        raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+    return client_data.get("research_history", [])
+
+
+@router.put("/clients/{client_id}/research-brief")
+async def update_research_brief(client_id: str, request: UpdateResearchBriefRequest):
+    """
+    Update the current research brief with user edits.
+
+    Accepts partial updates to text fields of the research brief
+    and persists them to the client record.
+
+    Args:
+        client_id: Client identifier
+        request: Partial research brief update
+
+    Returns:
+        Updated research brief.
+    """
+    try:
+        client_data = storage.get_client(client_id)
+        if not client_data:
+            raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+        current_brief = client_data.get("research_brief")
+        if not current_brief:
+            raise HTTPException(status_code=404, detail="No research brief exists for this client")
+
+        # Apply only the provided (non-None) fields
+        updates = request.model_dump(exclude_none=True)
+        for key, value in updates.items():
+            current_brief[key] = value
+
+        client_data["research_brief"] = current_brief
+        client_data["updated_at"] = datetime.utcnow().isoformat()
+
+        # Persist
+        if isinstance(client_data.get("property_locations"), list):
+            client_data["property_locations"] = [
+                PropertyLocation(**loc) if isinstance(loc, dict) else loc
+                for loc in client_data["property_locations"]
+            ]
+        valid_keys = set(Client.__dataclass_fields__)
+        client = Client(**{k: v for k, v in client_data.items() if k in valid_keys})
+        storage.save_client(client)
+
+        return current_brief
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating research brief for client {client_id}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

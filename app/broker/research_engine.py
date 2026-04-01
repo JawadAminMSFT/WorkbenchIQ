@@ -26,6 +26,32 @@ logger = setup_logging()
 _RESPONSES_API_VERSION = "2025-04-01-preview"
 _RESPONSES_API_MODEL = "gpt-4.1"
 
+# Domain-based citation type classification
+_CITATION_TYPE_RULES: list[tuple[list[str], str]] = [
+    (["sec.gov", "edgar"], "SEC Filing"),
+    (["reuters.com", "apnews.com", "bbc.com", "cnn.com", "nytimes.com", "wsj.com",
+      "bloomberg.com", "cnbc.com", "foxbusiness.com", "marketwatch.com",
+      "businessinsider.com", "ft.com", "news.yahoo.com"], "News"),
+    ([".edu"], "Academic"),
+    ([".gov"], "Government"),
+    (["ambest.com"], "AM Best"),
+    (["moodys.com", "fitchratings.com", "spglobal.com", "standardandpoors.com"], "Rating Agency"),
+    (["linkedin.com"], "LinkedIn"),
+    (["wikipedia.org"], "Wikipedia"),
+    (["annualreports.com", "investor", "10-k", "10-q", "annual-report"], "Financial Report"),
+]
+
+
+def _classify_citation(url: str) -> str:
+    """Classify a citation URL into a source-type label."""
+    lower = url.lower()
+    for patterns, label in _CITATION_TYPE_RULES:
+        for pat in patterns:
+            if pat in lower:
+                return label
+    return "Web"
+
+
 # JSON schema that the LLM must return — mirrors ResearchBrief dataclass
 _RESEARCH_BRIEF_SCHEMA = """{
   "company_name": "string — full legal or trade name",
@@ -54,7 +80,15 @@ _RESEARCH_BRIEF_SCHEMA = """{
     {"date": "string — YYYY-MM-DD", "headline": "string", "source": "string"}
   ],
   "citations": ["string — source URLs or references"],
-  "confidence_level": "High|Medium|Low"
+  "confidence_level": "High|Medium|Low",
+  "field_confidence": {
+    "business_description": "High|Medium|Low",
+    "financial_highlights": "High|Medium|Low",
+    "risk_factors": "High|Medium|Low",
+    "insurance_needs": "High|Medium|Low",
+    "carrier_matches": "High|Medium|Low",
+    "recent_news": "High|Medium|Low"
+  }
 }"""
 
 
@@ -68,6 +102,7 @@ class ClientResearchEngine:
         self,
         company_name: str,
         uploaded_docs: Optional[List[str]] = None,
+        carrier_data: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Generate a structured client research brief.
 
@@ -78,13 +113,17 @@ class ClientResearchEngine:
             company_name: Name of the company to research
             uploaded_docs: Optional list of uploaded document text content
                 to incorporate as primary sources
+            carrier_data: Optional list of structured carrier field dicts
+                extracted via Content Understanding (CU)
 
         Returns:
             Dict matching the ResearchBrief schema.
         """
         logger.info(f"Starting client research for: {company_name}")
 
-        prompt = self._build_research_prompt(company_name, uploaded_docs)
+        prompt = self._build_research_prompt(
+            company_name, uploaded_docs, carrier_data
+        )
 
         # Try Responses API first (with Bing grounding)
         research_data = await self._try_responses_api(prompt)
@@ -103,6 +142,11 @@ class ClientResearchEngine:
         if uploaded_docs:
             if not any("Uploaded" in s for s in data_sources):
                 data_sources.append(f"Uploaded Documents ({len(uploaded_docs)})")
+        if carrier_data:
+            if not any("Content Understanding" in s for s in data_sources):
+                data_sources.append(
+                    f"Content Understanding Analysis ({len(carrier_data)} carriers)"
+                )
         research_data["data_sources"] = data_sources
 
         return research_data
@@ -111,17 +155,61 @@ class ClientResearchEngine:
         self,
         company_name: str,
         uploaded_docs: Optional[List[str]] = None,
+        carrier_data: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Build the structured research prompt.
 
         Args:
             company_name: Company to research
             uploaded_docs: Optional uploaded document texts
+            carrier_data: Optional structured carrier fields from CU
 
         Returns:
             Formatted prompt string
         """
         parts: list[str] = []
+
+        # Prepend structured carrier data from Content Understanding
+        if carrier_data:
+            parts.append(
+                "=== Carrier Financial Data (from Content Understanding analysis) ===\n"
+                "The following structured carrier data has been extracted with high "
+                "confidence from uploaded documents. Use these values as authoritative "
+                "facts — do NOT contradict them with web search results.\n"
+            )
+            _DISPLAY_LABELS = {
+                "CarrierName": "Carrier",
+                "AMBNumber": "AM Best Number",
+                "NAICCode": "NAIC Code",
+                "FinancialStrengthRating": "AM Best Rating",
+                "IssuerCreditRating": "Issuer Credit Rating",
+                "RatingOutlook": "Rating Outlook",
+                "BalanceSheetStrength": "Balance Sheet Strength",
+                "OperatingPerformance": "Operating Performance",
+                "BusinessProfile": "Business Profile",
+                "ERMAssessment": "ERM Assessment",
+                "NetPremiumsWritten": "Net Premiums Written",
+                "PolicyholdersSurplus": "Policyholders Surplus",
+                "CombinedRatio": "Combined Ratio",
+                "FiveYearAvgCombinedRatio": "5-Year Avg Combined Ratio",
+                "DirectWrittenPremium": "Direct Written Premium",
+                "NWPToSurplusRatio": "NWP-to-Surplus Ratio",
+                "LinesOfBusinessWritten": "Lines of Business",
+                "GeographicConcentration": "Geographic Concentration",
+                "ReportDate": "Report Date",
+                "KeyFinancialHighlights": "Key Financial Highlights",
+            }
+            for i, cd in enumerate(carrier_data, 1):
+                parts.append(f"--- Carrier {i} ---")
+                for cu_field, label in _DISPLAY_LABELS.items():
+                    value = cd.get(cu_field)
+                    if value is None or value == "" or value == []:
+                        continue
+                    if isinstance(value, list):
+                        value = ", ".join(str(v) for v in value)
+                    parts.append(f"  {label}: {value}")
+                parts.append("")
+            parts.append("=== End Carrier Financial Data ===\n")
 
         # Prepend uploaded document context when available
         if uploaded_docs:
@@ -155,7 +243,8 @@ Rules:
 - insurance_needs and carrier_matches must be arrays of objects with the exact keys shown.
 - Do NOT wrap in markdown code fences.
 - Do NOT include comments or trailing commas.
-- Provide current, factual information with source citations.""")
+- Provide current, factual information with source citations.
+- field_confidence must map each major field name to "High", "Medium", or "Low" based on how well-sourced the data is.""")
 
         return "\n".join(parts)
 
@@ -227,15 +316,73 @@ Rules:
                 f"Responses API returned {len(content)} chars for client research"
             )
 
+            # Extract all URLs from the raw Bing content as citations
+            url_pattern = re.compile(r'https?://[^\s\'"<>\)\]]+')
+            bing_urls = list(set(url_pattern.findall(content)))
+            bing_urls = [u.rstrip('.,;:') for u in bing_urls if len(u) > 15][:15]
+
+            # Also extract citation URLs from Responses API output annotations
+            for item in result.get("output", []):
+                if item.get("type") == "message":
+                    for ci in item.get("content", []):
+                        for ann in ci.get("annotations", []):
+                            url = ann.get("url", "")
+                            if url and url.startswith("http") and url not in bing_urls:
+                                bing_urls.append(url)
+
+            logger.info(f"Extracted {len(bing_urls)} citation URLs from Bing response")
+
+            def _inject_bing_citations(parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+                """Inject Bing URLs with source-type labels + tag data source."""
+                sources = parsed_data.get("data_sources", [])
+                if "Bing Web Search" not in sources:
+                    sources.append("Bing Web Search")
+                parsed_data["data_sources"] = sources
+                existing = parsed_data.get("citations", [])
+                for url in bing_urls:
+                    if url not in existing:
+                        existing.append(url)
+                parsed_data["citations"] = [
+                    c for c in existing
+                    if isinstance(c, str) and len(c) > 15 and c.startswith("http") and "\n" not in c
+                ]
+                # Add citation_type labels
+                parsed_data["citation_types"] = {
+                    c: _classify_citation(c)
+                    for c in parsed_data["citations"]
+                    if isinstance(c, str) and c.startswith("http")
+                }
+                return parsed_data
+
             # Parse JSON from response
             parsed = self._parse_json_response(content)
             if "_error" not in parsed:
-                # Tag Bing as a data source
-                sources = parsed.get("data_sources", [])
-                if "Bing Web Search" not in sources:
-                    sources.append("Bing Web Search")
-                parsed["data_sources"] = sources
-                return parsed
+                return _inject_bing_citations(parsed)
+
+            # Bing returned content but JSON parse failed — use a follow-up
+            # chat_completion to extract structured data from the raw text
+            logger.info("Bing content received but JSON malformed, extracting via chat_completion")
+
+            extract_result = await asyncio.to_thread(
+                chat_completion,
+                self.settings,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Extract structured data from the research text below. Return ONLY valid JSON matching the requested schema. Keep values concise.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Extract this research into the JSON schema:\n{prompt}\n\n---\nRESEARCH TEXT:\n{content[:3000]}",
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=3000,
+            )
+            extract_raw = extract_result.get("content", "")
+            parsed2 = self._parse_json_response(extract_raw)
+            if "_error" not in parsed2:
+                return _inject_bing_citations(parsed2)
 
         except Exception as exc:
             logger.warning(f"Responses API call failed: {exc}")
@@ -287,10 +434,23 @@ Rules:
                 sources.append("LLM Training Data (no live web search)")
             parsed["data_sources"] = sources
 
-            if not parsed.get("citations"):
+            # Filter out invalid/garbage citations from JSON repair
+            valid_citations = [
+                c for c in parsed.get("citations", [])
+                if isinstance(c, str) and len(c) > 10 and c.startswith("http") and "\n" not in c
+            ]
+            if not valid_citations:
                 parsed["citations"] = [
                     "Note: Research based on LLM training data, not live web search"
                 ]
+            else:
+                parsed["citations"] = valid_citations
+            # Add citation_type labels
+            parsed["citation_types"] = {
+                c: _classify_citation(c)
+                for c in parsed.get("citations", [])
+                if isinstance(c, str) and c.startswith("http")
+            }
 
         return parsed
 
@@ -405,7 +565,16 @@ Rules:
         # Recent News & Citations
         result["recent_news"] = parsed.get("recent_news", [])
         result["citations"] = parsed.get("citations", [])
+        result["citation_types"] = parsed.get("citation_types", {})
+        # If citation_types not provided, generate from citations
+        if not result["citation_types"] and result["citations"]:
+            result["citation_types"] = {
+                c: _classify_citation(c)
+                for c in result["citations"]
+                if isinstance(c, str) and c.startswith("http")
+            }
         result["confidence_level"] = parsed.get("confidence_level", "Medium")
+        result["field_confidence"] = parsed.get("field_confidence", {})
         result["data_sources"] = parsed.get("data_sources", [])
         result["generated_at"] = parsed.get(
             "generated_at", datetime.utcnow().isoformat()
@@ -437,7 +606,9 @@ Rules:
             "carrier_matches": [],
             "recent_news": [],
             "citations": [],
+            "citation_types": {},
             "confidence_level": "Low",
+            "field_confidence": {},
             "data_sources": [],
             "generated_at": datetime.utcnow().isoformat(),
             "_error": error,

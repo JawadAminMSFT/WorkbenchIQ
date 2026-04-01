@@ -1885,6 +1885,14 @@ async def list_analyzers():
                 # Add video analyzer if configured (multimodal personas)
                 if persona_config.video_analyzer_id:
                     add_analyzer(persona_config.video_analyzer_id, persona_id, persona["name"], "video")
+
+                # Add broker-specific analyzers (quote + research)
+                if persona_id == "commercial_brokerage":
+                    broker_settings = settings.broker
+                    if broker_settings.quote_analyzer != persona_config.custom_analyzer_id:
+                        add_analyzer(broker_settings.quote_analyzer, persona_id, persona["name"], "quote")
+                    if broker_settings.research_analyzer != persona_config.custom_analyzer_id:
+                        add_analyzer(broker_settings.research_analyzer, persona_id, persona["name"], "research")
                     
             except Exception as e:
                 logger.warning("Error processing persona %s: %s", persona_id, e)

@@ -183,21 +183,21 @@ export default function ClientResearchPanel({ clientId, onSelectSubmission }: Cl
         </div>
       )}
 
-      {/* Research Results — render brief as markdown text */}
+      {/* Research Results — render brief summary */}
       {brief && !loading && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-slate-900">{brief.company_name}</h2>
 
           <div className="bg-white rounded-lg border border-slate-200 p-5">
             <div className="prose prose-sm prose-slate max-w-none whitespace-pre-line leading-relaxed text-sm text-slate-700">
-              {brief.brief}
+              {brief.brief || brief.business_description || 'Research complete. View the Research tab for full details.'}
             </div>
           </div>
 
-          {(brief.sources?.length ?? 0) > 0 && (
+          {((brief.sources?.length ?? 0) > 0 || (brief.data_sources?.length ?? 0) > 0) && (
             <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-2">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Sources</p>
-              {brief.sources.map((src, i) => (
+              {(brief.sources ?? brief.data_sources ?? []).map((src, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs text-amber-600">
                   <ExternalLink className="w-3 h-3" />
                   <span>{src}</span>

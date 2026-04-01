@@ -38,15 +38,28 @@ class PlacementEngine:
         (float('inf'), -20),  # > 108% = -20pts
     ]
 
+    # Default scoring weights (must sum to 100)
+    DEFAULT_WEIGHTS = {
+        "premium_weight": 35.0,
+        "coverage_weight": 30.0,
+        "financial_weight": 20.0,
+        "completeness_weight": 15.0,
+    }
+
     def score_quotes(
         self,
         quotes: List[Quote],
         submission: Submission,
         carrier_profiles: Dict[str, CarrierProfile],
+        *,
+        premium_weight: float | None = None,
+        coverage_weight: float | None = None,
+        financial_weight: float | None = None,
+        completeness_weight: float | None = None,
     ) -> List[Quote]:
         """Score and rank quotes using composite scoring methodology.
 
-        Scoring factors:
+        Scoring factors (default weights):
         - Premium competitiveness (35%)
         - Coverage completeness (30%)
         - Carrier financial strength (20%)
@@ -56,10 +69,20 @@ class PlacementEngine:
             quotes: List of Quote objects to score
             submission: Parent submission for context
             carrier_profiles: Dict mapping carrier names to CarrierProfile objects
+            premium_weight: Optional override for premium weight (0-100)
+            coverage_weight: Optional override for coverage weight (0-100)
+            financial_weight: Optional override for financial weight (0-100)
+            completeness_weight: Optional override for completeness weight (0-100)
 
         Returns:
             List of scored and ranked quotes (sorted by placement_score descending)
         """
+        # Resolve weights — use defaults for any not provided
+        w_premium = premium_weight if premium_weight is not None else self.DEFAULT_WEIGHTS["premium_weight"]
+        w_coverage = coverage_weight if coverage_weight is not None else self.DEFAULT_WEIGHTS["coverage_weight"]
+        w_financial = financial_weight if financial_weight is not None else self.DEFAULT_WEIGHTS["financial_weight"]
+        w_completeness = completeness_weight if completeness_weight is not None else self.DEFAULT_WEIGHTS["completeness_weight"]
+
         if not quotes:
             return []
 
@@ -94,7 +117,7 @@ class PlacementEngine:
             premium = pd["premium"]
             coverage_breadth = pd["coverage_breadth"]
 
-            # 1. Premium competitiveness (35%)
+            # 1. Premium competitiveness
             # Lower premium = higher score, adjusted for coverage breadth
             if premium_range > 0:
                 normalized_premium = (max_premium - premium) / premium_range
@@ -102,19 +125,19 @@ class PlacementEngine:
                 normalized_premium = 0.5
             # Adjust for coverage differences (fewer exclusions = bonus)
             premium_adjustment = coverage_breadth * 0.1
-            premium_score = (normalized_premium + premium_adjustment) * 35
+            premium_score = (normalized_premium + premium_adjustment) * w_premium
 
-            # 2. Coverage completeness (30%)
-            coverage_score = self._calculate_coverage_score(quote) * 30
+            # 2. Coverage completeness
+            coverage_score = self._calculate_coverage_score(quote) * w_coverage
 
-            # 3. Carrier financial strength (20%)
+            # 3. Carrier financial strength
             carrier_profile = carrier_profiles.get(quote.carrier_name)
             financial_score = self._calculate_financial_score(
                 quote, carrier_profile
-            ) * 20
+            ) * w_financial
 
-            # 4. Quote completeness (15%)
-            completeness_score = self._calculate_completeness_score(quote) * 15
+            # 4. Quote completeness
+            completeness_score = self._calculate_completeness_score(quote) * w_completeness
 
             # Composite score
             composite_score = (

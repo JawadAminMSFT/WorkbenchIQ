@@ -388,3 +388,4 @@ content-understanding-samples/
 .github/workflows/sync-squad-labels.yml
 .gitattributes
 backend-logs/
+broker-dashboard.yaml

@@ -3952,7 +3952,7 @@ PERSONA_CONFIGS: Dict[PersonaType, PersonaConfig] = {
         color="#d97706",  # Amber
         field_schema=COMMERCIAL_BROKERAGE_FIELD_SCHEMA,
         default_prompts=COMMERCIAL_BROKERAGE_DEFAULT_PROMPTS,
-        custom_analyzer_id="brokerDocAnalyzer",
+        custom_analyzer_id="brokerAcordAnalyzer",
         enabled=True,
     ),
 }

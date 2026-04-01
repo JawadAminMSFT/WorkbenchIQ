@@ -57,7 +57,11 @@ class Client:
     renewal_date: Optional[str] = None
     broker_notes: str = ""
     research_brief: Optional[Dict[str, Any]] = None
+    research_history: List[Dict[str, Any]] = field(default_factory=list)
     contacts: List[Dict[str, str]] = field(default_factory=list)
+    policies: List[Dict[str, Any]] = field(default_factory=list)
+    claims_history: List[Dict[str, Any]] = field(default_factory=list)
+    carrier_contacts: List[Dict[str, str]] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
@@ -89,10 +93,16 @@ class QuoteFields:
     named_perils_exclusions: List[str] = field(default_factory=list)
     special_conditions: List[str] = field(default_factory=list)
     policy_period: str = ""
+    effective_date: Optional[str] = None
     carrier_am_best_rating: str = ""
     quote_reference_number: str = ""
     expiry_date: Optional[str] = None
     underwriter: str = ""
+    quote_date: Optional[str] = None
+    coverage_form: str = ""
+    valuation_basis: str = ""
+    coinsurance_requirement: str = ""
+    premium_breakdown: List[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -143,6 +153,8 @@ class Submission:
     acord_125_fields: Dict[str, Any] = field(default_factory=dict)
     acord_140_fields: Dict[str, Any] = field(default_factory=dict)
     acord_field_confidence: Dict[str, float] = field(default_factory=dict)
+    acord_field_sources: Dict[str, str] = field(default_factory=dict)
+    sent_at: Optional[str] = None
 
 
 @dataclass
