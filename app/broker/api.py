@@ -655,14 +655,11 @@ async def upload_quote(
         if not submission:
             raise HTTPException(status_code=404, detail=f"Submission {submission_id} not found")
         
-        # Create directory for quotes
-        quotes_dir = Path("data") / "broker" / "quotes" / submission_id
-        quotes_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save file
-        file_path = quotes_dir / file.filename
+        # Save file via storage layer
         content = await file.read()
-        file_path.write_bytes(content)
+        storage.save_file(
+            f"quotes/{submission_id}/{file.filename}", content
+        )
         
         # Determine source format from file extension
         file_ext = file.filename.split(".")[-1].lower()
@@ -948,19 +945,17 @@ async def upload_document(
                 )
                 document_type = classified
 
-        # Save file to data/broker/documents/{submission_id}/
-        docs_dir = Path("data") / "broker" / "documents" / submission_id
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        file_path = docs_dir / file.filename
+        # Save file via storage layer
         content = await file.read()
-        file_path.write_bytes(content)
+        rel_path = f"documents/{submission_id}/{file.filename}"
+        stored_path = storage.save_file(rel_path, content)
 
         # Create BrokerDocument record
         doc = BrokerDocument(
             submission_id=submission_id,
             document_type=document_type,
             file_name=file.filename,
-            blob_url=str(file_path),
+            blob_url=stored_path,
         )
 
         # Add to submission.documents and save
@@ -1481,28 +1476,37 @@ async def research_client(client_id: str, request: ResearchRequest):
             )
 
         if request.document_ids:
-            research_docs_dir = Path("data") / "broker" / "research-documents" / client_id
             for doc_id in request.document_ids:
-                # Look up metadata to find the file
-                meta_path = research_docs_dir / f"{doc_id}.meta.json"
-                if not meta_path.exists():
+                # Look up metadata via storage layer
+                meta_rel = f"research-documents/{client_id}/{doc_id}.meta.json"
+                meta = storage._load_json(meta_rel)
+                if not meta:
                     logger.warning(f"Research document {doc_id} not found, skipping")
                     continue
                 try:
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                    file_path = Path(meta.get("file_path", ""))
-                    if not file_path.exists():
+                    # Load file content via storage layer
+                    file_stored_path = meta.get("file_path", "")
+                    file_name = meta.get("file_name", "")
+                    # Derive the storage-relative path for the file
+                    file_rel = f"research-documents/{client_id}/{doc_id}_{file_name}"
+                    file_content = storage.load_file(file_rel)
+                    if file_content is None:
+                        # Fallback: try the stored file_path directly (legacy local data)
+                        fp = Path(file_stored_path)
+                        if fp.exists():
+                            file_content = fp.read_bytes()
+                    if file_content is None:
+                        logger.warning(f"Research doc file not found for {doc_id}")
                         continue
 
                     # --- CU-based structured extraction (limited to avoid timeouts) ---
                     cu_succeeded = False
                     if use_cu and cu_docs_processed < _MAX_CU_DOCS:
                         try:
-                            file_content = file_path.read_bytes()
                             doc_type = meta.get("document_type", "other")
                             cu_result = await cu_processor.analyze_document(
                                 file_content,
-                                meta.get("file_name", file_path.name),
+                                file_name,
                                 doc_type,
                                 _settings.broker.research_analyzer,
                             )
@@ -1512,7 +1516,6 @@ async def research_client(client_id: str, request: ResearchRequest):
                                     f"CU extracted {len(cu_result['fields'])} fields "
                                     f"from research doc {doc_id}"
                                 )
-                            # Prefer CU markdown as doc text (preserves layout/tables)
                             if cu_result.get("markdown"):
                                 uploaded_docs.append(cu_result["markdown"])
                                 logger.info(
@@ -1529,22 +1532,24 @@ async def research_client(client_id: str, request: ResearchRequest):
 
                     # --- Fallback text extraction (or when CU not available) ---
                     if not cu_succeeded:
-                        file_ext = file_path.suffix.lower()
+                        file_ext = Path(file_name).suffix.lower()
                         if file_ext == ".pdf":
                             try:
+                                import io
                                 from PyPDF2 import PdfReader
-                                reader = PdfReader(str(file_path))
+                                reader = PdfReader(io.BytesIO(file_content))
                                 pages = [p.extract_text() for p in reader.pages if p.extract_text()]
                                 doc_text = "\n\n".join(pages) if pages else ""
                             except ImportError:
-                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                                doc_text = file_content.decode("utf-8", errors="replace")
                             except Exception as pdf_err:
                                 logger.warning(f"PDF parsing failed for {doc_id}: {pdf_err}")
-                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                                doc_text = file_content.decode("utf-8", errors="replace")
                         elif file_ext == ".docx":
                             try:
+                                import io
                                 from docx import Document as DocxDocument
-                                ddoc = DocxDocument(str(file_path))
+                                ddoc = DocxDocument(io.BytesIO(file_content))
                                 parts = [p.text for p in ddoc.paragraphs if p.text.strip()]
                                 for tbl in ddoc.tables:
                                     for row in tbl.rows:
@@ -1553,9 +1558,9 @@ async def research_client(client_id: str, request: ResearchRequest):
                                             parts.append(" | ".join(cells))
                                 doc_text = "\n".join(parts) if parts else ""
                             except ImportError:
-                                doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                                doc_text = file_content.decode("utf-8", errors="replace")
                         else:
-                            doc_text = file_path.read_text(encoding="utf-8", errors="replace")
+                            doc_text = file_content.decode("utf-8", errors="replace")
                         uploaded_docs.append(doc_text)
                         logger.info(f"Loaded research doc {doc_id}: {len(doc_text)} chars")
                 except Exception as doc_err:
@@ -1861,26 +1866,23 @@ async def upload_research_document(
                 detail=f"Invalid document_type '{document_type}'. Must be one of: {sorted(VALID_RESEARCH_DOC_TYPES)}",
             )
 
-        # Save file to data/broker/research-documents/{client_id}/
-        docs_dir = Path("data") / "broker" / "research-documents" / client_id
-        docs_dir.mkdir(parents=True, exist_ok=True)
-
+        # Save file via storage layer
         doc_id = str(uuid.uuid4())
-        file_path = docs_dir / f"{doc_id}_{file.filename}"
         content = await file.read()
-        file_path.write_bytes(content)
+        file_rel = f"research-documents/{client_id}/{doc_id}_{file.filename}"
+        stored_path = storage.save_file(file_rel, content)
 
-        # Write metadata sidecar so the research endpoint can look it up
+        # Write metadata sidecar
         meta = {
             "id": doc_id,
             "client_id": client_id,
             "file_name": file.filename,
             "document_type": document_type,
-            "file_path": str(file_path),
+            "file_path": stored_path,
             "uploaded_at": datetime.utcnow().isoformat(),
         }
-        meta_path = docs_dir / f"{doc_id}.meta.json"
-        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        meta_rel = f"research-documents/{client_id}/{doc_id}.meta.json"
+        storage._save_json(meta_rel, meta)
 
         logger.info(
             f"Uploaded research document {doc_id} ({file.filename}) for client {client_id}"
@@ -1914,17 +1916,15 @@ async def list_research_documents(client_id: str):
         if not client_data:
             raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
 
-        docs_dir = Path("data") / "broker" / "research-documents" / client_id
-        if not docs_dir.exists():
-            return []
+        # List meta.json files via storage layer
+        folder = f"research-documents/{client_id}"
+        meta_files = [f for f in storage.list_files(folder) if f.endswith(".meta.json")]
 
         results = []
-        for meta_file in sorted(docs_dir.glob("*.meta.json")):
-            try:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        for mf in sorted(meta_files):
+            meta = storage._load_json(f"{folder}/{mf}")
+            if meta:
                 results.append(meta)
-            except Exception:
-                continue
         return results
 
     except HTTPException:
