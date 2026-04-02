@@ -1,0 +1,394 @@
+{
+  "version": "1.0",
+  "effective_date": "2026-01-01",
+  "description": "Commercial Brokerage Placement Policies — rules for carrier selection, coverage adequacy, premium benchmarking, financial strength gating, placement optimisation, and quote completeness",
+  "last_updated": "2026-01-23",
+  "jurisdiction": "North America",
+  "regulatory_framework": "AM Best Rating Standards, ISO Commercial Lines",
+  "policies": [
+    {
+      "id": "APP-001",
+      "category": "carrier_appetite",
+      "subcategory": "property_tiv_routing",
+      "name": "Property TIV Carrier Routing",
+      "description": "Route property submissions to appropriate carriers based on Total Insured Value and hazard profile",
+      "criteria": [
+        {
+          "id": "APP-001-A",
+          "condition": "TIV < $5M AND protection_class <= 6",
+          "severity": "Pass",
+          "action": "Standard market carriers (e.g., Travelers, Intact, Aviva). Proceed with direct submission.",
+          "rationale": "Small-to-mid commercial property within standard carrier appetite thresholds."
+        },
+        {
+          "id": "APP-001-B",
+          "condition": "TIV $5M-$25M OR protection_class > 6",
+          "severity": "Warning",
+          "action": "Mid-market and specialty carriers; consider surplus lines. Review available markets before submission.",
+          "rationale": "Above standard threshold or poor protection class limits available standard markets."
+        },
+        {
+          "id": "APP-001-C",
+          "condition": "TIV > $25M OR coastal property OR flood zone A/AE",
+          "severity": "Referral",
+          "action": "Wholesale broker / MGA referral; Lloyd's markets. Risk exceeds retail carrier appetite.",
+          "rationale": "Large or high-hazard risk requires specialty market access through wholesale channel."
+        }
+      ],
+      "references": [
+        "ISO Protection Class Guide",
+        "FEMA Flood Zone Definitions"
+      ]
+    },
+    {
+      "id": "APP-002",
+      "category": "carrier_appetite",
+      "subcategory": "occupancy_class",
+      "name": "Occupancy Class Eligibility",
+      "description": "Determine carrier eligibility based on occupancy type and associated hazard grade",
+      "criteria": [
+        {
+          "id": "APP-002-A",
+          "condition": "occupancy_class IN ['office', 'retail', 'light_industrial', 'habitational']",
+          "severity": "Pass",
+          "action": "Standard market eligible. Submit to preferred carrier panel.",
+          "rationale": "Low-to-moderate hazard occupancies are within most standard carrier appetites."
+        },
+        {
+          "id": "APP-002-B",
+          "condition": "occupancy_class IN ['restaurant', 'auto_repair', 'woodworking', 'heavy_industrial']",
+          "severity": "Warning",
+          "action": "Specialty market required. Verify carrier appetite for specific occupancy before submission.",
+          "rationale": "Higher hazard occupancies have limited standard market availability."
+        }
+      ],
+      "references": [
+        "ISO Occupancy Classification Guide"
+      ]
+    },
+    {
+      "id": "COV-001",
+      "category": "coverage_adequacy",
+      "subcategory": "building_limit",
+      "name": "Building Limit Adequacy",
+      "description": "Validate that the quoted building limit covers the replacement cost value to avoid co-insurance penalties",
+      "criteria": [
+        {
+          "id": "COV-001-A",
+          "condition": "quoted_building_limit >= sov_building_value",
+          "severity": "Pass",
+          "action": "Coverage is adequate. Client is fully covered for building replacement.",
+          "rationale": "Building limit meets or exceeds replacement cost — no co-insurance exposure."
+        },
+        {
+          "id": "COV-001-B",
+          "condition": "quoted_building_limit >= 0.80 * sov_building_value AND < sov_building_value",
+          "severity": "Warning",
+          "action": "Co-insurance penalty risk. Recommend increasing building limit to full replacement cost value.",
+          "rationale": "Below 100% but above 80% co-insurance threshold — partial claims may still be paid in full but risk exists."
+        },
+        {
+          "id": "COV-001-C",
+          "condition": "quoted_building_limit < 0.80 * sov_building_value",
+          "severity": "Fail",
+          "action": "Significant co-insurance exposure. Carrier will reject or reduce claim proportionally. Escalate to broker immediately.",
+          "rationale": "Below 80% co-insurance threshold triggers penalty clauses — client bears proportional share of any loss."
+        }
+      ],
+      "calculation": "Co-insurance penalty = (Carried limit / Required limit) * Loss amount",
+      "references": [
+        "ISO Commercial Property Conditions CP 00 10",
+        "Co-insurance clause standard (typically 80%, 90%, or 100%)"
+      ]
+    },
+    {
+      "id": "COV-002",
+      "category": "coverage_adequacy",
+      "subcategory": "business_interruption",
+      "name": "Business Interruption Limit Check",
+      "description": "Validate that business interruption coverage is sufficient relative to reported revenues",
+      "criteria": [
+        {
+          "id": "COV-002-A",
+          "condition": "bi_limit >= 12_months_projected_revenue",
+          "severity": "Pass",
+          "action": "BI coverage is adequate for a full-year interruption scenario.",
+          "rationale": "12-month coverage provides sufficient runway for most recovery scenarios."
+        },
+        {
+          "id": "COV-002-B",
+          "condition": "bi_limit < 12_months_projected_revenue AND bi_limit >= 6_months_projected_revenue",
+          "severity": "Warning",
+          "action": "BI coverage may be insufficient for extended loss events. Recommend reviewing with client.",
+          "rationale": "Sub-12-month coverage leaves client exposed if recovery exceeds policy period."
+        }
+      ],
+      "references": [
+        "ISO Business Income Coverage Form CP 00 30"
+      ]
+    },
+    {
+      "id": "BENCH-001",
+      "category": "premium_benchmarking",
+      "subcategory": "market_comparison",
+      "name": "Premium Market Comparison",
+      "description": "Rate the quoted premium against the market median for this risk profile",
+      "criteria": [
+        {
+          "id": "BENCH-001-A",
+          "condition": "premium < 0.85 * market_median_premium",
+          "severity": "Warning",
+          "action": "Below Market — verify coverage terms are equivalent. Low premium may indicate narrower coverage or carrier pricing error.",
+          "rationale": "Significantly below market may indicate reduced coverage, higher deductibles, or exclusions not present in other quotes."
+        },
+        {
+          "id": "BENCH-001-B",
+          "condition": "premium BETWEEN 0.85 * market_median AND 1.15 * market_median",
+          "severity": "Pass",
+          "action": "Market Rate — premium is within acceptable range. No action required.",
+          "rationale": "Within ±15% of market median is considered competitive."
+        },
+        {
+          "id": "BENCH-001-C",
+          "condition": "premium > 1.15 * market_median_premium",
+          "severity": "Warning",
+          "action": "Above Market — negotiate with carrier or seek additional quotes from competing markets.",
+          "rationale": "Premium exceeds market range — may warrant pushback or alternative carrier submission."
+        }
+      ],
+      "references": [
+        "Broker market intelligence and historical quote data"
+      ]
+    },
+    {
+      "id": "BENCH-002",
+      "category": "premium_benchmarking",
+      "subcategory": "rate_per_hundred",
+      "name": "Rate per $100 of TIV Benchmark",
+      "description": "Compare the implied rate per $100 of TIV against class benchmarks",
+      "criteria": [
+        {
+          "id": "BENCH-002-A",
+          "condition": "rate_per_100 <= class_benchmark_rate",
+          "severity": "Pass",
+          "action": "Rate is at or below class benchmark. Competitive pricing confirmed.",
+          "rationale": "Rate per $100 of TIV is within expected range for the occupancy and construction class."
+        },
+        {
+          "id": "BENCH-002-B",
+          "condition": "rate_per_100 > class_benchmark_rate * 1.25",
+          "severity": "Warning",
+          "action": "Rate exceeds benchmark by more than 25%. Investigate loss history, construction quality, or carrier surcharges.",
+          "rationale": "Elevated rate suggests carrier is pricing in additional risk factors not reflected in standard class rates."
+        }
+      ],
+      "calculation": "rate_per_100 = (annual_premium / total_insured_value) * 100",
+      "references": [
+        "ISO Loss Costs by Class",
+        "Historical placement rate benchmarks"
+      ]
+    },
+    {
+      "id": "FSR-001",
+      "category": "carrier_financial_strength",
+      "subcategory": "am_best_rating",
+      "name": "Carrier Financial Strength Gate",
+      "description": "Evaluate carrier solvency and financial health from AM Best profile before including in placement recommendation",
+      "criteria": [
+        {
+          "id": "FSR-001-A",
+          "condition": "FinancialStrengthRating IN ['A++', 'A+', 'A'] AND RatingOutlook != 'Under Review - Negative'",
+          "severity": "Pass",
+          "action": "Eligible for placement. Display FSR badge in green on quote comparison.",
+          "rationale": "AM Best A or better indicates superior financial stability and strong claims-paying ability."
+        },
+        {
+          "id": "FSR-001-B",
+          "condition": "FinancialStrengthRating == 'A-' AND RatingOutlook IN ['Stable', 'Positive']",
+          "severity": "Warning",
+          "action": "Eligible for placement with note. Display FSR badge in yellow; add monitoring note to broker.",
+          "rationale": "A- is acceptable but warrants ongoing monitoring of carrier financial performance."
+        },
+        {
+          "id": "FSR-001-C",
+          "condition": "FinancialStrengthRating IN ['B++', 'B+'] OR RatingOutlook IN ['Negative', 'Under Review - Negative']",
+          "severity": "Fail",
+          "action": "Flag for broker review. Include financial strength warning prominently in quote comparison.",
+          "rationale": "B-range carriers carry materially higher insolvency risk and may not meet client or E&O requirements."
+        },
+        {
+          "id": "FSR-001-D",
+          "condition": "FinancialStrengthRating NOT IN ['A++','A+','A','A-','B++','B+'] OR FinancialStrengthRating IS NULL",
+          "severity": "Fail",
+          "action": "Exclude from automated placement recommendation. Broker must manually override with documented justification.",
+          "rationale": "Unrated or below B+ carriers pose unacceptable financial risk for client protection."
+        }
+      ],
+      "references": [
+        "AM Best Financial Strength Rating Guide",
+        "Best's Credit Rating Methodology (BCRM)"
+      ]
+    },
+    {
+      "id": "FSR-002",
+      "category": "carrier_financial_strength",
+      "subcategory": "combined_ratio",
+      "name": "Carrier Combined Ratio Check",
+      "description": "Assess carrier profitability via combined ratio as a secondary financial health indicator",
+      "criteria": [
+        {
+          "id": "FSR-002-A",
+          "condition": "combined_ratio < 100%",
+          "severity": "Pass",
+          "action": "Carrier is operating profitably. No additional financial concern.",
+          "rationale": "Combined ratio below 100% indicates underwriting profit — carrier is financially healthy."
+        },
+        {
+          "id": "FSR-002-B",
+          "condition": "combined_ratio >= 100% AND < 110%",
+          "severity": "Warning",
+          "action": "Carrier operating near breakeven. Monitor for premium increases or coverage restrictions at renewal.",
+          "rationale": "Marginal underwriting losses may lead to market corrections affecting renewal terms."
+        },
+        {
+          "id": "FSR-002-C",
+          "condition": "combined_ratio >= 110%",
+          "severity": "Fail",
+          "action": "Carrier sustaining significant underwriting losses. Factor into placement risk assessment.",
+          "rationale": "Persistently high combined ratios signal potential solvency stress or aggressive market exit."
+        }
+      ],
+      "calculation": "Combined Ratio = (Incurred Losses + Expenses) / Earned Premiums",
+      "references": [
+        "AM Best Financial Performance Metrics",
+        "NAIC Annual Statement Data"
+      ]
+    },
+    {
+      "id": "OPT-001",
+      "category": "placement_optimisation",
+      "subcategory": "best_value_scoring",
+      "name": "Best Value Placement Score",
+      "description": "Composite scoring model for ranking carrier quotes and generating placement recommendations",
+      "scoring_factors": [
+        {
+          "factor": "Premium competitiveness",
+          "weight": 0.35,
+          "description": "Lower premium scores higher, adjusted for coverage breadth"
+        },
+        {
+          "factor": "Coverage completeness",
+          "weight": 0.30,
+          "description": "Fewer exclusions and higher sublimits score higher"
+        },
+        {
+          "factor": "Carrier financial strength",
+          "weight": 0.20,
+          "description": "FSR tier scoring with combined ratio and NWP/surplus adjustments"
+        },
+        {
+          "factor": "Quote completeness",
+          "weight": 0.15,
+          "description": "All required fields populated without ambiguity"
+        }
+      ],
+      "scoring_methodology": "Each factor is scored 0–100 and weighted. Total placement score = Σ(factor_score × weight). Quotes with total score >= 75 are recommended; 50–74 are acceptable; below 50 require broker justification.",
+      "references": [
+        "Internal placement quality framework"
+      ]
+    },
+    {
+      "id": "OPT-002",
+      "category": "placement_optimisation",
+      "subcategory": "layered_program",
+      "name": "Layered Program Structure Guidance",
+      "description": "Guidelines for structuring multi-carrier layered programs on large risks",
+      "criteria": [
+        {
+          "id": "OPT-002-A",
+          "condition": "TIV > $25M AND single_carrier_capacity < TIV",
+          "severity": "Info",
+          "action": "Consider layered program structure with primary and excess layers to achieve full coverage.",
+          "rationale": "Single-carrier capacity constraints on large risks require multi-carrier program design."
+        },
+        {
+          "id": "OPT-002-B",
+          "condition": "layered_program AND lead_carrier_share < 25%",
+          "severity": "Warning",
+          "action": "Lead carrier share below 25% may reduce their commitment to claims handling. Negotiate higher lead share.",
+          "rationale": "Lead carrier engagement and claims responsiveness correlates with their share of the program."
+        }
+      ],
+      "references": [
+        "Wholesale brokerage placement standards",
+        "Lloyd's market minimum lead line guidance"
+      ]
+    },
+    {
+      "id": "COMP-001",
+      "category": "quote_completeness",
+      "subcategory": "required_fields",
+      "name": "Required Quote Fields Check",
+      "description": "Validate that carrier quotes contain all required comparison fields before inclusion in placement analysis",
+      "required_fields": [
+        "annual_premium",
+        "total_insured_value",
+        "building_limit",
+        "deductible",
+        "policy_period"
+      ],
+      "recommended_fields": [
+        "contents_limit",
+        "business_interruption_limit",
+        "flood_sublimit",
+        "earthquake_sublimit",
+        "carrier_am_best_rating"
+      ],
+      "criteria": [
+        {
+          "id": "COMP-001-A",
+          "condition": "all required_fields are present AND non-null",
+          "severity": "Pass",
+          "action": "Quote is complete for comparison. Include in placement analysis.",
+          "rationale": "All mandatory data points are present for accurate quote-to-quote comparison."
+        },
+        {
+          "id": "COMP-001-B",
+          "condition": "one or more required_fields missing",
+          "severity": "Fail",
+          "action": "Quote is incomplete. Request missing fields from carrier before including in comparison.",
+          "rationale": "Incomplete quotes cannot be fairly compared and may mislead placement decisions."
+        }
+      ],
+      "references": [
+        "Broker quote comparison standards"
+      ]
+    },
+    {
+      "id": "COMP-002",
+      "category": "quote_completeness",
+      "subcategory": "terms_validation",
+      "name": "Quote Terms Consistency Check",
+      "description": "Ensure quoted terms are consistent and comparable across carriers",
+      "criteria": [
+        {
+          "id": "COMP-002-A",
+          "condition": "all quotes use same valuation_basis (replacement_cost OR actual_cash_value)",
+          "severity": "Pass",
+          "action": "Valuation basis is consistent across quotes. Comparison is valid.",
+          "rationale": "Apples-to-apples comparison requires consistent valuation methodology."
+        },
+        {
+          "id": "COMP-002-B",
+          "condition": "quotes use mixed valuation_basis",
+          "severity": "Warning",
+          "action": "Normalize quotes to same valuation basis before comparison. Flag difference to broker.",
+          "rationale": "Replacement cost vs. actual cash value can produce materially different claim outcomes."
+        }
+      ],
+      "references": [
+        "ISO Valuation Conditions CP 04 05 / CP 04 10"
+      ]
+    }
+  ]
+}

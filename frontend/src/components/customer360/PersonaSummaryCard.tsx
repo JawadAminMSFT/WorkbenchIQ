@@ -6,6 +6,7 @@ import {
   Stethoscope,
   Car,
   Home,
+  Briefcase,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
@@ -27,6 +28,7 @@ const PERSONA_THEME: Record<string, { icon: typeof ClipboardList; color: string;
   life_health_claims: { icon: Stethoscope, color: 'text-cyan-700', gradient: 'from-cyan-500 to-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-200' },
   automotive_claims: { icon: Car, color: 'text-red-700', gradient: 'from-red-500 to-red-600', bg: 'bg-red-50', border: 'border-red-200' },
   mortgage_underwriting: { icon: Home, color: 'text-emerald-700', gradient: 'from-emerald-500 to-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  commercial_brokerage: { icon: Briefcase, color: 'text-amber-700', gradient: 'from-amber-500 to-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
 };
 
 const STATUS_DISPLAY: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
@@ -176,6 +178,7 @@ function getHighlightMetrics(summary: PersonaSummary): MetricHighlight[] {
 
 function mapPersonaToFrontendId(persona: string): string {
   if (persona === 'mortgage_underwriting') return 'mortgage';
+  if (persona === 'commercial_brokerage') return 'commercial_brokerage';
   return persona;
 }
 

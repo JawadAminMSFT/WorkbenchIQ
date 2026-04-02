@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import LandingPage from '@/components/LandingPage';
 import WorkbenchView from '@/components/WorkbenchView';
 import TopNav from '@/components/TopNav';
+import { BrokerWorkbench } from '@/components/broker';
 import { usePersona } from '@/lib/PersonaContext';
 import { ApplicationListItem } from '@/lib/types';
 import { PersonaId, PERSONAS } from '@/lib/personas';
@@ -122,6 +123,27 @@ function HomeContent() {
     setSelectedAppId(null);
     fetchApplications();
   };
+
+  // Broker persona is dashboard-first — render directly without requiring an application
+  if (currentPersona === 'commercial_brokerage') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+          <TopNav
+            applications={applications}
+            selectedAppId={undefined}
+            activeView="overview"
+            onSelectApp={handleSelectApp}
+            onChangeView={() => {}}
+            showWorkbenchControls={false}
+          />
+        </header>
+        <main className="flex-1">
+          <BrokerWorkbench />
+        </main>
+      </div>
+    );
+  }
 
   if (view === 'workbench' && selectedAppId) {
     return (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check, ClipboardList, Stethoscope, Landmark } from 'lucide-react';
+import { ChevronDown, Check, ClipboardList, Stethoscope, Landmark, Briefcase } from 'lucide-react';
 import { usePersona } from '@/lib/PersonaContext';
 import { getEnabledPersonas, PersonaConfig, PersonaId, PERSONAS } from '@/lib/personas';
 import clsx from 'clsx';
@@ -13,6 +13,7 @@ const PERSONA_UI_LABELS: Record<PersonaId, string> = {
   automotive_claims: 'Automotive Claims',
   property_casualty_claims: 'Property & Casualty Claims',
   mortgage: 'Mortgage Underwriting',
+  commercial_brokerage: 'Commercial Brokerage',
 };
 
 // Placeholder personas that don't exist in the backend yet (shown as disabled)
@@ -47,6 +48,12 @@ const PERSONA_GROUPS: PersonaGroup[] = [
     label: 'Claims',
     icon: Stethoscope,
     personaIds: ['life_health_claims', 'automotive_claims'],
+  },
+  {
+    id: 'brokerage',
+    label: 'Brokerage',
+    icon: Briefcase,
+    personaIds: ['commercial_brokerage'],
   },
   {
     id: 'wealth',

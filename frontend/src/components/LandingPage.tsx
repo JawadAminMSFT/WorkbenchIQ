@@ -56,11 +56,15 @@ export default function LandingPage({
 
   // Helper to check conditions
   const isAutomotiveClaims = currentPersona === 'automotive_claims';
+  const isCommercialBrokerage = currentPersona === 'commercial_brokerage';
   const isUnderwritingPersona = currentPersona === 'underwriting';
   
   const getAcceptedFileTypes = () => {
     if (isAutomotiveClaims) {
       return '.pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.avi,.webm';
+    }
+    if (isCommercialBrokerage) {
+      return '.pdf,.xlsx,.xls,.csv';
     }
     return '.pdf';
   };
@@ -68,6 +72,9 @@ export default function LandingPage({
   const getAcceptedMimeTypes = () => {
     if (isAutomotiveClaims) {
       return ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
+    }
+    if (isCommercialBrokerage) {
+      return ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'text/csv'];
     }
     return ['application/pdf'];
   };

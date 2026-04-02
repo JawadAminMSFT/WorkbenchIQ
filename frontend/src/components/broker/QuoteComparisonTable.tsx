@@ -1,0 +1,438 @@
+'use client';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  BarChart3, Star, AlertTriangle, CheckCircle, Shield, Mail, Copy, X, Info,
+} from 'lucide-react';
+import { getSubmission } from '../../lib/broker-api';
+import type { Submission, Quote } from '../../lib/broker-types';
+
+interface QuoteComparisonTableProps {
+  submissionId: string;
+}
+
+type FieldKey =
+  | 'annual_premium'
+  | 'total_insured_value'
+  | 'building_limit'
+  | 'contents_limit'
+  | 'business_interruption_limit'
+  | 'deductible'
+  | 'flood_sublimit'
+  | 'earthquake_sublimit';
+
+const COVERAGE_ROWS: { key: FieldKey; label: string }[] = [
+  { key: 'annual_premium', label: 'Annual Premium' },
+  { key: 'total_insured_value', label: 'Total Insured Value' },
+  { key: 'building_limit', label: 'Building Limit' },
+  { key: 'contents_limit', label: 'Contents Limit' },
+  { key: 'business_interruption_limit', label: 'BI Limit' },
+  { key: 'deductible', label: 'Deductible' },
+  { key: 'flood_sublimit', label: 'Flood Sublimit' },
+  { key: 'earthquake_sublimit', label: 'Earthquake Sublimit' },
+];
+
+/* ---------- helpers ---------- */
+
+function confidenceBadge(score: number | undefined) {
+  if (score === undefined || score === null) return null;
+  const pct = Math.round(score * 100);
+  if (score >= 0.8) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-100 text-green-700" title={`${pct}% confidence`}>
+        <CheckCircle className="w-3 h-3" />{pct}%
+      </span>
+    );
+  }
+  if (score >= 0.6) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-yellow-100 text-yellow-700" title={`${pct}% confidence`}>
+        <Info className="w-3 h-3" />{pct}%
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-red-100 text-red-700" title={`${pct}% confidence`}>
+      <AlertTriangle className="w-3 h-3" />{pct}%
+    </span>
+  );
+}
+
+function needsReviewBadge(score: number | undefined) {
+  if (score !== undefined && score !== null && score < 0.6) {
+    return (
+      <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-800 border border-amber-300">
+        Needs Review
+      </span>
+    );
+  }
+  return null;
+}
+
+function fieldWithConfidence(value: string | undefined, score: number | undefined) {
+  return (
+    <span className="inline-flex items-center flex-wrap justify-end">
+      <span>{value || '—'}</span>
+      {confidenceBadge(score)}
+      {needsReviewBadge(score)}
+    </span>
+  );
+}
+
+/* ---------- Clarification Modal ---------- */
+
+function ClarificationModal({
+  carrierName,
+  quoteRef,
+  fieldName,
+  onClose,
+}: {
+  carrierName: string;
+  quoteRef: string;
+  fieldName: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const template = `Dear ${carrierName},
+
+Regarding quote ${quoteRef || '[Ref #]'}, we noticed "${fieldName}" is missing from your submission. Could you please provide this information at your earliest convenience?
+
+Thank you for your prompt attention to this matter.
+
+Best regards`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(template).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <Mail className="w-4 h-4 text-amber-600" /> Request Clarification
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={template}
+          className="w-full h-40 text-sm border border-slate-200 rounded-lg p-3 text-slate-700 bg-slate-50 resize-none focus:outline-none"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+          >
+            <Copy className="w-4 h-4" />
+            {copied ? 'Copied!' : 'Copy to Clipboard'}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Main component ---------- */
+
+export default function QuoteComparisonTable({ submissionId }: QuoteComparisonTableProps) {
+  const [submission, setSubmission] = useState<Submission | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Clarification modal state
+  const [clarification, setClarification] = useState<{
+    carrier: string; ref: string; field: string;
+  } | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getSubmission(submissionId);
+      setSubmission(data);
+    } catch (err) {
+      console.error('Failed to load quotes:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load quotes');
+    } finally {
+      setLoading(false);
+    }
+  }, [submissionId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-red-600">
+        <AlertTriangle className="w-12 h-12 mb-4" />
+        <p className="text-lg font-medium">{error}</p>
+        <button
+          onClick={fetchData}
+          className="mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const quotes = submission?.quotes ?? [];
+
+  if (quotes.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-slate-400">
+        <BarChart3 className="w-12 h-12 mb-4" />
+        <p className="text-lg">No quotes to compare yet.</p>
+        <p className="text-sm mt-1">Upload carrier quotes in the Submission tab first.</p>
+      </div>
+    );
+  }
+
+  // Find the recommended quote (rank 1 or highest score)
+  const sortedQuotes = [...quotes].sort(
+    (a, b) => (a.scoring?.placement_rank ?? 999) - (b.scoring?.placement_rank ?? 999)
+  );
+  const recommended = sortedQuotes[0];
+  const rationale = recommended?.scoring?.recommendation_rationale;
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Clarification Modal */}
+      {clarification && (
+        <ClarificationModal
+          carrierName={clarification.carrier}
+          quoteRef={clarification.ref}
+          fieldName={clarification.field}
+          onClose={() => setClarification(null)}
+        />
+      )}
+
+      {/* AI Recommendation */}
+      {rationale && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
+          <div className="flex items-start gap-3">
+            <Star className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="text-sm font-semibold text-amber-800">
+                AI Recommendation: {recommended.carrier_name}
+              </h3>
+              <p className="text-sm text-amber-700 mt-1">{rationale}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Placement Scores */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {sortedQuotes.map((q) => {
+          const isRecommended = q.id === recommended?.id;
+          const scoring = q.scoring;
+          return (
+            <div
+              key={q.id}
+              className={`rounded-lg border p-4 ${
+                isRecommended
+                  ? 'border-amber-400 bg-amber-50'
+                  : 'border-slate-200 bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-900">{q.carrier_name}</p>
+                {isRecommended && <Star className="w-4 h-4 text-amber-500" />}
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-slate-900">
+                  {scoring?.placement_score?.toFixed(1) ?? '—'}
+                </span>
+                <span className="text-xs text-slate-500">
+                  / 100 — Rank #{scoring?.placement_rank ?? '—'}
+                </span>
+              </div>
+              <div className="mt-3 space-y-1">
+                {scoring?.coverage_adequacy && (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <CheckCircle className="w-3 h-3 text-green-500" />
+                    <span className="text-slate-600">
+                      Coverage: {scoring.coverage_adequacy}
+                    </span>
+                  </div>
+                )}
+                {scoring?.premium_percentile && (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Shield className="w-3 h-3 text-slate-400" />
+                    <span className="text-slate-600">
+                      Premium: {scoring.premium_percentile}
+                    </span>
+                  </div>
+                )}
+                {(scoring?.coverage_gaps?.length ?? 0) > 0 && (
+                  <div className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3 text-red-500" />
+                      <span className="text-slate-600">Coverage Gaps:</span>
+                    </div>
+                    <ul className="mt-1 ml-4 space-y-0.5">
+                      {scoring?.coverage_gaps?.map((gap, i) => (
+                        <li key={i} className="flex items-center gap-1.5">
+                          <span className="text-red-600">{gap}</span>
+                          <button
+                            onClick={() =>
+                              setClarification({
+                                carrier: q.carrier_name,
+                                ref: q.fields?.quote_reference_number || '',
+                                field: gap,
+                              })
+                            }
+                            className="text-[10px] text-amber-600 hover:text-amber-800 underline whitespace-nowrap"
+                          >
+                            Request Clarification
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Coverage Comparison Table */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Coverage
+              </th>
+              {sortedQuotes.map((q) => (
+                <th
+                  key={q.id}
+                  className={`text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
+                    q.id === recommended?.id ? 'text-amber-700' : 'text-slate-500'
+                  }`}
+                >
+                  {q.carrier_name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {COVERAGE_ROWS.map((row) => (
+              <tr key={row.key}>
+                <td className="px-4 py-3 font-medium text-slate-700">{row.label}</td>
+                {sortedQuotes.map((q) => (
+                  <td
+                    key={q.id}
+                    className="px-4 py-3 text-right font-mono text-slate-900"
+                  >
+                    {fieldWithConfidence(
+                      q.fields?.[row.key] as string,
+                      q.confidence_scores?.[row.key],
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+
+            {/* Effective Date */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">Effective Date</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.effective_date ?? undefined,
+                    q.confidence_scores?.effective_date,
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* AM Best Rating */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">AM Best Rating</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.carrier_am_best_rating,
+                    q.confidence_scores?.carrier_am_best_rating,
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* Policy Period */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">Policy Period</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.policy_period,
+                    q.confidence_scores?.policy_period,
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* Expiry Date */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700">Quote Expiry</td>
+              {sortedQuotes.map((q) => (
+                <td key={q.id} className="px-4 py-3 text-right text-slate-700">
+                  {fieldWithConfidence(
+                    q.fields?.expiry_date ?? undefined,
+                    q.confidence_scores?.expiry_date,
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            {/* Exclusions */}
+            <tr>
+              <td className="px-4 py-3 font-medium text-slate-700 align-top">Exclusions</td>
+              {sortedQuotes.map((q) => {
+                const exclusions = q.fields?.named_perils_exclusions;
+                return (
+                  <td key={q.id} className="px-4 py-3 text-right text-slate-700 align-top">
+                    {(!exclusions || exclusions.length === 0) ? (
+                      <span className="text-green-600 text-xs">None</span>
+                    ) : (
+                      <ul className="space-y-0.5">
+                        {exclusions.map((ex, i) => (
+                          <li key={i} className="text-xs text-red-600">{ex}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {confidenceBadge(q.confidence_scores?.named_perils_exclusions)}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

@@ -101,6 +101,13 @@ try:
 except ImportError as e:
     logger.warning("Claims API router not available: %s", e)
 
+try:
+    from app.broker.api import router as broker_api_router
+    app.include_router(broker_api_router)
+    logger.info("Broker API router registered")
+except ImportError as e:
+    logger.warning("Broker API router not available: %s", e)
+
 
 # Initialize storage provider and database pool on startup
 @app.on_event("startup")
@@ -1878,6 +1885,14 @@ async def list_analyzers():
                 # Add video analyzer if configured (multimodal personas)
                 if persona_config.video_analyzer_id:
                     add_analyzer(persona_config.video_analyzer_id, persona_id, persona["name"], "video")
+
+                # Add broker-specific analyzers (quote + research)
+                if persona_id == "commercial_brokerage":
+                    broker_settings = settings.broker
+                    if broker_settings.quote_analyzer != persona_config.custom_analyzer_id:
+                        add_analyzer(broker_settings.quote_analyzer, persona_id, persona["name"], "quote")
+                    if broker_settings.research_analyzer != persona_config.custom_analyzer_id:
+                        add_analyzer(broker_settings.research_analyzer, persona_id, persona["name"], "research")
                     
             except Exception as e:
                 logger.warning("Error processing persona %s: %s", persona_id, e)

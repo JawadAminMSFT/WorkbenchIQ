@@ -1,0 +1,16 @@
+{
+  "entries": [
+    { "persistent_name": "leo", "universe": "custom", "role": "Lead", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "frank", "universe": "custom", "role": "Frontend Dev", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "ben", "universe": "custom", "role": "Backend / Scoring", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "tia", "universe": "custom", "role": "Tester / QA", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "marty", "universe": "custom", "role": "Mobile Dev", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "denise", "universe": "custom", "role": "DevOps Engineer", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "nina", "universe": "custom", "role": "Product Owner", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "ada", "universe": "custom", "role": "Data & AI Engineer", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "rex", "universe": "custom", "role": "Industry Expert", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "scribe", "universe": "squad", "role": "Session Logger", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "wearsy", "universe": "custom", "role": "Work Monitor", "created_at": "2026-03-25", "legacy_named": false, "status": "active" },
+    { "persistent_name": "ralph", "universe": "squad", "role": "Memory Agent", "created_at": "2026-03-25", "legacy_named": false, "status": "active" }
+  ]
+}

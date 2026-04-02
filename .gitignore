@@ -376,3 +376,16 @@ content-understanding-samples/
 
 # Include frontend lib folder (not Python's lib/)
 !frontend/src/lib/
+
+# ============================================================================
+# Local tool / agent artifacts (never commit)
+# ============================================================================
+.squad/
+.squad-workstream
+.playwright-cli/
+.copilot/
+.github/workflows/squad-*.yml
+.github/workflows/sync-squad-labels.yml
+.gitattributes
+backend-logs/
+broker-dashboard.yaml
