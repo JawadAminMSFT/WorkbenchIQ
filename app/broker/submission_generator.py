@@ -160,8 +160,28 @@ class SubmissionGenerator:
         all_sources: Dict[str, str] = {}
 
         for doc in documents:
-            file_path = Path(doc.blob_url) if doc.blob_url else None
-            if not file_path or not file_path.exists():
+            # Load file content: try blob storage first, then local file path
+            file_content = None
+            if doc.blob_url:
+                try:
+                    from app.broker.storage import _is_blob_mode, _get_container_client, _BLOB_PREFIX
+                    if _is_blob_mode() and not Path(doc.blob_url).exists():
+                        # blob_url is a blob key — download from blob storage
+                        from azure.core.exceptions import ResourceNotFoundError
+                        cc = _get_container_client()
+                        try:
+                            file_content = cc.get_blob_client(doc.blob_url).download_blob().readall()
+                        except ResourceNotFoundError:
+                            pass
+                except Exception:
+                    pass
+
+                if file_content is None:
+                    fp = Path(doc.blob_url)
+                    if fp.exists():
+                        file_content = fp.read_bytes()
+
+            if file_content is None:
                 logger.warning(
                     "Skipping document '%s' — file not found at '%s'",
                     doc.file_name,
@@ -185,8 +205,6 @@ class SubmissionGenerator:
             )
 
             try:
-                file_content = file_path.read_bytes()
-
                 result = await processor.analyze_document(
                     file_content=file_content,
                     file_name=doc.file_name,
@@ -324,60 +342,67 @@ class SubmissionGenerator:
     def _build_document_context(self, documents: List[BrokerDocument]) -> str:
         """Build aggregated document context for extraction.
 
-        Reads actual file content from disk (via blob_url) so the LLM has
-        real data to extract ACORD fields from.
-
-        Args:
-            documents: List of documents to process
-
-        Returns:
-            Formatted context string with document content
+        Reads actual file content from storage (local or blob) so the LLM
+        has real data to extract ACORD fields from.
         """
         from pathlib import Path
+        import io as _io
 
         context_parts = []
 
         for doc in documents:
             doc_info = f"\n=== Document: {doc.file_name} (Type: {doc.document_type}) ===\n"
 
-            # Read actual file content from disk
-            file_content = None
+            # Load raw bytes from storage (blob or local)
+            raw = None
             if doc.blob_url:
-                file_path = Path(doc.blob_url)
-                if file_path.exists():
-                    try:
-                        file_ext = file_path.suffix.lower()
-                        if file_ext == ".pdf":
-                            raw = file_path.read_bytes()
-                            try:
-                                from PyPDF2 import PdfReader
-                                import io as _io
-                                reader = PdfReader(_io.BytesIO(raw))
-                                pages = [p.extract_text() for p in reader.pages if p.extract_text()]
-                                file_content = "\n\n".join(pages) if pages else None
-                            except ImportError:
-                                file_content = raw.decode("utf-8", errors="replace")
-                        elif file_ext == ".docx":
-                            raw = file_path.read_bytes()
-                            try:
-                                from docx import Document
-                                import io as _io
-                                ddoc = Document(_io.BytesIO(raw))
-                                parts = [p.text for p in ddoc.paragraphs if p.text.strip()]
-                                for tbl in ddoc.tables:
-                                    for row in tbl.rows:
-                                        cells = [c.text.strip() for c in row.cells]
-                                        if any(cells):
-                                            parts.append(" | ".join(cells))
-                                file_content = "\n".join(parts) if parts else None
-                            except ImportError:
-                                file_content = raw.decode("utf-8", errors="replace")
-                        else:
-                            file_content = file_path.read_text(encoding="utf-8", errors="replace")
-                        if file_content:
-                            logger.info(f"Read {len(file_content)} chars from {file_path}")
-                    except Exception as exc:
-                        logger.warning(f"Could not read file {file_path}: {exc}")
+                try:
+                    from app.broker.storage import _is_blob_mode, _get_container_client
+                    if _is_blob_mode() and not Path(doc.blob_url).exists():
+                        from azure.core.exceptions import ResourceNotFoundError
+                        cc = _get_container_client()
+                        try:
+                            raw = cc.get_blob_client(doc.blob_url).download_blob().readall()
+                        except ResourceNotFoundError:
+                            pass
+                except Exception:
+                    pass
+                if raw is None:
+                    fp = Path(doc.blob_url)
+                    if fp.exists():
+                        raw = fp.read_bytes()
+
+            file_content = None
+            if raw:
+                try:
+                    file_ext = Path(doc.file_name).suffix.lower()
+                    if file_ext == ".pdf":
+                        try:
+                            from PyPDF2 import PdfReader
+                            reader = PdfReader(_io.BytesIO(raw))
+                            pages = [p.extract_text() for p in reader.pages if p.extract_text()]
+                            file_content = "\n\n".join(pages) if pages else None
+                        except ImportError:
+                            file_content = raw.decode("utf-8", errors="replace")
+                    elif file_ext == ".docx":
+                        try:
+                            from docx import Document
+                            ddoc = Document(_io.BytesIO(raw))
+                            parts = [p.text for p in ddoc.paragraphs if p.text.strip()]
+                            for tbl in ddoc.tables:
+                                for row in tbl.rows:
+                                    cells = [c.text.strip() for c in row.cells]
+                                    if any(cells):
+                                        parts.append(" | ".join(cells))
+                            file_content = "\n".join(parts) if parts else None
+                        except ImportError:
+                            file_content = raw.decode("utf-8", errors="replace")
+                    else:
+                        file_content = raw.decode("utf-8", errors="replace")
+                    if file_content:
+                        logger.info(f"Read {len(file_content)} chars from {doc.file_name}")
+                except Exception as exc:
+                    logger.warning(f"Could not read file {doc.file_name}: {exc}")
 
             if file_content:
                 # Truncate to avoid exceeding token limits per document
